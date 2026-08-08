@@ -1,0 +1,593 @@
+# ============================================================================
+# 知识库：数学 · 七年级（人教版）· 统一图谱
+# ----------------------------------------------------------------------------
+# 状态：LLM 起草草稿（v0.1.0），待教研审核后方可置为 active（DESIGN §4）。
+# 原则：统一图谱，年级是节点属性而非分区；含小学衔接节点以支撑跨年级前置边。
+# 认知层级：识记 / 理解 / 应用 / 综合
+# 难度先验 difficulty_prior ∈ [0,1]，班级得分率数据到位后仅作参考。
+# ============================================================================
+meta:
+  subject: 数学
+  grade: 7
+  semester: 1
+  textbook_edition: 人教版
+  version: "0.1.0"
+  status: draft
+  generated_by: LLM 起草（依据课标与人教版教材目录），未经教研审核
+  notes: >
+    M6-* 为小学衔接节点（grade: 6），仅用于前置追溯与归因，
+    不参与七年级教学进度覆盖判定。C-* 为章节容器节点。
+
+knowledge_points:
+  # ---- 章节容器节点（contains 边的端点） ----
+  - {code: C6-BRIDGE, name: 小学衔接, grade: 6, semester: 0, chapter: 小学衔接, is_container: true}
+  - {code: C7A-01, name: 第一章 有理数, grade: 7, semester: 1, chapter: 第一章 有理数, is_container: true}
+  - {code: C7A-02, name: 第二章 整式的加减, grade: 7, semester: 1, chapter: 第二章 整式的加减, is_container: true}
+  - {code: C7A-03, name: 第三章 一元一次方程, grade: 7, semester: 1, chapter: 第三章 一元一次方程, is_container: true}
+  - {code: C7A-04, name: 第四章 几何图形初步, grade: 7, semester: 1, chapter: 第四章 几何图形初步, is_container: true}
+
+  # ---- 小学衔接（grade 6，semester 0 = 不限） ----
+  - code: M6-01
+    name: 整数四则运算与运算律
+    description: 整数加减乘除、交换律/结合律/分配律。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [识记, 应用]
+    difficulty_prior: 0.30
+    mastery_floor: 0.70        # 基础性知识点，底线更高
+  - code: M6-02
+    name: 分数四则运算
+    description: 分数加减乘除、通分约分、倒数。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    mastery_floor: 0.70
+  - code: M6-03
+    name: 小数运算与数的大小比较
+    description: 小数四则运算、小数与分数互化、大小比较。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [识记]
+    difficulty_prior: 0.30
+  - code: M6-04
+    name: 简易方程初步
+    description: 用字母表示数、等式的性质、解形如 ax=b 的简单方程。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+  - code: M6-05
+    name: 比与比例
+    description: 比的意义、比例的基本性质、按比例分配。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+  - code: M6-06
+    name: 百分数及其应用
+    description: 百分数意义、百分数与分数小数互化、折扣/利润类问题。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+  - code: M6-07
+    name: 平面图形与角的初步认识
+    description: 三角形/四边形/圆的认识、角的度量基础。
+    grade: 6
+    semester: 0
+    chapter: 小学衔接
+    cog_levels_expected: [识记, 理解]
+    difficulty_prior: 0.30
+  - code: M6-08
+    name: 负数的初步认识
+    description: 人教版六下：用负数表示相反意义的量、0 的意义。
+    grade: 6
+    semester: 2
+    chapter: 小学衔接
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.25
+
+  # ---- 第一章 有理数 ----
+  - code: M7A-101
+    name: 正数与负数的意义
+    description: 用正负数表示相反意义的量；0 既不是正数也不是负数。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.30
+    importance: 基础  # 地基性知识点
+  - code: M7A-102
+    name: 有理数的概念与分类
+    description: 整数与分数统称有理数；按定义与按符号两种分类。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 基础  # 地基性知识点
+  - code: M7A-103
+    name: 数轴
+    description: 数轴三要素（原点/正方向/单位长度）；用数轴上的点表示有理数。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.35
+    importance: 基础  # 地基性知识点
+  - code: M7A-104
+    name: 相反数
+    description: 只有符号不同的两个数互为相反数；a 与 -a 在数轴上关于原点对称。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 基础  # 地基性知识点
+  - code: M7A-105
+    name: 绝对值
+    description: 绝对值的几何与代数定义；|a|≥0；求有理数的绝对值。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+    mastery_floor: 0.70        # 有理数运算的地基
+  - code: M7A-106
+    name: 有理数的大小比较
+    description: 利用数轴与绝对值比较大小；两个负数比较的法则。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7A-111
+    name: 有理数的加法
+    description: 加法法则（同号/异号/与0相加）；加法运算律。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 基础  # 地基性知识点
+    mastery_floor: 0.70
+  - code: M7A-112
+    name: 有理数的减法
+    description: 减去一个数等于加上它的相反数。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 基础  # 地基性知识点
+  - code: M7A-113
+    name: 加减混合运算
+    description: 减法统一为加法、省略加号的代数和写法与简便运算。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-114
+    name: 有理数的乘法与符号法则
+    description: 乘法法则（两数相乘符号判定）；多个因数相乘的符号规律。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 基础  # 地基性知识点
+    mastery_floor: 0.70
+  - code: M7A-115
+    name: 有理数的除法与倒数
+    description: 倒数的概念；除以一个数等于乘它的倒数；0 不能作除数。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 基础  # 地基性知识点
+  - code: M7A-116
+    name: 乘除混合运算与运算律
+    description: 乘除混合统一为乘法；分配律的灵活运用。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用, 综合]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-121
+    name: 乘方与幂的符号规律
+    description: 乘方的意义（底数/指数/幂）；负数奇偶次幂的符号。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-122
+    name: 有理数的混合运算
+    description: 运算顺序（先乘方、再乘除、后加减，括号优先）。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 核心  # 章节主干
+  - code: M7A-123
+    name: 科学记数法
+    description: 用 a×10^n（1≤|a|<10）表示绝对值较大的数。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.40
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-124
+    name: 近似数
+    description: 四舍五入求近似数；精确度的表述。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第二章 整式的加减 ----
+  - code: M7A-201
+    name: 单项式的概念
+    description: 单项式的系数与次数；用含字母的式子表示数量关系。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7A-202
+    name: 多项式的概念
+    description: 多项式的项、次数、常数项；整式的概念。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7A-203
+    name: 同类项与合并同类项
+    description: 同类项的判定；合并同类项法则（分配律的逆用）。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7A-204
+    name: 去括号与添括号
+    description: 括号前是"+"或"-"时去括号的符号法则。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7A-205
+    name: 整式的加减混合运算
+    description: 去括号与合并同类项的综合运用。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用, 综合]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-206
+    name: 整式求值
+    description: 先化简再代入求值；整体代入思想。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第三章 一元一次方程 ----
+  - code: M7A-301
+    name: 方程与一元一次方程的概念
+    description: 方程的解；一元一次方程的定义。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 基础  # 地基性知识点
+  - code: M7A-302
+    name: 等式的性质
+    description: 等式性质1（两边加减同一数）、性质2（两边乘除同一非零数）。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7A-303
+    name: 解一元一次方程（合并同类项与移项）
+    description: 移项变号；合并同类项化简；x=a 的形式。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+    mastery_floor: 0.70        # 方程学习的地基
+  - code: M7A-304
+    name: 解一元一次方程（去括号与去分母）
+    description: 去括号（分配律）、去分母（最小公倍数、不漏乘）。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-305
+    name: 一元一次方程建模
+    description: 实际问题→设未知数→找等量关系→列方程的建模流程。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 核心  # 章节主干
+  - code: M7A-306
+    name: 应用：行程问题
+    description: 路程=速度×时间；相遇/追及/流水模型。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-307
+    name: 应用：工程问题
+    description: 工作总量=效率×时间；合作/分工模型。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-308
+    name: 应用：销售盈亏问题
+    description: 进价/售价/利润率关系；打折销售模型。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-309
+    name: 应用：比例分配问题
+    description: 按比例分配总量；a:b:c 设份数法。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第四章 几何图形初步 ----
+  - code: M7A-401
+    name: 立体图形与平面图形
+    description: 常见立体图形与平面图形的辨认与分类。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [识记, 理解]
+    difficulty_prior: 0.25
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-402
+    name: 立体图形的展开与截面
+    description: 正方体等立体图形的表面展开图；平面截立体得截面。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7A-403
+    name: 点、线、面、体
+    description: 图形构成的基本元素及其相互关系。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.30
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-404
+    name: 直线、射线、线段的概念与表示
+    description: 三种图形的区别与表示法；两点确定一条直线。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 基础  # 地基性知识点
+  - code: M7A-405
+    name: 线段的比较与中点
+    description: 线段长短比较；中点定义与相关计算。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.40
+    importance: 核心  # 章节主干
+  - code: M7A-406
+    name: 两点间的距离
+    description: 两点之间线段最短；距离的定义与应用。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.40
+    importance: 核心  # 章节主干
+  - code: M7A-407
+    name: 角的概念与度量
+    description: 角的定义；度分秒及其换算；量角与画角。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7A-408
+    name: 角的比较、运算与角平分线
+    description: 角的和差倍分；角平分线的定义与计算。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7A-409
+    name: 余角与补角
+    description: 余角/补角定义；等角的余角/补角相等；方位角。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+
+relations:
+  # ---- contains：章节 → 知识点 ----
+  - {from: C6-BRIDGE, to: M6-01, type: contains}
+  - {from: C6-BRIDGE, to: M6-02, type: contains}
+  - {from: C6-BRIDGE, to: M6-03, type: contains}
+  - {from: C6-BRIDGE, to: M6-04, type: contains}
+  - {from: C6-BRIDGE, to: M6-05, type: contains}
+  - {from: C6-BRIDGE, to: M6-06, type: contains}
+  - {from: C6-BRIDGE, to: M6-07, type: contains}
+  - {from: C6-BRIDGE, to: M6-08, type: contains}
+  - {from: C7A-01, to: M7A-101, type: contains}
+  - {from: C7A-01, to: M7A-102, type: contains}
+  - {from: C7A-01, to: M7A-103, type: contains}
+  - {from: C7A-01, to: M7A-104, type: contains}
+  - {from: C7A-01, to: M7A-105, type: contains}
+  - {from: C7A-01, to: M7A-106, type: contains}
+  - {from: C7A-01, to: M7A-111, type: contains}
+  - {from: C7A-01, to: M7A-112, type: contains}
+  - {from: C7A-01, to: M7A-113, type: contains}
+  - {from: C7A-01, to: M7A-114, type: contains}
+  - {from: C7A-01, to: M7A-115, type: contains}
+  - {from: C7A-01, to: M7A-116, type: contains}
+  - {from: C7A-01, to: M7A-121, type: contains}
+  - {from: C7A-01, to: M7A-122, type: contains}
+  - {from: C7A-01, to: M7A-123, type: contains}
+  - {from: C7A-01, to: M7A-124, type: contains}
+  - {from: C7A-02, to: M7A-201, type: contains}
+  - {from: C7A-02, to: M7A-202, type: contains}
+  - {from: C7A-02, to: M7A-203, type: contains}
+  - {from: C7A-02, to: M7A-204, type: contains}
+  - {from: C7A-02, to: M7A-205, type: contains}
+  - {from: C7A-02, to: M7A-206, type: contains}
+  - {from: C7A-03, to: M7A-301, type: contains}
+  - {from: C7A-03, to: M7A-302, type: contains}
+  - {from: C7A-03, to: M7A-303, type: contains}
+  - {from: C7A-03, to: M7A-304, type: contains}
+  - {from: C7A-03, to: M7A-305, type: contains}
+  - {from: C7A-03, to: M7A-306, type: contains}
+  - {from: C7A-03, to: M7A-307, type: contains}
+  - {from: C7A-03, to: M7A-308, type: contains}
+  - {from: C7A-03, to: M7A-309, type: contains}
+  - {from: C7A-04, to: M7A-401, type: contains}
+  - {from: C7A-04, to: M7A-402, type: contains}
+  - {from: C7A-04, to: M7A-403, type: contains}
+  - {from: C7A-04, to: M7A-404, type: contains}
+  - {from: C7A-04, to: M7A-405, type: contains}
+  - {from: C7A-04, to: M7A-406, type: contains}
+  - {from: C7A-04, to: M7A-407, type: contains}
+  - {from: C7A-04, to: M7A-408, type: contains}
+  - {from: C7A-04, to: M7A-409, type: contains}
+
+  # ---- prerequisite：跨年级（小学 → 初一） ----
+  - {from: M6-08, to: M7A-101, type: prerequisite, weight: 0.9}
+  - {from: M6-03, to: M7A-106, type: prerequisite, weight: 0.6}
+  - {from: M6-01, to: M7A-111, type: prerequisite, weight: 0.7}
+  - {from: M6-02, to: M7A-114, type: prerequisite, weight: 0.7}
+  - {from: M6-02, to: M7A-115, type: prerequisite, weight: 0.6}
+  - {from: M6-04, to: M7A-301, type: prerequisite, weight: 0.7}
+  - {from: M6-05, to: M7A-309, type: prerequisite, weight: 0.6}
+  - {from: M6-06, to: M7A-308, type: prerequisite, weight: 0.7}
+  - {from: M6-07, to: M7A-401, type: prerequisite, weight: 0.6}
+  - {from: M6-07, to: M7A-407, type: prerequisite, weight: 0.5}
+
+  # ---- prerequisite：第一章内 ----
+  - {from: M7A-101, to: M7A-102, type: prerequisite, weight: 0.9}
+  - {from: M7A-102, to: M7A-103, type: prerequisite, weight: 0.7}
+  - {from: M7A-103, to: M7A-104, type: prerequisite, weight: 0.8}
+  - {from: M7A-104, to: M7A-105, type: prerequisite, weight: 0.6}
+  - {from: M7A-103, to: M7A-105, type: prerequisite, weight: 0.7}
+  - {from: M7A-105, to: M7A-106, type: prerequisite, weight: 0.8}
+  - {from: M7A-103, to: M7A-106, type: prerequisite, weight: 0.6}
+  - {from: M7A-102, to: M7A-111, type: prerequisite, weight: 0.5}
+  - {from: M7A-106, to: M7A-111, type: prerequisite, weight: 0.6}
+  - {from: M7A-111, to: M7A-112, type: prerequisite, weight: 0.9}
+  - {from: M7A-112, to: M7A-113, type: prerequisite, weight: 0.8}
+  - {from: M7A-111, to: M7A-114, type: prerequisite, weight: 0.8}
+  - {from: M7A-114, to: M7A-115, type: prerequisite, weight: 0.9}
+  - {from: M7A-115, to: M7A-116, type: prerequisite, weight: 0.8}
+  - {from: M7A-114, to: M7A-121, type: prerequisite, weight: 0.8}
+  - {from: M7A-121, to: M7A-122, type: prerequisite, weight: 0.8}
+  - {from: M7A-113, to: M7A-122, type: prerequisite, weight: 0.7}
+  - {from: M7A-116, to: M7A-122, type: prerequisite, weight: 0.8}
+  - {from: M7A-121, to: M7A-123, type: prerequisite, weight: 0.9}
+
+  # ---- prerequisite：第二章内 / 跨章 ----
+  - {from: M7A-102, to: M7A-201, type: prerequisite, weight: 0.5}
+  - {from: M7A-201, to: M7A-202, type: prerequisite, weight: 0.8}
+  - {from: M7A-202, to: M7A-203, type: prerequisite, weight: 0.7}
+  - {from: M7A-116, to: M7A-203, type: prerequisite, weight: 0.6}
+  - {from: M7A-203, to: M7A-204, type: prerequisite, weight: 0.7}
+  - {from: M7A-204, to: M7A-205, type: prerequisite, weight: 0.8}
+  - {from: M7A-203, to: M7A-205, type: prerequisite, weight: 0.6}
+  - {from: M7A-205, to: M7A-206, type: prerequisite, weight: 0.7}
+
+  # ---- prerequisite：第三章内 / 跨章 ----
+  - {from: M7A-301, to: M7A-302, type: prerequisite, weight: 0.6}
+  - {from: M7A-302, to: M7A-303, type: prerequisite, weight: 0.8}
+  - {from: M7A-203, to: M7A-303, type: prerequisite, weight: 0.6}
+  - {from: M7A-303, to: M7A-304, type: prerequisite, weight: 0.9}
+  - {from: M7A-204, to: M7A-304, type: prerequisite, weight: 0.6}
+  - {from: M7A-304, to: M7A-305, type: prerequisite, weight: 0.7}
+  - {from: M7A-305, to: M7A-306, type: prerequisite, weight: 0.8}
+  - {from: M7A-305, to: M7A-307, type: prerequisite, weight: 0.8}
+  - {from: M7A-305, to: M7A-308, type: prerequisite, weight: 0.8}
+  - {from: M7A-305, to: M7A-309, type: prerequisite, weight: 0.7}
+
+  # ---- prerequisite：第四章内 ----
+  - {from: M7A-401, to: M7A-402, type: prerequisite, weight: 0.6}
+  - {from: M7A-401, to: M7A-403, type: prerequisite, weight: 0.7}
+  - {from: M7A-403, to: M7A-404, type: prerequisite, weight: 0.7}
+  - {from: M7A-404, to: M7A-405, type: prerequisite, weight: 0.8}
+  - {from: M7A-405, to: M7A-406, type: prerequisite, weight: 0.7}
+  - {from: M7A-403, to: M7A-407, type: prerequisite, weight: 0.5}
+  - {from: M7A-407, to: M7A-408, type: prerequisite, weight: 0.8}
+  - {from: M7A-408, to: M7A-409, type: prerequisite, weight: 0.7}
+  - {from: M7A-405, to: M7A-408, type: prerequisite, weight: 0.5}
+
+  # ---- confusable：易混淆点对 ----
+  - {from: M7A-104, to: M7A-105, type: confusable, weight: 1.0}
+  - {from: M7A-201, to: M7A-202, type: confusable, weight: 1.0}
+  - {from: M7A-121, to: M7A-114, type: confusable, weight: 1.0}
+
+  # ---- spiral：跨年级螺旋演进线 ----
+  - {from: M6-01, to: M7A-122, type: spiral, weight: 1.0}   # 四则运算律 → 有理数混合运算
+  - {from: M6-04, to: M7A-304, type: spiral, weight: 1.0}   # 简易方程 → 一元一次方程解法

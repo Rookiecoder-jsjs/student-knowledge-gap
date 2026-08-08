@@ -1,0 +1,282 @@
+# 学生知识薄弱点分析归因系统（sc）
+
+一个面向中学教师的**学情诊断工具**：长期追踪学生每次考试/练习表现，估计各知识点的掌握度，归因薄弱点的成因，并生成可直接用于讲评课、家长会、教务汇报的文档，通过复测形成闭环。试点学科为初一数学（人教版七上），年级仅是知识库数据层参数，换 YAML 即可切换。
+
+> 设计依据见 [docs/DESIGN.md](docs/DESIGN.md) v0.3（三轮设计评审定稿 + 实现决策记录）；已落地改进见 [improvement-plan.md](docs/improvement-plan.md)；诊断有效性见 [effectiveness-validation-plan.md](docs/effectiveness-validation-plan.md)；知识图谱改进见 [kb-improvement-design.md](docs/kb-improvement-design.md)。
+
+---
+
+## 它在解决什么问题
+
+教师批改完试卷后，手里只有一张总分。要把"谁薄弱"讲清楚，靠的是经验猜和手工算--既耗时间，也难追溯。本系统把这条链路做实：
+
+```
+知识库 -> 采集（Excel/拍照）-> 证据事件 -> 掌握度推导 -> 双基准薄弱判定 -> 归因（可证伪）-> 质量分析文档 / 个人诊断单
+```
+
+## 它和已有产品有什么不一样
+
+智学网、七天网络、松鼠 AI 等普遍依赖机读卡/标准化扫描，输出以"薄弱知识点清单"为主。本系统的差异化楔子：
+
+1. **普通手机拍照或成绩单导入即可**，不要求机读答题卡；
+2. **不止给薄弱清单，给带证据、可证伪的归因链**--薄弱 ← 前置缺陷 ← 具体根源，每条结论都附证据、置信度，教师可否决，归因预测可用诊断题验证。
+
+## 它能做什么、不能做什么（能力边界，必须守住）
+
+- 只诊断**知识维度**：动机、家庭、考试焦虑、师生关系等不可见因素不在范围；
+- 所有归因输出定位为"**带证据的方向性假设，供教师确认**"，不是诊断结论；
+- 归因精度受标注质量与失分归属约束（端到端约六七成），产品形态与之匹配：**证据随行、置信度可见、教师可否决、诊断题可证伪**。
+
+## 第一交付物
+
+教师真实工作物是**文档**，不是仪表盘。系统优先产出：
+
+1. **一键考后质量分析文档**（班级，可编辑、可导出）--替代教师已有工作；
+2. **个人诊断单**（薄弱点 + 证据 + 建议）；
+3. 仪表盘为探索性辅助（概览、掌握度曲线、学生画像）。
+
+---
+
+## 系统架构
+
+五层管线，四条架构不变量（违反即设计缺陷）：
+
+```
+┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌────────┐  ┌────────────┐
+│ 知识库层  │->│  数据采集层   │->│ 知识追踪层 │->│  归因层  │->│  报告层     │
+│ 知识图谱  │  │ Excel/拍照->   │  │ 证据事件-> │  │ 假设+  │  │ 质量分析 +  │
+│ 版本化   │  │ 审核->提交     │  │ 实时推导  │  │ 证伪   │  │ 个人诊断单  │
+└──────────┘  └──────────────┘  └──────────┘  └────────┘  └────────────┘
+```
+
+**四条不变量：**
+
+1. **分析层只读已提交数据**--采集是状态机（上传->解析中->待审核->已提交），草稿/待审数据隔离在暂存区；
+2. **派生状态只推导、不存储**--掌握度、归因由不可变证据事件实时推导（derive-on-read），教师改标注/分数后下游自动正确，无陈旧快照；
+3. **LLM 输出必经闸门**--任何 LLM 输出进分析前须经人工审核或封闭集合 Schema 校验，LLM 负责解析/标注/渲染，判断权在人与确定性逻辑；
+4. **报告数字零幻觉**--叙述性报告用模板槽位生成，数字与结论由系统注入，LLM 只写连接性文字。
+
+---
+
+## 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 后端 | Python 3.11 · FastAPI · SQLAlchemy 2.0 · SQLite（MVP，可迁 PostgreSQL）· networkx（知识图谱内存遍历）· openpyxl（Excel）|
+| 前端 | Vite · React 19 · TypeScript · Tailwind CSS 4 · react-router 7 · framer-motion · react-markdown |
+| LLM | provider 无关接口层（vision + text 双能力），云端 API；试点用 DashScope `qwen3.7-flash` |
+| 知识库源 | YAML + Git，导入脚本入库 |
+| 图计算 | 关系表存储 + networkx 内存遍历（百级节点，无需图数据库）|
+
+---
+
+## 项目结构
+
+```
+sc/
+├── backend/                  # Python 后端（FastAPI，五层管线，56 端点）
+│   ├── app/
+│   │   ├── api/routes.py     #   全部路由
+│   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
+│   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph（前置边遍历 + 可疑边反查）
+│   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪）
+│   │   ├── reports/          #   quality_analysis / student_diagnosis / narrative（LLM 解读）
+│   │   ├── llm/              #   provider 无关客户端 + prompts
+│   │   ├── models.py schemas.py config.py db.py main.py
+│   ├── kb/math/grade7/kb.yaml #   知识库（人教版七上，待教研审核）
+│   ├── tests/                #   单元测试（含有效性修复、归因抑制、证伪闭环、P25 误报）
+│   ├── simulator/            #   合成模拟器 + 金标端到端断言 + 压力金标 + 大规模随机模拟
+│   ├── scripts/              #   run_demo / effectiveness_multiround / effectiveness_largescale / audit_kb_edges
+│   ├── output/               #   demo 产出（质量分析、个人诊断单）
+│   └── .env                  #   LLM 与质量开关配置（勿入库）
+├── frontend/
+│   ├── app/                  #   教师端 Web（Vite + React + TS + Tailwind，12 页面）
+│   │   └── src/{pages,components,lib}/
+│   └── design/               #   交互设计稿（页面流程、线框、API 对照）
+├── docs/                     #   设计文档（系统设计 + 各改进设计 + 目标与验证结果）
+│   ├── DESIGN.md             #   系统设计文档（v0.3）
+│   ├── improvement-plan.md   #   分析正确性改进方案 + 落地进度表
+│   ├── effectiveness-validation-plan.md  # 诊断有效性验证计划
+│   ├── kb-improvement-design.md          # 知识图谱改进设计（K1-K7）
+│   ├── kb-edit-design.md     #   知识库运行时编辑设计稿
+│   ├── batch-photo-input-design.md # 拍照批量录入设计稿
+│   ├── GOAL.md               #   运行时健壮性改进目标
+│   └── effectiveness-largescale-results.md  # 大规模随机模拟结果
+└── .venv/                    #   Python 3.11 虚拟环境（项目根，backend 共用）
+```
+
+---
+
+## 快速开始
+
+后端命令在 `backend/` 目录下执行（虚拟环境在项目根 `.venv`）：
+
+```bash
+cd backend
+../.venv/bin/python -m pytest                     # 单元 + 金标 + 压力断言（138 项）
+../.venv/bin/python scripts/run_demo.py           # 合成班级全流程 -> output/*.md
+../.venv/bin/python scripts/effectiveness_largescale.py  # 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
+../.venv/bin/uvicorn app.main:app --reload        # API（Swagger: http://localhost:8000/docs）
+```
+
+前端（另开终端）：
+
+```bash
+cd frontend/app
+npm install
+npm run dev                                       # http://localhost:5173（/api 自动代理到 8000）
+```
+
+## 配置（backend/.env）
+
+```
+SC_LLM_PROVIDER=          # 供应商，如 dashscope / openai / anthropic
+SC_LLM_API_KEY=
+SC_LLM_BASE_URL=
+SC_LLM_MODEL=             # 默认模型
+```
+
+视觉（试卷解析）与文本（报告解读）两类能力可分别覆盖：`SC_LLM_VISION_MODEL` / `SC_LLM_TEXT_MODEL`。未配置时 provider 层默认 mock 并显式报错，可在无密钥环境下测试与演示。
+
+**质量与审核开关**（均默认关闭，保持既有工作流；试点/生产按需开启）：
+
+```
+SC_KB_STRICT_ACTIVE=       # =1 时无 active 知识库版本则报错（不兜底 draft，避免分析跑在未审图谱上）
+SC_EVIDENCE_MIX_PENALTY=   # 0~1，多 kp 混合题失分归属折扣强度（0 关闭；1 启用全折扣）
+SC_TAG_REVIEW_SAMPLE_RATE= # 0~1，批量批准标注时高置信题的抽样保留率（0 关闭；建议 0.1）
+```
+
+**诊断有效性参数**（已落地为生产默认，经大规模随机模拟验证；env 可覆盖回退）：
+
+```
+SC_MIN_EVIDENCE_COUNT=2    # 证据题数门槛，< 此值判"数据不足"。默认 2（期中即可用）；=3 更保守
+SC_WEAKNESS_MODE=strict    # 薄弱判据：strict=仅贴近底线才触发 P25（消结构性误报）；standard=相对判据
+SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"曾经掌握"
+```
+
+这三个参数是系统"诊断准不准"的核心旋钮。默认值不是拍脑袋定的——是用 150 人 × 12 场考试 × 6 个随机种子的模拟跑出来的（见下文「验证体系」）：`MIN=2` 让系统不用熬到期末才出诊断，`strict` 把"全班都挺好却硬挑出 25% 薄弱"的误报砍掉 11%，召回和根源命中率不掉。想退回最保守的基线，设 `SC_MIN_EVIDENCE_COUNT=3 SC_WEAKNESS_MODE=standard` 即可。
+
+---
+
+## 核心功能与端点
+
+共 **56 个端点**（Swagger：http://localhost:8000/docs）。完整清单见 [frontend/design/README.md](frontend/design/README.md)。
+
+**知识库**
+- 导入与版本：`POST /kb/import`、`GET|POST /kb/versions`、`PATCH /kb/versions/{id}`、`GET /kb/versions/{id}/compatibility`
+- 运行时编辑（kb-edit，导入后可在前端 `/kb` 页改，无需重导 YAML）：知识点 CRUD `GET|POST /kb/kps`、`GET|PATCH|DELETE /kb/kps/{id}`；关系 CRUD `GET|POST /kb/relations`、`PATCH|DELETE /kb/relations/{id}`
+- 高杠杆参数（mastery_floor / difficulty_prior）支持 `?preview=true` 干跑，返回薄弱人数变化再落库
+- 辅助标注：`POST /kb/suggest-question-tags`（题干 -> 闭集知识点推荐，不落库，教师审核后才建卷）
+- 可疑边反查：`python -m scripts.audit_kb_edges --class-id N`（检测前置边两端掌握度低相关，让 LLM 起草图谱的错边可观测）
+
+**组织与考试**
+- `POST /schools`、`POST /schools/{id}/classes`、`POST|GET /classes/{id}/progress`（教学进度）
+- `POST|GET /exams`、`POST /exams/{id}/import-excel`（Excel）、`POST /exams/{id}/manual`（表格录入）、`POST /exams/{id}/commit`（提交，触发分析 + 题库飞轮）
+
+**拍照录入（两阶段）**
+- 阶段A 试卷模板：`POST /exams/photo-template`（解析题目结构 + LLM 知识点标注）-> `POST /exams/{id}/approve-tags`（教师审核全卷；抽样模式下低置信/抽样题保留待逐题确认）
+- 阶段B 学生卷：`POST /exams/{id}/photo-response`（每人一卷，仅抽得分/选项）-> `GET /exams/{id}/review-queue`（低置信题复核，返回 `review_reason`）-> `commit`
+- 批量录入：`POST /exams/{id}/photo-batch` -> `GET /exams/{id}/batch-jobs` / `GET /batch-jobs/{id}` -> 逐张 `POST /batch-items/{id}/{assign|retry|discard}`
+
+**分析产出**
+- 班级：`GET /classes/{id}/quality-report`（质量分析文档）
+- 个人：`GET /students/{id}/diagnosis`（诊断单）、`GET /students/{id}/mastery`、`GET /students/{id}/weaknesses`、`POST /students/{id}/attributions`
+- 诊断题证伪：`POST /attributions/{id}/verify`（用诊断题证据验证前置缺陷归因预测，证伪 -> `overridden`、证实 -> 记录确认、证据不足 -> inconclusive）
+- 归因否决：`POST /attributions/{id}/override`（教师人工否决，跨重跑保留）
+- 归因闭环度量：`GET /attributions/closure`（按证伪/证实/无法证伪分布统计诊断验证率与教师否决率，看归因从"纸面假设"走到"被验证"有多远）
+- 以上报告端点均可加 `?narrative=true` 追加 LLM 解读段（仅引用系统已算数字、表述为待核实假设、段落标注模型与 prompt 版本、失败静默降级）
+
+**前端页面**（12 个路由）：选班级 -> 概览 / 考试列表 / 新建考试（含 AI 推荐标注）/ 采集 / 审核台 / 质量报告 / 学生列表 / 个人诊断单 / 掌握度曲线 / 知识库编辑 / 首次使用引导。
+
+---
+
+## 验证体系
+
+**测试**：138 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）。
+
+```bash
+cd backend && ../.venv/bin/python -m pytest
+```
+
+### 三层验证，从"能跑"到"真的准"
+
+**第一层 · 合成金标**（`simulator/test_gold.py`）：植入已知薄弱点，跑通整条管线，断言能检出来。这是最基本的安全网--换模型、改 prompt 必跑，防静默退化。当前基线：
+
+| 指标 | 基线 |
+|---|---|
+| 薄弱召回 | ≥ 0.80 |
+| 根源命中 | 0.96 |
+| 遗忘识别 | 3/3 |
+| 共性标记 | 1.00 |
+| 误报 | ~0.21 |
+
+**第二层 · 有效性深挖**：金标能过，不代表真的有效--合成模拟器用的是同一套假设，存在"用同源逻辑自证"的循环验证嫌疑。于是做了几件较真的事（过程见 [effectiveness-validation-plan.md](docs/effectiveness-validation-plan.md)，结果见 [effectiveness-largescale-results.md](docs/effectiveness-largescale-results.md)）：
+
+- **数据饥饿**：发现默认 `MIN=3` 下整学期只有期末大考才出诊断，覆盖率卡在 0.40--系统是"期末回顾"而非"持续诊断"。
+- **P25 结构性误报**：全班都达标时，按相对位置仍会硬挑出 25% "薄弱"--和"不排名"的产品承诺冲突。
+- **遗忘识别不稳**：短时间跨度下，遗忘信号淹没在噪声里，5 个种子 0/3 ~ 3/3 乱跳。
+
+对症修了三处（`MIN` 可配 + low_evidence 护栏、`strict` 模式、遗忘阈值降噪），先以 env 开关形式验证不破基线、132 测试全绿；大规模验证通过后，`MIN=2` / `strict` 已转正为生产默认（见上文「配置」）。
+
+**第三层 · 大规模随机模拟**（`simulator/large_scale.py`）：这是打破循环验证的关键一步。不再固定"在第 105 个知识点植入薄弱"，而是**每换个种子就随机选 10 个位置植入**--管线必须在完全未知的位置把薄弱找出来、把根源归对。150 人、3 个班、12 场考试跨两学期 10 个月、6 个随机种子：
+
+| 指标 | 结果（mean ± stdev） | 说明 |
+|---|---|---|
+| 薄弱召回 | 0.887 ± 0.044 | 随机位置也能检出，不是对已知答案的拟合 |
+| 根源命中 | 0.863 ± 0.028 | 归因到正确的随机根源，而非噪声祖先 |
+| 遗忘识别 | 0.91 ± 0.07 | 长时间尺度（寒假 75 天间隔）下信号清晰，远优于短跨度 |
+| 正常误报 | 0.21 ± 0.02 | strict 模式比 standard 低 11%；残余是有限题量的估计噪声底 |
+
+有个意外收获：遗忘识别在 4 个月的测试里只有 ~0.6（很不稳），拉到 10 个月、有了真实的寒假间隔后跳到 0.91。**短跨度下"没识别出遗忘"不等于"没有遗忘"**--这是时间尺度依赖的，得给系统足够长的观察窗口。
+
+### 还差什么
+
+合成数据再像也不是真的。系统精度仍为合成基线，**200 题真实人工金标**（教师标注失分归属）是阻塞对外宣称精度的第一优先级，只能人工建。诊断题证伪闭环（`POST /attributions/{id}/verify`）是根本解，但需教师配合出题。北极星指标是**干预提升率**：被干预的薄弱点，复测后掌握度涨没涨。
+
+---
+
+## 改进记录与已知局限
+
+已落地的设计缺陷改进（详见 [improvement-plan.md](docs/improvement-plan.md) 的落地进度表）：
+
+- **§2.2 图谱可疑边反查**：检测前置边两端掌握度低相关，让 LLM 起草图谱的错边可观测。
+- **§2.3 前置强度参与归因**：根源选择用「掌握度缺口 × 前置强度」，关系 weight 不再是死字段。
+- **§2.1 知识库版本严格开关**：`SC_KB_STRICT_ACTIVE` + draft 兜底警告，避免分析跑在未审图谱上。
+- **§1.4-C 失分归属混合度折扣**：`SC_EVIDENCE_MIX_PENALTY` 对多 kp 混合题降权，减少失分等量污染。
+- **§1.4-A 诊断题证伪闭环**：`POST /attributions/{id}/verify` 用诊断题证据验证归因预测，让"可证伪"从纸面承诺变实际闭环。
+- **§3.2 高置信标注抽样复核**：`SC_TAG_REVIEW_SAMPLE_RATE` 批量批准时保留低置信与抽样题待逐题确认。
+- **§3.3 手工建卷 LLM 辅助标注**：题干 -> 闭集 kp 推荐，前端一键回填。
+- **§6 题库飞轮**：提交考试时有标注题目幂等写入 `bank_question`。
+
+**诊断有效性补强**（详见 [effectiveness-validation-plan.md](docs/effectiveness-validation-plan.md)）：
+
+- **全局薄弱抑制**：学生多数知识点都薄弱时，"特定前置根源"解释力下降（更像整体基础问题），前置缺陷归因置信度自动下调并标注，targeted-weak 不受影响。
+- **low_evidence 护栏**：证据偏少（< 3 题）的知识点可评估但不下因果归因，避免稀疏数据上造伪因果。原则是"评估从宽、归因从严"。
+- **strict 薄弱判据**：P25 相对判据仅在掌握度贴近底线时触发，消除"全班达标仍误报 25%"。已落地为生产默认。
+- **大规模随机模拟器**：`simulator/large_scale.py`，每种子随机选薄弱位置，打破循环验证；`scripts/effectiveness_largescale.py` 跑 150 人 × 12 场 × 6 种子。
+- **归因证伪闭环度量**：`GET /attributions/closure` 按证伪/证实/无法证伪分布统计诊断验证率与教师否决率。
+
+**知识图谱改进·第一批**（详见 [kb-improvement-design.md](docs/kb-improvement-design.md)）：
+
+- **floor 按认知层级派生**：识记 0.70 / 理解 0.65 / 应用 0.60 / 综合 0.55，综合题不再与识记题共用 0.6 底线。显式标注仍优先。大规模模拟误报 **0.208 → 0.198**（-5%），召回/根源不退化。
+- **前向影响预警**：诊断单对薄弱点提示"可能波及"的下游知识点（直接 / 间接分级），给"先补地基"的干预抓手。
+- **易混淆归因**：第四类归因类型——薄弱点的易混伙伴也弱时，归因"概念混淆"而非前置缺陷/遗忘（教研补边后生效面更大，3 条 → 10-15 条待补）。
+- **difficulty 先验**：`mastery_of_events` 支持贝叶斯收缩（能力已落地）。因与 floor 判定存在实证冲突（低证据正常学生被压过底线，金标误报 0.166→0.415），**默认关闭**，`SC_MASTERY_PRIOR_STRENGTH` 按需开启。
+
+**知识图谱改进·第二批**（详见 [kb-improvement-design.md](docs/kb-improvement-design.md)）：
+
+- **节点重要度**：`importance` 字段（基础/核心/拓展），kb.yaml 40 点已标初稿。报告薄弱清单按 基础>核心>拓展 排序（同级别按缺口降序）；全局薄弱判定按重要度加权（基础 ×1.5 / 拓展 ×0.5），避免「拓展题做不好」被当「全局基础差」。前端 /kb 可编辑。
+- **边权数据精炼**：`scripts/refine_edge_weights.py` 对每条前置边做贝叶斯收缩（α=n/(n+10)），低相关边（corr<0.2, n≥8）建议降权到 0.3 标「待复核」，只产 diff 报告不自动改图，教师确认后落库。真实数据到位后生效。
+- **认知层级分层掌握度**：多层 KP 按证据层级分维（`per_cog_mastery`），报告展示「识记 82% / 应用 45%」揭示"能复述但不会用"的层级断层。仅展示不参与薄弱判定。
+
+**已知局限**：失分归属是物理上限（单题得分率无法精确拆分给多 kp），诊断题证伪是根本解法但需教师配合出题；真实人工金标（200 题）尚未建立，系统精度仍为合成数据基线。残余误报 ~0.20 主要是有限题量下掌握度估计的噪声底（边界学生 0.65-0.70 贴近底线），非结构性缺陷，根治需每知识点更多题而非调参。K3 边权精炼的 root-hit 提升需真实数据（每边 ≥8 样本）才能兑现。
+
+---
+
+## 设计约束（前端必须遵守）
+
+- 不展示排名（双减）；
+- 每条结论证据可点开、置信度可见、教师可否决；
+- 措辞用成长框架（先进步、后缺口，缺口表述为"下一步"），无绝对化表达；
+- LLM 解读段必须保留"模型生成"标注与教师预览环节；
+- 教学进度未覆盖的知识点绝不判为薄弱（标"未学到"）。

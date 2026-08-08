@@ -1,0 +1,20 @@
+[project]
+name = "sc"
+version = "0.1.0"
+description = "学生知识薄弱点分析归因系统（DESIGN.md v0.3 MVP）"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "pyyaml",
+    "networkx",
+    "openpyxl",
+    "httpx",
+    "python-multipart",
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "simulator"]

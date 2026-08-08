@@ -1,0 +1,21 @@
+# 密钥与环境（绝不可入库）
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 运行时产物（可再生）
+sc.db
+sc.db-shm
+sc.db-wal
+output/
+.codegraph/
+
+# 系统与编辑器
+.DS_Store
+.idea/
+.vscode/
+node_modules/
