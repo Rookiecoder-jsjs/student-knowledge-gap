@@ -19,3 +19,8 @@ output/
 .idea/
 .vscode/
 node_modules/
+
+# 设计文档（仅本地，不入库）
+docs/
+frontend/design/
+design-system/
