@@ -1,30 +1,13 @@
 """枚举值 -> 口语标签映射（后端常量值不改，仅报告渲染层翻译）。
 
-与前端 frontend/app/src/lib/labels.ts 镜像，保持界面与报告口径一致。
-后端枚举常量（ATTR_PREREQ / TRAJ_* / weak_criterion）仍是 API 契约，
-测试断言这些常量值；此处仅做显示层翻译，未知值原样返回。
+单一真源在 ``app.labels_source``（候选5b：与前端 labels.ts 由同一份数据生成，
+防「同一映射两处写」漂移——曾漏 易混淆）。后端枚举常量（ATTR_PREREQ / TRAJ_* /
+weak_criterion）仍是 API 契约，测试断言这些常量值；此处仅做显示层翻译，未知值原样返回。
 """
 
 from __future__ import annotations
 
-ATTR_LABEL: dict[str, str] = {
-    "前置缺陷": "基础没打牢",
-    "遗忘衰减": "学过但忘了",
-    "数据不足": "数据不足",
-}
-
-TRAJ_LABEL: dict[str, str] = {
-    "稳定": "稳定",
-    "上升": "上升",
-    "下滑": "下滑",
-    "震荡": "时好时坏",
-}
-
-CRITERION_LABEL: dict[str, str] = {
-    "绝对底线": "低于及格线",
-    "班级P25": "处于班级后段",
-    "两者": "两条都中",
-}
+from app.labels_source import ATTR_LABEL, CRITERION_LABEL, TRAJ_LABEL
 
 
 def attr_label(type_: str) -> str:

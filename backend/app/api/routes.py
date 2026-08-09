@@ -26,6 +26,7 @@ from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
 from app.ingestion.templates import create_template
 from app.kb.graph import KpGraph
 from app.kb.loader import KbImportError, import_kb
+from app.kb.resolver import KbNotActiveError, active_kb
 from app.llm.client import LLMError, MockLLMClient, get_client
 from app.llm.prompts import RESPONSE_BATCH_PROMPT_VERSION
 from app.models import (
@@ -93,31 +94,14 @@ def _graph(session: Session, kb_version_id: int) -> KpGraph:
 
 
 def _active_kb(session: Session) -> KbVersion:
-    # 优先取 status=active 的最新版本；无 active 时兜底取最新（老库升级过渡期，
-    # 避免分析层全 500）。注：§4.5 fork 草稿场景下，fork 的 draft 不应靠兜底成为
-    # active——届时需收紧为仅 active 取，兜底仅留给迁移期。
-    kb = session.scalar(
-        select(KbVersion)
-        .where(KbVersion.status == "active")
-        .order_by(KbVersion.id.desc())
-    )
-    if kb is None:
-        if os.environ.get("SC_KB_STRICT_ACTIVE", "").lower() in ("1", "true", "yes"):
-            raise HTTPException(
-                400,
-                "无审核通过(active)的知识库版本，请先审核并激活"
-                "（SC_KB_STRICT_ACTIVE 已开启）",
-            )
-        kb = session.scalar(select(KbVersion).order_by(KbVersion.id.desc()))
-        if kb is not None and kb.status != "active":
-            logging.getLogger(__name__).warning(
-                "分析层兜底使用未激活的知识库版本(id=%d, status=%s, %s v%s)，"
-                "该版本未经教研审核，归因结果需谨慎核对（improvement-plan §2.1）",
-                kb.id,
-                kb.status,
-                kb.textbook_edition,
-                kb.version,
-            )
+    """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
+
+    strict 无 active → 400；无任何版本 → 400「尚未导入」。HTTP 层只做信号翻译。
+    """
+    try:
+        kb = active_kb(session)
+    except KbNotActiveError as e:
+        raise HTTPException(400, str(e))
     if kb is None:
         raise HTTPException(400, "尚未导入知识库，请先 POST /kb/import")
     return kb

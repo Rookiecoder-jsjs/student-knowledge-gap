@@ -61,6 +61,24 @@ class AttributionFinding:
     prediction: str = ""
 
 
+@dataclass
+class ResolvedAttribution:
+    """该生某归因的读视图（候选1：推导假设 ⊕ 人工裁决叠加，derive-on-read）。
+
+    ``verdict``：active（系统推导，未被裁决）| overridden（教师否决/诊断题证伪）。
+    只读渲染用；不写库。与持久化 ``Attribution``（裁决记录/审计）解耦。
+    """
+
+    kp_id: int
+    type: str
+    confidence: float
+    root_kp_id: int | None = None
+    evidence: list[dict] = field(default_factory=list)
+    prediction: str = ""
+    verdict: str = "active"
+    teacher_note: str | None = None
+
+
 def attribute_assessment(
     session: Session,
     graph: KpGraph,

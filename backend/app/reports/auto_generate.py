@@ -18,6 +18,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.kb.graph import KpGraph
+from app.kb.resolver import KbNotActiveError, active_kb
 from app.models import (
     ExamResponse,
     ExamTemplate,
@@ -118,23 +119,12 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
 
 
 def _active_kb(session: Session) -> KbVersion | None:
-    """取 status=active 的知识库版本（与 API 层同源：无 active 时兜底取最新）。
+    """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
 
-    兜底兼容老库/过渡期（此时报告结论需教研核对，与运行时一致）；仍无则返回 None，
-    报告生成跳过、不影响提交。
+    报告生成是 best-effort：strict 无 active / 无任何版本均返回 None，报告跳过、不影响提交。
     """
-    kb = session.scalar(
-        select(KbVersion)
-        .where(KbVersion.status == "active")
-        .order_by(KbVersion.id.desc())
-    )
-    if kb is not None:
-        return kb
-    kb = session.scalar(select(KbVersion).order_by(KbVersion.id.desc()))
-    if kb is not None and kb.status != "active":
-        logger.warning(
-            "报告生成使用未激活知识库版本(id=%d, status=%s)，结论需教研核对",
-            kb.id,
-            kb.status,
-        )
-    return kb
+    try:
+        return active_kb(session)
+    except KbNotActiveError:
+        logger.warning("考试报告生成跳过：SC_KB_STRICT_ACTIVE 下无 active 知识库版本")
+        return None
