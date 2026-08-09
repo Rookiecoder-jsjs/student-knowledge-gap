@@ -174,6 +174,7 @@ export interface ReportSummary {
   type: string;
   class_id: number | null;
   student_id: number | null;
+  exam_id: number | null;
   generated_at: string | null;
 }
 

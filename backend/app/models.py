@@ -430,6 +430,10 @@ class Report(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
     content_markdown: Mapped[str] = mapped_column(Text, default="")
+    # 提交后自动生成时关联到具体考试；历史按需生成的报告为 None
+    exam_id: Mapped[int | None] = mapped_column(ForeignKey("exam_template.id"), nullable=True)
+    # AI 解读段缓存：首次查看 narrative 时生成并写入，之后永久可看
+    narrative_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ---------------------------------------------------------------------------

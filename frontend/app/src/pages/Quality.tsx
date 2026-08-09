@@ -88,7 +88,13 @@ export default function Quality() {
         </Button>
         <Button onClick={generate} disabled={loading || examId === null} className="ml-auto">
           <FileText size={15} />
-          {loading ? "生成中…" : report ? "重新生成" : "生成报告"}
+          {loading
+            ? narrative
+              ? "解读生成中…"
+              : "生成中…"
+            : report
+              ? "查看报告"
+              : "生成报告"}
         </Button>
       </Card>
 

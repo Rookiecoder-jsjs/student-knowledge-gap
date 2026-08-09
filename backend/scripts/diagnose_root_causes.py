@@ -64,7 +64,7 @@ def _build(session, seed):
     session.flush()
     truth = build_simulation(session, kb.id, clazz.id, n_students=30, seed=seed)
     for tpl_id in truth.exam_ids.values():
-        commit_exam(session, tpl_id)
+        commit_exam(session, tpl_id, generate_reports=False)
     return kb, clazz, truth
 
 

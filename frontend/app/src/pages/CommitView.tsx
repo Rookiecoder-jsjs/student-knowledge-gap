@@ -22,7 +22,13 @@ export default function CommitView() {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [result, setResult] = useState<{ committed_responses: number; evidence_events: number; skipped: string[] } | null>(null);
+  const [result, setResult] = useState<{
+    committed_responses: number;
+    evidence_events: number;
+    quality_report?: boolean;
+    diagnoses?: number;
+    skipped: string[];
+  } | null>(null);
 
   const doCommit = async () => {
     setBusy(true);
@@ -86,6 +92,11 @@ export default function CommitView() {
           <p className="text-sm font-semibold">
             已提交 {result.committed_responses} 份作答，生成 {result.evidence_events} 条分析依据
           </p>
+          {result.quality_report && (
+            <p className="text-xs text-ink-soft">
+              已自动生成班级质量报告 + {result.diagnoses ?? 0} 份学生诊断，一次生成、随时查看。
+            </p>
+          )}
           {result.skipped.length > 0 && (
             <p className="max-w-[52ch] text-xs text-warn">
               跳过 {result.skipped.length} 条：{result.skipped.slice(0, 3).join("；")}
@@ -143,7 +154,7 @@ export default function CommitView() {
               取消
             </Button>
             <Button variant="danger" onClick={doCommit} disabled={busy}>
-              {busy ? "提交中…" : "确认提交"}
+              {busy ? "提交中，正在生成报告…" : "确认提交"}
             </Button>
           </>
         }

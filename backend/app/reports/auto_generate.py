@@ -1,0 +1,140 @@
+"""考试提交后自动生成并落库班级质量报告 + 已参加学生诊断（plan §1.2）。
+
+触发：commit_exam 提交后同步调用。基础报告不含 LLM（秒级~十几秒）；
+AI 解读在首次查看时生成并缓存到 narrative_markdown，一次生成永久查看。
+
+幂等：同一场考试重复生成按 (exam_id, type[, student_id]) 替换，不产生重复行。
+失败降级：整体包在 savepoint 里，报告生成失败仅回滚 savepoint，
+不影响考试提交本身（提交是主流程，报告是附带产物）。
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime, time
+
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from app.kb.graph import KpGraph
+from app.models import (
+    ExamResponse,
+    ExamTemplate,
+    KbVersion,
+    Report,
+    Student,
+)
+from app.pipeline.attribution import run_attribution_for_student
+from app.pipeline.mastery import get_events_batch
+from app.reports.quality_analysis import generate_quality_analysis
+from app.reports.student_diagnosis import generate_student_diagnosis
+
+logger = logging.getLogger(__name__)
+
+_REPORT_TYPES = ("quality_analysis", "student_diagnosis")
+
+
+@dataclass
+class ExamReportResult:
+    """一场考试自动生成的结果摘要（提交响应带回）。"""
+
+    quality: bool = False
+    diagnoses: int = 0
+
+
+def generate_exam_reports(session: Session, exam_id: int) -> ExamReportResult:
+    """为一场考试自动生成班级质量报告 + 已参加学生诊断并落库。
+
+    best-effort：内部失败回滚 savepoint 并返回全 False 结果，绝不向提交抛异常。
+    """
+    template = session.get(ExamTemplate, exam_id)
+    if template is None:
+        return ExamReportResult()
+    kb = _active_kb(session)
+    if kb is None:
+        logger.warning("考试 %s 报告生成跳过：无 active 知识库版本", exam_id)
+        return ExamReportResult()
+    graph = KpGraph(session, kb.id)
+    try:
+        with session.begin_nested():
+            result = _generate_exam_reports(session, graph, exam_id)
+        return result
+    except Exception:
+        logger.exception("考试 %s 报告生成失败（不影响提交）", exam_id)
+        return ExamReportResult()
+
+
+def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> ExamReportResult:
+    template = session.get(ExamTemplate, exam_id)
+    as_of = datetime.combine(template.exam_date, time(23, 59))
+    class_id = template.class_id
+
+    # 只为已提交本场考试的学生生成诊断（未参加者不与本场报告关联）
+    student_ids = list(
+        session.scalars(
+            select(ExamResponse.student_id).where(
+                ExamResponse.exam_template_id == exam_id,
+                ExamResponse.status == "已提交",
+            )
+        )
+    )
+    if not student_ids:
+        return ExamReportResult()
+    students = list(session.scalars(select(Student).where(Student.id.in_(student_ids))))
+
+    # 先清掉本场旧报告再重建（幂等替换）；失败时 savepoint 整体回滚、旧报告保留
+    session.execute(
+        delete(Report).where(
+            Report.exam_id == exam_id,
+            Report.type.in_(_REPORT_TYPES),
+        )
+    )
+
+    # 一次批量预取全班×全 kp 证据，班级报告与各生诊断共享（避免 N 次全表扫描）
+    events_by_sk = get_events_batch(
+        session,
+        [s.id for s in students],
+        list(graph.grade7_kp_ids()),
+        as_of,
+    )
+
+    generate_quality_analysis(
+        session, graph, class_id, exam_id, narrative=False, events_by_sk=events_by_sk
+    )
+    for s in students:
+        run_attribution_for_student(session, graph, s.id, class_id, as_of)
+        generate_student_diagnosis(
+            session,
+            graph,
+            s.id,
+            as_of=as_of,
+            narrative=False,
+            events_by_sk=events_by_sk,
+            exam_id=exam_id,
+        )
+    session.flush()
+    return ExamReportResult(quality=True, diagnoses=len(students))
+
+
+def _active_kb(session: Session) -> KbVersion | None:
+    """取 status=active 的知识库版本（与 API 层同源：无 active 时兜底取最新）。
+
+    兜底兼容老库/过渡期（此时报告结论需教研核对，与运行时一致）；仍无则返回 None，
+    报告生成跳过、不影响提交。
+    """
+    kb = session.scalar(
+        select(KbVersion)
+        .where(KbVersion.status == "active")
+        .order_by(KbVersion.id.desc())
+    )
+    if kb is not None:
+        return kb
+    kb = session.scalar(select(KbVersion).order_by(KbVersion.id.desc()))
+    if kb is not None and kb.status != "active":
+        logger.warning(
+            "报告生成使用未激活知识库版本(id=%d, status=%s)，结论需教研核对",
+            kb.id,
+            kb.status,
+        )
+    return kb

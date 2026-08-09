@@ -55,7 +55,7 @@ def main() -> None:
 
         total_events = 0
         for name, tpl_id in truth.exam_ids.items():
-            r = commit_exam(session, tpl_id)
+            r = commit_exam(session, tpl_id, generate_reports=False)
             total_events += r.evidence_events
             print(f"      提交「{name}」：{r.committed_responses} 人，"
                   f"+{r.evidence_events} 条证据事件")

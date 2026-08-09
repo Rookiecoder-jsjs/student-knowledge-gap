@@ -21,6 +21,7 @@ from app.models import (
     TemplateQuestion,
 )
 from app.pipeline.evidence import derive_events_for_response
+from app.reports.auto_generate import generate_exam_reports
 
 
 @dataclass
@@ -28,11 +29,20 @@ class CommitResult:
     committed_responses: int = 0
     evidence_events: int = 0
     bank_questions: int = 0
+    quality_report: bool = False
+    diagnoses: int = 0
     skipped: list[str] = field(default_factory=list)
 
 
-def commit_exam(session: Session, template_id: int) -> CommitResult:
-    """将一场考试的全部「待审核」作答提交并派生证据事件。"""
+def commit_exam(
+    session: Session, template_id: int, generate_reports: bool = True
+) -> CommitResult:
+    """将一场考试的全部「待审核」作答提交并派生证据事件。
+
+    ``generate_reports``：默认提交后自动生成班级报告 + 学生诊断（产品端点语义）；
+    批量脚本（run_demo / effectiveness_* / diagnose_root_causes）传 False，
+    避免大规模模拟时每场考试都跑报告生成。
+    """
     result = CommitResult()
     responses = list(
         session.scalars(
@@ -58,6 +68,13 @@ def commit_exam(session: Session, template_id: int) -> CommitResult:
 
     session.flush()
     result.bank_questions = seed_bank_from_template(session, template_id)
+
+    # 自动生成班级质量报告 + 已参加学生诊断并落库（一次生成永久查看）。
+    # best-effort：报告失败不影响提交本身。
+    if result.committed_responses > 0 and generate_reports:
+        reports = generate_exam_reports(session, template_id)
+        result.quality_report = reports.quality
+        result.diagnoses = reports.diagnoses
     return result
 
 

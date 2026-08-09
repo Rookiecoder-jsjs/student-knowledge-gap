@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.kb.graph import KpGraph
-from app.models import Attribution, Class, Report, Student
+from app.models import Attribution, Class, EvidenceEvent, Report, Student
 from app.reports.labels import attr_label, criterion_label, traj_label
 from app.pipeline.weakness import (
     GATE_INSUFFICIENT,
@@ -35,13 +35,18 @@ def generate_student_diagnosis(
     student_id: int,
     as_of: datetime | None = None,
     narrative: bool = False,
+    events_by_sk: dict[tuple[int, int], list[EvidenceEvent]] | None = None,
+    exam_id: int | None = None,
 ) -> Report:
     student = session.get(Student, student_id)
     clazz = session.get(Class, student.class_id)
     if as_of is None:
         as_of = datetime.utcnow()
 
-    assessments = assess_student_kps(session, graph, student_id, student.class_id, as_of)
+    # events_by_sk 由调用方批量预取传入（提交自动生成时全班共享一次扫描），缺省则内部各取
+    assessments = assess_student_kps(
+        session, graph, student_id, student.class_id, as_of, events_by_sk=events_by_sk
+    )
     attributions = {
         att.kp_id: att
         for att in session.scalars(
@@ -217,6 +222,7 @@ def generate_student_diagnosis(
         type="student_diagnosis",
         class_id=student.class_id,
         student_id=student_id,
+        exam_id=exam_id,  # 关联到具体考试（提交自动生成 / get-or-generate 落库）
         snapshot_json=snapshot,
         content_markdown=markdown,
     )

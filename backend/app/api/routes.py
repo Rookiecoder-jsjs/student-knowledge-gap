@@ -266,6 +266,8 @@ def commit(exam_id: int, db: Session = Depends(get_db)):
     return {
         "committed_responses": result.committed_responses,
         "evidence_events": result.evidence_events,
+        "quality_report": result.quality_report,
+        "diagnoses": result.diagnoses,
         "skipped": result.skipped[:20],
     }
 
@@ -753,22 +755,66 @@ def discard_batch_item(item_id: int, db: Session = Depends(get_db)):
     return {"id": item.id, "status": "discarded"}
 
 
+def get_or_create_narrative(session: Session, report: Report) -> str:
+    """AI 解读段缓存：首次查看生成并写入 narrative_markdown，之后永久可看。
+
+    仅在 LLM 可用时返回段落；不可用返回空串（调用方按无解读处理）。
+    """
+    if report.narrative_markdown:
+        return report.narrative_markdown
+    from app.reports.narrative import render_narrative
+
+    section = render_narrative(report.content_markdown, report.type)
+    if section:
+        report.narrative_markdown = section
+        session.flush()
+        return report.narrative_markdown
+    return ""
+
+
+def _latest_stored_diagnosis(session: Session, student_id: int) -> Report | None:
+    """该生最近一场考试的已存诊断（按考试日期降序取最新）。"""
+    return session.scalar(
+        select(Report)
+        .join(ExamTemplate, Report.exam_id == ExamTemplate.id)
+        .where(
+            Report.student_id == student_id,
+            Report.type == "student_diagnosis",
+            Report.exam_id.is_not(None),
+        )
+        .order_by(ExamTemplate.exam_date.desc(), Report.id.desc())
+        .limit(1)
+    )
+
+
 @router.get("/classes/{class_id}/quality-report")
 def quality_report(
     class_id: int, exam_id: int, narrative: bool = False, db: Session = Depends(get_db)
 ):
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
-    try:
-        report = generate_quality_analysis(db, graph, class_id, exam_id, narrative=narrative)
-    except Exception as e:
-        raise HTTPException(400, str(e))
-    return {"report_id": report.id, "markdown": report.content_markdown}
+    # get-or-generate：有已存报告直接返回（提交后自动生成）；无则补生成并落库
+    report = db.scalar(
+        select(Report).where(
+            Report.exam_id == exam_id,
+            Report.type == "quality_analysis",
+        )
+    )
+    if report is None:
+        try:
+            report = generate_quality_analysis(db, graph, class_id, exam_id, narrative=False)
+        except Exception as e:
+            raise HTTPException(400, str(e))
+    markdown = report.content_markdown
+    if narrative:
+        markdown += get_or_create_narrative(db, report)
+    return {"report_id": report.id, "markdown": markdown}
 
 
 @router.get("/students/{student_id}/diagnosis")
 def diagnosis(
     student_id: int,
+    exam_id: int | None = None,
     as_of: date | None = None,
     narrative: bool = False,
     db: Session = Depends(get_db),
@@ -777,13 +823,52 @@ def diagnosis(
         raise HTTPException(404, "学生不存在")
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
-    # 诊断前先刷新归因（derive-on-read 的归因落库）
     stu = db.get(Student, student_id)
-    run_attribution_for_student(db, graph, student_id, stu.class_id, _as_dt(as_of))
-    report = generate_student_diagnosis(
-        db, graph, student_id, _as_dt(as_of), narrative=narrative
-    )
-    return {"report_id": report.id, "markdown": report.content_markdown}
+
+    if exam_id is not None:
+        # 指定考试：返回该场已存诊断（提交自动生成）；无则按考试日补生成落库
+        report = db.scalar(
+            select(Report).where(
+                Report.exam_id == exam_id,
+                Report.type == "student_diagnosis",
+                Report.student_id == student_id,
+            )
+        )
+        if report is None:
+            exam = db.get(ExamTemplate, exam_id)
+            if exam is None:
+                raise HTTPException(404, "考试不存在")
+            report_as_of = datetime.combine(exam.exam_date, time(23, 59))
+            run_attribution_for_student(db, graph, student_id, stu.class_id, report_as_of)
+            report = generate_student_diagnosis(
+                db, graph, student_id, as_of=report_as_of, narrative=False, exam_id=exam_id
+            )
+        markdown = report.content_markdown
+    elif as_of is None:
+        # 无 exam_id 且无 as_of：返回最近一场考试的已存诊断（随时看）；
+        # 没有则按今天现算（兼容旧行为）
+        report = _latest_stored_diagnosis(db, student_id)
+        if report is None:
+            when = _as_dt(None)
+            run_attribution_for_student(db, graph, student_id, stu.class_id, when)
+            report = generate_student_diagnosis(
+                db, graph, student_id, as_of=when, narrative=False
+            )
+        markdown = report.content_markdown
+    else:
+        # 自定义 as_of 现算（不关联 exam）
+        when = _as_dt(as_of)
+        run_attribution_for_student(db, graph, student_id, stu.class_id, when)
+        report = generate_student_diagnosis(
+            db, graph, student_id, as_of=when, narrative=False
+        )
+        markdown = report.content_markdown
+
+    if narrative:
+        markdown += get_or_create_narrative(db, report)
+    # 快照 as_of（诊断报告 snapshot 恒有该字段）：前端据此标注并同步右侧弱项面板
+    as_of_str = (report.snapshot_json or {}).get("as_of")
+    return {"report_id": report.id, "markdown": markdown, "as_of": as_of_str}
 
 
 # ---------------------------------------------------------------------------
@@ -1921,6 +2006,7 @@ async def kb_upload(file: UploadFile = File(...), db: Session = Depends(get_db))
 def list_reports(
     class_id: int | None = None,
     student_id: int | None = None,
+    exam_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     stmt = select(Report).order_by(Report.generated_at.desc(), Report.id.desc())
@@ -1928,6 +2014,8 @@ def list_reports(
         stmt = stmt.where(Report.class_id == class_id)
     if student_id is not None:
         stmt = stmt.where(Report.student_id == student_id)
+    if exam_id is not None:
+        stmt = stmt.where(Report.exam_id == exam_id)
     return {
         "reports": [
             {
@@ -1935,6 +2023,7 @@ def list_reports(
                 "type": r.type,
                 "class_id": r.class_id,
                 "student_id": r.student_id,
+                "exam_id": r.exam_id,
                 "generated_at": r.generated_at.isoformat() if r.generated_at else None,
             }
             for r in db.scalars(stmt)
@@ -1952,6 +2041,7 @@ def report_detail(report_id: int, db: Session = Depends(get_db)):
         "type": report.type,
         "class_id": report.class_id,
         "student_id": report.student_id,
+        "exam_id": report.exam_id,
         "generated_at": report.generated_at.isoformat() if report.generated_at else None,
         "markdown": report.content_markdown,
         "snapshot": report.snapshot_json,

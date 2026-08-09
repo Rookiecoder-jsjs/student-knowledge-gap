@@ -165,7 +165,7 @@ def part_a_trajectory():
         print(header)
         print("-" * len(header))
         for name, exam_date, _t, _p in EXAM_SCHEDULE:
-            commit_exam(session, truth.exam_ids[name])
+            commit_exam(session, truth.exam_ids[name], generate_reports=False)
             as_of = datetime.combine(exam_date + timedelta(days=1), time(12, 0))
             m = _measure(session, graph, truth, clazz, as_of)
             print(
@@ -195,7 +195,7 @@ def part_b_variance():
             kb, clazz, truth = _build(session, 30, seed)
             graph = KpGraph(session, kb.id)
             for name in truth.exam_ids:
-                commit_exam(session, truth.exam_ids[name])
+                commit_exam(session, truth.exam_ids[name], generate_reports=False)
             m = _measure(session, graph, truth, clazz, FINAL_AS_OF)
             for k in keys:
                 samples[k].append(m[k])

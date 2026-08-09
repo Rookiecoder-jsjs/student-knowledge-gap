@@ -1,6 +1,6 @@
 # 📊 学生知识薄弱点分析归因系统（sc）
 
-一个面向中学教师的**学情诊断工具**🎓。长期追踪学生每次考试/练习表现，估计各知识点的掌握度，归因薄弱点的成因，并生成可直接用于讲评课、家长会、教务汇报的文档，通过复测形成闭环。试点学科是初一数学（人教版七上）📐——不过年级只是知识库数据层参数，换个 YAML 就能切换学科。
+一个面向中学教师的**学情诊断工具**🎓。长期追踪学生每次考试/练习表现，估计各知识点的掌握度，归因薄弱点的成因，并生成可直接用于讲评课、家长会、教务汇报的文档，通过复测形成闭环。考试一提交，班级报告与个人诊断就**自动生成并落库**——一次生成，随时回看 💾。试点学科是初一数学（人教版七上）📐——不过年级只是知识库数据层参数，换个 YAML 就能切换学科。
 
 > 📌 设计依据、改进方案、诊断有效性验证、知识图谱改进等设计文档仅保留本地（`docs/`），不入库。
 
@@ -33,7 +33,8 @@
 
 1. 📝 **一键考后质量分析文档**（班级，可编辑、可导出）——替代教师已有工作；
 2. 🧑‍🎓 **个人诊断单**（薄弱点 + 证据 + 建议）；
-3. 📈 仪表盘为探索性辅助（概览、掌握度曲线、学生画像）。
+3. 📈 仪表盘为探索性辅助（概览、掌握度曲线、学生画像）；
+4. 💾 **提交即自动生成**——考试提交后，班级质量报告 + 全班学生诊断自动落库并关联该场考试，一次生成、永久查看；AI 解读段首次查看时生成并缓存。
 
 ---
 
@@ -80,7 +81,7 @@ sc/
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
 │   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph（前置边遍历 + 可疑边反查）
 │   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪）
-│   │   ├── reports/          #   quality_analysis / student_diagnosis / narrative（LLM 解读）
+│   │   ├── reports/          #   quality_analysis / student_diagnosis / auto_generate（提交后自动生成）/ narrative（LLM 解读）
 │   │   ├── llm/              #   provider 无关客户端 + prompts
 │   │   ├── models.py schemas.py config.py db.py main.py
 │   ├── kb/math/grade7/kb.yaml #   知识库（人教版七上，待教研审核）
@@ -105,7 +106,7 @@ sc/
 
 ```bash
 cd backend
-python -m pytest                                  # 🧪 单元 + 金标 + 压力断言（138 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（150 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
 python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
@@ -163,31 +164,32 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 **🏫 组织与考试**
 - `POST /schools`、`POST /schools/{id}/classes`、`POST|GET /classes/{id}/progress`（教学进度）
-- `POST|GET /exams`、`POST /exams/{id}/import-excel`（Excel）、`POST /exams/{id}/manual`（表格录入）、`POST /exams/{id}/commit`（提交，触发分析 + 题库飞轮）
+- `POST|GET /exams`、`POST /exams/{id}/import-excel`（Excel）、`POST /exams/{id}/manual`（表格录入）、`POST /exams/{id}/commit`（提交，触发分析 + 题库飞轮，并自动生成班级报告 + 全班学生诊断落库）
 
 **📷 拍照录入（两阶段）**
 - 阶段A 试卷模板：`POST /exams/photo-template`（解析题目结构 + LLM 知识点标注）-> `POST /exams/{id}/approve-tags`（教师审核全卷；抽样模式下低置信/抽样题保留待逐题确认）
 - 阶段B 学生卷：`POST /exams/{id}/photo-response`（每人一卷，仅抽得分/选项）-> `GET /exams/{id}/review-queue`（低置信题复核，返回 `review_reason`）-> `commit`
 - 批量录入：`POST /exams/{id}/photo-batch` -> `GET /exams/{id}/batch-jobs` / `GET /batch-jobs/{id}` -> 逐张 `POST /batch-items/{id}/{assign|retry|discard}`
 
-**📈 分析产出**
-- 班级：`GET /classes/{id}/quality-report`（质量分析文档）
-- 个人：`GET /students/{id}/diagnosis`（诊断单）、`GET /students/{id}/mastery`、`GET /students/{id}/weaknesses`、`POST /students/{id}/attributions`
+**📈 分析产出（get-or-generate：有已存直接返回，无则补生成落库）**
+- 班级：`GET /classes/{id}/quality-report?exam_id=`（质量分析文档——提交后已自动生成，秒回；未提交过的考试按需补生成）
+- 个人：`GET /students/{id}/diagnosis`（诊断单——默认返回该生**最近一场考试**的已存诊断，随时看；`?exam_id=` 指定某场、`?as_of=` 按日期现算）、`GET /students/{id}/mastery`、`GET /students/{id}/weaknesses`、`POST /students/{id}/attributions`
 - 诊断题证伪：`POST /attributions/{id}/verify`（用诊断题证据验证前置缺陷归因预测，证伪 -> `overridden`、证实 -> 记录确认、证据不足 -> inconclusive）
 - 归因否决：`POST /attributions/{id}/override`（教师人工否决，跨重跑保留）
 - 归因闭环度量：`GET /attributions/closure`（按证伪/证实/无法证伪分布统计诊断验证率与教师否决率，看归因从"纸面假设"走到"被验证"有多远）
-- 以上报告端点均可加 `?narrative=true` 追加 LLM 解读段（仅引用系统已算数字、表述为待核实假设、段落标注模型与 prompt 版本、失败静默降级）
+- 报告列表与详情：`GET /reports`（可按 `exam_id`/`class_id`/`student_id` 过滤）、`GET /reports/{id}`
+- 报告 AI 解读段首次 `?narrative=true` 查看时生成并缓存到库，之后永久可看（仅引用系统已算数字、标注模型与 prompt 版本、失败静默降级）
 
-**🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
+**🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时选日期回看任意时点（报告与弱项面板同一时间基准）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
 
 ---
 
 ## ✅ 验证体系
 
-**测试**：138 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
+**测试**：150 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
 
 ```bash
-cd backend && python -m pytest
+cd backend && python -m pytest tests simulator
 ```
 
 ### 三层验证，从"能跑"到"真的准"
@@ -260,6 +262,14 @@ cd backend && python -m pytest
 - **节点重要度**：`importance` 字段（基础/核心/拓展），kb.yaml 40 点已标初稿。报告薄弱清单按 基础>核心>拓展 排序（同级别按缺口降序）；全局薄弱判定按重要度加权（基础 ×1.5 / 拓展 ×0.5），避免「拓展题做不好」被当「全局基础差」。前端 /kb 可编辑。
 - **边权数据精炼**：`scripts/refine_edge_weights.py` 对每条前置边做贝叶斯收缩（α=n/(n+10)），低相关边（corr<0.2, n≥8）建议降权到 0.3 标「待复核」，只产 diff 报告不自动改图，教师确认后落库。真实数据到位后生效。
 - **认知层级分层掌握度**：多层 KP 按证据层级分维（`per_cog_mastery`），报告展示「识记 82% / 应用 45%」揭示"能复述但不会用"的层级断层。仅展示不参与薄弱判定。
+
+**提交后自动生成报告**（一次生成永久查看）：
+
+- 考试提交后自动生成 1 份班级质量报告 + 全班已参加学生各 1 份诊断，落库并关联 `exam_id`，幂等替换不产生重复行。
+- 批量证据预取：全班×全 kp 证据一次扫描，班级报告与所有学生诊断共享，30 生诊断从 N 次扫描降到 1 次。
+- 查看端点改 get-or-generate：有已存直接返回，无则补生成；AI 解读首次查看生成并缓存到 `narrative_markdown`，不重复调 LLM。
+- 诊断页默认最近一场考试的已存诊断，日期选择器回看任意时点；报告生成是 best-effort，失败不影响考试提交本身。
+- 批量模拟脚本（run_demo / effectiveness_* / diagnose_root_causes）经 `commit_exam(generate_reports=False)` 跳过，不影响既有工作流。
 
 **已知局限**：失分归属是物理上限（单题得分率无法精确拆分给多 kp），诊断题证伪是根本解法但需教师配合出题；真实人工金标（200 题）尚未建立，系统精度仍为合成数据基线。残余误报 ~0.20 主要是有限题量下掌握度估计的噪声底（边界学生 0.65-0.70 贴近底线），非结构性缺陷，根治需每知识点更多题而非调参。K3 边权精炼的 root-hit 提升需真实数据（每边 ≥8 样本）才能兑现。
 

@@ -347,10 +347,13 @@ export const manualEntry = (examId: number, student_id: number, scores: Record<s
   );
 
 export const commitExam = (examId: number) =>
-  request<{ committed_responses: number; evidence_events: number; skipped: string[] }>(
-    `/exams/${examId}/commit`,
-    { method: "POST" }
-  );
+  request<{
+    committed_responses: number;
+    evidence_events: number;
+    quality_report?: boolean;
+    diagnoses?: number;
+    skipped: string[];
+  }>(`/exams/${examId}/commit`, { method: "POST" });
 
 // ---- 采集与审核 --------------------------------------------------------------
 
@@ -438,9 +441,14 @@ export const qualityReport = (classId: number, examId: number, narrative: boolea
     `/classes/${classId}/quality-report?exam_id=${examId}&narrative=${narrative}`
   );
 
-export const diagnosisReport = (studentId: number, narrative: boolean, asOf?: string) =>
-  request<{ report_id: number; markdown: string }>(
-    `/students/${studentId}/diagnosis?narrative=${narrative}${asOf ? `&as_of=${asOf}` : ""}`
+export const diagnosisReport = (
+  studentId: number,
+  narrative: boolean,
+  asOf?: string,
+  examId?: number
+) =>
+  request<{ report_id: number; markdown: string; as_of?: string | null }>(
+    `/students/${studentId}/diagnosis?narrative=${narrative}${asOf ? `&as_of=${asOf}` : ""}${examId ? `&exam_id=${examId}` : ""}`
   );
 
 export const listReports = (classId?: number, studentId?: number) => {

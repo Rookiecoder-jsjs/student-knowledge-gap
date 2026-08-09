@@ -17,6 +17,7 @@ from app.config import CLASS_COMMON_WEAK_RATIO
 from app.kb.graph import KpGraph
 from app.models import (
     Class,
+    EvidenceEvent,
     ExamResponse,
     ExamTemplate,
     Report,
@@ -34,6 +35,7 @@ def generate_quality_analysis(
     class_id: int,
     exam_id: int,
     narrative: bool = False,
+    events_by_sk: dict[tuple[int, int], list[EvidenceEvent]] | None = None,
 ) -> Report:
     clazz = session.get(Class, class_id)
     template = session.get(ExamTemplate, exam_id)
@@ -92,9 +94,12 @@ def generate_quality_analysis(
     # ---- 班级知识点掌握度（derive-on-read） ----
     # G4：一次预取全班×全 kp 证据，跨学生复用（原逐学生 assess 内部各预取一次 = 重复全表扫描）
     class_student_ids = [s.id for s in students]
-    events_by_sk = get_events_batch(
-        session, class_student_ids, list(graph.grade7_kp_ids()), as_of
-    )
+    # G4：一次预取全班×全 kp 证据，跨学生复用。events_by_sk 由调用方预取传入可
+    # 供多份报告共享（auto_generate 提交时批量生成）；缺省则内部预取。
+    if events_by_sk is None:
+        events_by_sk = get_events_batch(
+            session, class_student_ids, list(graph.grade7_kp_ids()), as_of
+        )
     per_student: dict[int, list[KpAssessment]] = {
         sid: assess_student_kps(
             session, graph, sid, class_id, as_of, events_by_sk=events_by_sk
@@ -240,6 +245,7 @@ def generate_quality_analysis(
     report = Report(
         type="quality_analysis",
         class_id=class_id,
+        exam_id=exam_id,  # 关联到具体考试（提交后自动生成 / get-or-generate 落库）
         snapshot_json=snapshot,
         content_markdown=markdown,
     )

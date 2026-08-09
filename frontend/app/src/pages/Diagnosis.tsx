@@ -1,7 +1,7 @@
 import { CaretDown, CaretRight, HandPalm } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, SectionTitle, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Input, PageHeader, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import {
@@ -29,7 +29,13 @@ export default function Diagnosis() {
   const sid = Number(studentId);
 
   const students = useAsync(() => listStudents(cid), [cid]);
-  const weak = useAsync(() => getWeaknesses(sid), [sid]);
+  // 右侧弱项面板与报告同 as_of：默认跟随报告快照日期；显式选日期时按所选现算
+  const [asOf, setAsOf] = useState("");
+  const [reportAsOf, setReportAsOf] = useState<string | null>(null);
+  const weak = useAsync(
+    () => getWeaknesses(sid, asOf || reportAsOf || undefined),
+    [sid, asOf, reportAsOf]
+  );
   const student = students.data?.students.find((s) => s.student_id === sid);
 
   const [attributions, setAttributions] = useState<AttributionView[] | null>(null);
@@ -51,8 +57,9 @@ export default function Diagnosis() {
     setReportLoading(true);
     setReportError(null);
     try {
-      const r = await diagnosisReport(sid, narrative);
+      const r = await diagnosisReport(sid, narrative, asOf || undefined);
       setReport(r.markdown);
+      setReportAsOf(r.as_of ?? null);
     } catch (e) {
       setReportError((e as Error).message);
     } finally {
@@ -63,7 +70,7 @@ export default function Diagnosis() {
   useEffect(() => {
     generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sid, narrative]);
+  }, [sid, narrative, asOf]);
 
   return (
     <div>
@@ -71,13 +78,23 @@ export default function Diagnosis() {
         title={student ? `${student.name_or_alias} 的诊断单` : "学生诊断单"}
         desc="先看进步，再看待加强项；每条结论可展开依据"
         actions={
-          <Button
-            variant={narrative ? "primary" : "secondary"}
-            aria-pressed={narrative}
-            onClick={() => setNarrative((n) => !n)}
-          >
-            {narrative ? "已附加 AI 解读" : "附加 AI 解读"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-ink-soft">
+              截至
+              <Input
+                type="date"
+                value={asOf}
+                onChange={(e) => setAsOf(e.target.value)}
+              />
+            </label>
+            <Button
+              variant={narrative ? "primary" : "secondary"}
+              aria-pressed={narrative}
+              onClick={() => setNarrative((n) => !n)}
+            >
+              {narrative ? "已附加 AI 解读" : "附加 AI 解读"}
+            </Button>
+          </div>
         }
       />
 
@@ -87,9 +104,17 @@ export default function Diagnosis() {
           {reportLoading && <Skeleton rows={8} />}
           {reportError && <ErrorState message={reportError} onRetry={generate} />}
           {report && !reportLoading && (
-            <Card className="p-7">
-              <ReportMarkdown content={report} />
-            </Card>
+            <>
+              {reportAsOf && (
+                <p className="mb-2 text-xs text-ink-faint">
+                  诊断数据截至 {reportAsOf}
+                  {!asOf && "（最近一场考试）"}
+                </p>
+              )}
+              <Card className="p-7">
+                <ReportMarkdown content={report} />
+              </Card>
+            </>
           )}
         </section>
 
