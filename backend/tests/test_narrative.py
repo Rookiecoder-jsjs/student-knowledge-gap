@@ -39,3 +39,34 @@ def test_narrative_degrade_when_unconfigured(monkeypatch):
     set_client(None)
     monkeypatch.delenv("SC_LLM_PROVIDER", raising=False)
     assert render_narrative(DETERMINISTIC_MD, "quality_analysis") is None
+
+
+def test_narrative_prompt_differs_by_report_type():
+    """两种报告给差异化重点指引，不共用同一 user prompt。"""
+    mock = MockLLMClient([{"text": "x"}, {"text": "y"}])
+    set_client(mock)
+    try:
+        render_narrative(DETERMINISTIC_MD, "student_diagnosis")
+        render_narrative(DETERMINISTIC_MD, "quality_analysis")
+    finally:
+        set_client(None)
+    u_stu, u_cls = mock.calls[0]["user"], mock.calls[1]["user"]
+    assert u_stu != u_cls
+    assert "地基点" in u_stu and "可能原因" in u_stu
+    assert "共性" in u_cls and "集体教学" in u_cls
+
+
+def test_narrative_system_relaxes_verbatim_and_keeps_guardrails():
+    """放宽'逐字引用'为'不引入材料外数字'，并保留不编造/不排名/归因假设等硬约束。"""
+    mock = MockLLMClient([{"text": "x"}])
+    set_client(mock)
+    try:
+        render_narrative(DETERMINISTIC_MD, "student_diagnosis")
+    finally:
+        set_client(None)
+    sys_prompt = mock.calls[0]["system"]
+    assert "逐字" not in sys_prompt, "不再要求逐字引用（避免模型拒引数字导致空洞）"
+    assert "不得引入材料里没有" in sys_prompt
+    assert "建议教师核实" in sys_prompt  # 归因仍表述为假设
+    assert "无进步点则不勉强" in sys_prompt  # 成长框架兜底
+    assert "排名" in sys_prompt  # 不排名约束保留
