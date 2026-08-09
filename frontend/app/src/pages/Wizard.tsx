@@ -269,8 +269,8 @@ function StepOne({
           onClick={() => fileRef.current?.click()}
           className="mt-2 flex w-full cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2/60 px-6 py-9 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
         >
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-sage-soft">
-            <Upload size={22} className="text-sage" weight="thin" />
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
+            <Upload size={22} className="text-accent" weight="thin" />
           </span>
           <span className="text-sm text-ink-soft">
             {file ? file.name : "点击选择 kb.yaml（人教版七上已内置于后端仓库）"}

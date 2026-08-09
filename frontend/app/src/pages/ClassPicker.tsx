@@ -34,8 +34,8 @@ export default function ClassPicker() {
 
       {data && data.classes.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-line bg-surface/60 px-10 py-16 text-center shadow-soft">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-sage-soft">
-            <PlusCircle size={30} className="text-sage" weight="thin" />
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
+            <PlusCircle size={30} className="text-accent" weight="thin" />
           </span>
           <div>
             <p className="text-lg font-semibold">还没有班级</p>

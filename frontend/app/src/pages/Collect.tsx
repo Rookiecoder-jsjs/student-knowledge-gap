@@ -1,11 +1,10 @@
-import { Camera, CheckCircle, Images, Keyboard, PaperPlaneTilt } from "@phosphor-icons/react";
+import { Camera, CheckCircle, Images, Keyboard } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Modal, Skeleton } from "../components/ui";
 import {
   assignBatchItem,
   batchJob,
-  commitExam,
   discardBatchItem,
   examDetail,
   examResponses,
@@ -39,27 +38,8 @@ export default function Collect() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [confirmCommit, setConfirmCommit] = useState(false);
 
   const committed = (matrix.data?.summary["已提交"] ?? 0) > 0;
-
-  const doCommit = async () => {
-    setBusy(true);
-    setErr(null);
-    setConfirmCommit(false);
-    try {
-      const r = await commitExam(eid);
-      setNotice(
-        `已提交 ${r.committed_responses} 份作答，生成 ${r.evidence_events} 条分析依据。` +
-          (r.skipped.length > 0 ? `跳过 ${r.skipped.length} 条：${r.skipped.slice(0, 3).join("；")}` : "")
-      );
-      matrix.reload();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const uploadPhoto = async (file: File) => {
     if (photoFor === null) return;
@@ -81,55 +61,40 @@ export default function Collect() {
 
   return (
     <div>
-      <PageHeader
-        title="学生卷采集"
-        desc={
-          matrix.data
-            ? `未采集 ${matrix.data.summary["未采集"]} · 待审核 ${matrix.data.summary["待审核"]} · 已提交 ${matrix.data.summary["已提交"]}`
-            : undefined
-        }
-        actions={
-          <Button
-            onClick={() => setConfirmCommit(true)}
-            disabled={busy || committed || (matrix.data?.summary["待审核"] ?? 0) === 0}
-          >
-            <PaperPlaneTilt size={15} />
-            提交本场考试
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-ink">
+          学生卷采集
+          {matrix.data && (
+            <span className="ml-2 font-normal text-ink-faint tabular-nums">
+              未采集 {matrix.data.summary["未采集"]} · 待审核 {matrix.data.summary["待审核"]} · 已提交 {matrix.data.summary["已提交"]}
+            </span>
+          )}
+        </p>
+        {!committed && (
+          <Button variant="secondary" onClick={() => nav(`/c/${cid}/exams/${eid}/commit`)}>
+            下一步：去提交
           </Button>
-        }
-      />
+        )}
+      </div>
 
       {committed && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-accent/20 bg-accent-soft px-4 py-3 text-sm text-accent-deep">
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep">
           <span className="flex items-center gap-2">
             <CheckCircle size={16} weight="fill" />
-            本场考试已提交并生成依据；如需更正请以补录考试处理。
+            本场已提交并生成依据；如需更正请以补录考试处理。
           </span>
-          <Button variant="secondary" onClick={() => nav(`/c/${cid}/quality?exam=${eid}`)}>
-            生成班级质量分析
+          <Button variant="secondary" onClick={() => nav(`/c/${cid}/exams/${eid}/report`)}>
+            查看质量分析
           </Button>
-        </div>
-      )}
-      {confirmCommit && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-sm" role="alertdialog">
-          <span className="text-warn">提交后数据进入分析，作答与标注将锁定。确认提交？</span>
-          <span className="flex gap-2">
-            <Button variant="danger" onClick={doCommit} disabled={busy}>
-              确认提交
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirmCommit(false)}>
-              取消
-            </Button>
-          </span>
         </div>
       )}
       {notice && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep" role="status">
+        <div className="mb-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep" role="status">
           {notice}
         </div>
       )}
       {err && (
-        <div className="mb-4 rounded-xl border border-danger/20 bg-danger-soft px-4 py-2.5 text-sm text-danger" role="alert">
+        <div className="mb-4 rounded-lg border border-danger/20 bg-danger-soft px-4 py-2.5 text-sm text-danger" role="alert">
           {err}
         </div>
       )}

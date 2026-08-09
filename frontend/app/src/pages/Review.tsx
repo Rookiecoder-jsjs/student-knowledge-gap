@@ -1,7 +1,7 @@
 import { Check, PencilLine, SealCheck } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, SectionTitle, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "../components/ui";
 import { approveTags, examDetail, listKps, patchAnswer, patchTags, reviewQueue } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { bandLabel } from "../lib/labels";
@@ -101,21 +101,18 @@ export default function Review() {
 
   return (
     <div>
-      <PageHeader
-        title="审核台"
-        desc={detail.data ? `${detail.data.name} · ${detail.data.questions.length} 题` : undefined}
-        actions={
-          <>
-            <Button variant="secondary" onClick={() => nav(`/c/${cid}/exams/${eid}/collect`)}>
-              去采集学生卷
-            </Button>
-            <Button onClick={approveAll} disabled={busy || unreviewedQids.size === 0}>
-              <SealCheck size={16} />
-              批准全部待审标注{unreviewedQids.size > 0 ? `（${unreviewedQids.size} 题）` : ""}
-            </Button>
-          </>
-        }
-      />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-ink">审核标注与低置信得分</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => nav(`/c/${cid}/exams/${eid}/collect`)}>
+            下一步：采集学生卷
+          </Button>
+          <Button onClick={approveAll} disabled={busy || unreviewedQids.size === 0}>
+            <SealCheck size={16} />
+            批准全部待审标注{unreviewedQids.size > 0 ? `（${unreviewedQids.size} 题）` : ""}
+          </Button>
+        </div>
+      </div>
 
       {notice && (
         <div className="mb-4 rounded-xl border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep" role="status">

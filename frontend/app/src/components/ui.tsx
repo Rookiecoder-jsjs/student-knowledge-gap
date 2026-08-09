@@ -23,7 +23,7 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${styles[variant]} ${className}`}
       {...props}
     />
   );
@@ -46,7 +46,7 @@ export function Badge({
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
     >
       {children}
     </span>
@@ -64,9 +64,9 @@ export function Card({
   className?: string;
   interactive?: boolean;
 }) {
-  const base = "rounded-2xl border border-line bg-surface shadow-soft";
+  const base = "rounded-[10px] border border-line bg-surface shadow-soft";
   const hover = interactive
-    ? "transition-all duration-200 hover:-translate-y-1 hover:shadow-lift hover:border-accent/30"
+    ? "transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lift hover:border-accent/30"
     : "";
   return <div className={`${base} ${hover} ${className}`}>{children}</div>;
 }
@@ -75,12 +75,12 @@ export function Card({
 
 export function Skeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div className="space-y-3" aria-live="polite" role="status">
+    <div className="space-y-2.5" aria-live="polite" role="status">
       <span className="sr-only">加载中…</span>
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="h-12 rounded-xl skeleton-shimmer"
+          className="h-11 rounded-lg skeleton-shimmer"
           style={{ animationDelay: `${i * 120}ms` }}
         />
       ))}
@@ -90,9 +90,9 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
 
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-14 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-sage-soft">
-        <FolderOpen size={28} className="text-sage" weight="thin" />
+    <div className="flex flex-col items-center gap-3 py-12 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
+        <FolderOpen size={24} className="text-accent" weight="thin" />
       </span>
       <p className="text-sm font-medium text-ink-soft">{title}</p>
       {hint && <p className="max-w-[46ch] text-xs leading-relaxed text-ink-faint">{hint}</p>}
@@ -108,9 +108,9 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-14 text-center" role="alert">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-danger-soft">
-        <WarningCircle size={28} className="text-danger" weight="thin" />
+    <div className="flex flex-col items-center gap-3 py-12 text-center" role="alert">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-danger-soft">
+        <WarningCircle size={24} className="text-danger" weight="thin" />
       </span>
       <p className="max-w-[52ch] text-sm text-ink-soft">{message}</p>
       {onRetry && (
@@ -137,7 +137,7 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-2">
+    <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-ink">{label}</span>
       {children}
       {hint && !error && <span className="text-xs text-ink-faint">{hint}</span>}
@@ -150,7 +150,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;
   return (
     <input
-      className={`rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
+      className={`rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
       {...rest}
     />
   );
@@ -158,7 +158,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
 
 /* ---------------- 区段标题 ---------------- */
 
-/** 有机区段标题：小圆点（sage）+ 标题 + 可选计数/副文。替代裸 <h2>。 */
+/** 区段标题：小方块（accent）+ 标题 + 可选计数/副文。替代裸 <h2>。 */
 export function SectionTitle({
   children,
   count,
@@ -169,12 +169,12 @@ export function SectionTitle({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-soft">
-        <span className="h-1.5 w-1.5 rounded-full bg-sage" aria-hidden />
+    <div className="mb-2.5 flex items-center justify-between gap-2">
+      <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+        <span className="h-2 w-2 rounded-[2px] bg-accent" aria-hidden />
         {children}
         {count !== undefined && (
-          <span className="font-normal text-ink-faint">（{count}）</span>
+          <span className="font-normal normal-case tracking-normal text-ink-faint">（{count}）</span>
         )}
       </h2>
       {right}
@@ -194,10 +194,10 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
-        {desc && <p className="mt-1.5 text-sm text-ink-soft">{desc}</p>}
+        <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -284,20 +284,20 @@ export function Modal({
       aria-label={title}
     >
       <div
-        className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden
       />
       <div
         ref={panelRef}
-        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto rounded-2xl border border-line bg-surface p-6 shadow-float`}
+        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto rounded-[10px] border border-line bg-surface p-6 shadow-float`}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold tracking-tight text-ink">{title}</h3>
+          <h3 className="text-base font-semibold tracking-tight text-ink">{title}</h3>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X size={18} />
           </button>
@@ -305,6 +305,48 @@ export function Modal({
         <div className="space-y-4">{children}</div>
         {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- 案头新增原语 ---------------- */
+
+/** 流水线阶段状态点：● 完成 / ◐ 进行 / ○ 未开始。 */
+export function StatusDot({ state }: { state: "done" | "active" | "todo" }) {
+  const cls =
+    state === "done"
+      ? "bg-accent"
+      : state === "active"
+        ? "bg-accent ring-4 ring-accent/20"
+        : "bg-line border border-ink-faint/40";
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} aria-hidden />;
+}
+
+/** KPI 统计块：大号 tabular-nums 数字 + 标签 + 可选副文。 */
+export function StatTile({
+  value,
+  label,
+  hint,
+  tone = "neutral",
+}: {
+  value: ReactNode;
+  label: string;
+  hint?: string;
+  tone?: "neutral" | "accent" | "warn" | "danger";
+}) {
+  const val =
+    tone === "accent"
+      ? "text-accent"
+      : tone === "warn"
+        ? "text-warn"
+        : tone === "danger"
+          ? "text-danger"
+          : "text-ink";
+  return (
+    <div className="rounded-[10px] border border-line bg-surface px-4 py-3 shadow-soft">
+      <p className={`text-2xl font-semibold tabular-nums tracking-tight ${val}`}>{value}</p>
+      <p className="mt-0.5 text-xs text-ink-faint">{label}</p>
+      {hint && <p className="mt-0.5 text-[11px] text-ink-faint">{hint}</p>}
     </div>
   );
 }

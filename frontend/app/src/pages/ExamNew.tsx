@@ -217,8 +217,8 @@ export default function ExamNew() {
               onClick={() => fileRef.current?.click()}
               className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2/60 px-6 py-10 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-sage-soft">
-                <Camera size={24} className="text-sage" weight="thin" />
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
+                <Camera size={24} className="text-accent" weight="thin" />
               </span>
               <span className="text-sm font-medium">{file ? file.name : "上传空白试卷照片"}</span>
               <span className="text-xs text-ink-faint">

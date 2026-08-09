@@ -1,21 +1,25 @@
 import { FileText } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "../components/ui";
+import { Button, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
-import { ReportMarkdown } from "../components/Markdown";
+import { ReportMarkdown, ReportTOC } from "../components/Markdown";
 import { listExams, qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 
-/** 班级质量分析：选考试 -> 生成报告（可开关 AI 解读）。 */
+/**
+ * 班级质量分析（考试流水线第 5 阶，亦作 /c/:cid/quality 直达入口）。
+ * 路由带 :examId 时为工作区阶段 5（预设本场，无选择器）；否则直达入口显示考试选择器。
+ */
 export default function Quality() {
-  const { classId } = useParams();
+  const { classId, examId: routeExamId } = useParams();
   const cid = Number(classId);
+  const presetExamId = routeExamId ? Number(routeExamId) : null;
   const [params] = useSearchParams();
 
   const exams = useAsync(() => listExams(cid), [cid]);
   const [examId, setExamId] = useState<number | null>(
-    params.get("exam") ? Number(params.get("exam")) : null
+    presetExamId ?? (params.get("exam") ? Number(params.get("exam")) : null)
   );
   const [narrative, setNarrative] = useState(false);
   const [report, setReport] = useState<string | null>(null);
@@ -36,31 +40,42 @@ export default function Quality() {
     }
   };
 
+  const selectedExam = exams.data?.exams.find((e) => e.exam_id === examId);
+
   return (
     <div>
-      <PageHeader title="班级质量分析" desc="共性待加强点与讲评建议；数字全部来自系统计算，可直接用于讲评课" />
+      <SectionTitle>{presetExamId ? "班级质量分析" : "班级质量分析（选择考试）"}</SectionTitle>
 
-      <Card className="mb-6 flex flex-wrap items-end gap-4 p-5">
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium">选择考试</span>
-          <select
-            value={examId ?? ""}
-            onChange={(e) => {
-              setExamId(Number(e.target.value));
-              setReport(null);
-            }}
-            className="min-w-[220px] rounded-xl border border-line bg-surface px-3 py-2.5 text-sm transition-colors focus:border-accent"
-          >
-            <option value="" disabled>
-              {exams.data && exams.data.exams.length > 0 ? "请选择…" : "暂无考试"}
-            </option>
-            {(exams.data?.exams ?? []).map((e) => (
-              <option key={e.exam_id} value={e.exam_id}>
-                {e.name}（{e.exam_date}）
+      <Card className="mb-5 flex flex-wrap items-end gap-4 p-4">
+        {presetExamId ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-ink-faint">本场考试</span>
+            <span className="min-w-[220px] text-sm font-semibold text-ink">
+              {selectedExam?.name ?? "…"}
+            </span>
+          </div>
+        ) : (
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-ink-faint">选择考试</span>
+            <select
+              value={examId ?? ""}
+              onChange={(e) => {
+                setExamId(Number(e.target.value));
+                setReport(null);
+              }}
+              className="min-w-[220px] rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+            >
+              <option value="" disabled>
+                {exams.data && exams.data.exams.length > 0 ? "请选择…" : "暂无考试"}
               </option>
-            ))}
-          </select>
-        </label>
+              {(exams.data?.exams ?? []).map((e) => (
+                <option key={e.exam_id} value={e.exam_id}>
+                  {e.name}（{e.exam_date}）
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Button
           variant={narrative ? "primary" : "secondary"}
           aria-pressed={narrative}
@@ -89,9 +104,16 @@ export default function Quality() {
       )}
       {report && !loading && (
         <Reveal>
-          <Card className="p-7">
-            <ReportMarkdown content={report} />
-          </Card>
+          <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
+            <aside className="hidden lg:block">
+              <div className="sticky top-4 rounded-[10px] border border-line bg-surface p-4 shadow-soft">
+                <ReportTOC content={report} />
+              </div>
+            </aside>
+            <Card className="p-6">
+              <ReportMarkdown content={report} />
+            </Card>
+          </div>
         </Reveal>
       )}
     </div>

@@ -1,14 +1,14 @@
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Children, memo, type ReactNode } from "react";
 
-/** 有机减速曲线（更柔的 ease-out）。 */
-const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+/** 利落减速曲线（案头 ease-out，比绿洲更干脆）。 */
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 /** 大列表降级阈值：超过则不再逐项 stagger，改为整体淡入，避免长列表 2s+ 迟滞。 */
 const STAGGER_CAP = 16;
 
 /**
- * 克制动效组件（INTENSITY 3-4，有机柔化）。
+ * 克制动效组件（案头，利落）。
  * 仅动画 opacity / transform（GPU 友好）；reduced-motion 下直接渲染静态内容。
  * 全部 React.memo 隔离，避免父组件重渲时重放进场动画。
  */
@@ -46,7 +46,7 @@ export const StaggerList = memo(function StaggerList({
       animate="show"
       variants={{
         hidden: {},
-        show: { transition: { staggerChildren: 0.05, delayChildren: delay } },
+        show: { transition: { staggerChildren: 0.04, delayChildren: delay } },
       }}
     >
       {children}
@@ -66,7 +66,7 @@ export const StaggerItem = memo(function StaggerItem({
   if (reduce) return <div className={className}>{children}</div>;
   const variants: Variants = {
     hidden: { opacity: 0, y: 12 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: EASE } },
+    show: { opacity: 1, y: 0, transition: { duration: 0.36, ease: EASE } },
   };
   return (
     <motion.div className={className} variants={variants}>
@@ -90,10 +90,10 @@ export const Reveal = memo(function Reveal({
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y: 14 }}
+      initial={{ opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.5, ease: EASE, delay }}
+      transition={{ duration: 0.4, ease: EASE, delay }}
     >
       {children}
     </motion.div>

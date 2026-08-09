@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Card, EmptyState, ErrorState, Input, PageHeader, SectionTitle, Skeleton } from "../components/ui";
+import { Card, EmptyState, ErrorState, Input, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { getMastery, listStudents } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { MasteryItem } from "../lib/types";
@@ -48,6 +48,25 @@ export default function Mastery() {
             hint="录入并提交至少一场覆盖这些知识点的考试后，这里会显示掌握程度。"
           />
         </Card>
+      )}
+
+      {mastery.data && mastery.data.mastery.length > 0 && (
+        <div className="mb-6 grid grid-cols-3 gap-3">
+          <StatTile
+            value={mastery.data.mastery.filter((k) => k.mastery >= 0.8).length}
+            label="掌握较好（≥80%）"
+            tone="accent"
+          />
+          <StatTile
+            value={mastery.data.mastery.filter((k) => k.mastery >= 0.6 && k.mastery < 0.8).length}
+            label="待巩固（60–80%）"
+          />
+          <StatTile
+            value={mastery.data.mastery.filter((k) => k.mastery < 0.6).length}
+            label="待加强（<60%）"
+            tone="danger"
+          />
+        </div>
       )}
 
       <div className="space-y-7">

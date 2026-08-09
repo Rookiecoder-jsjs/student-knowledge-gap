@@ -1,32 +1,28 @@
 @import "tailwindcss";
 
 @theme {
-  /* 绿洲配色：暖纸底 + 森林墨绿主色 + 鼠尾草/陶土辅色，无 AI 紫蓝 */
-  --color-paper: #f4f2ea;
-  --color-surface: #fffdf8;
-  --color-surface-2: #faf7ee;
-  --color-line: #e3ddce;
-  --color-ink: #1f261e;
-  --color-ink-soft: #515c4a;
-  --color-ink-faint: #67725a; /* 已修对比度：白底 5.1:1 / 纸底 4.5:1 */
-  --color-accent: #2f6b4f;
-  --color-accent-deep: #215039;
-  --color-accent-soft: #e6efe4;
-  --color-sage: #8fa896;
-  --color-sage-soft: #eef2ea;
-  --color-clay: #bd7a52;
-  --color-clay-soft: #f3e4d6;
+  /* 案头 Workbench 配色：暖灰中性底 + 单一松青主色，无 AI 紫蓝，无绿洲暖绿/陶土 */
+  --color-canvas: #f6f6f4;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f1ee;
+  --color-line: #e5e5e1;
+  --color-ink: #1c1c1a;
+  --color-ink-soft: #575753;
+  --color-ink-faint: #787872; /* 白底 4.6:1 / 中性底 4.5:1 */
+  --color-accent: #0f766e;
+  --color-accent-deep: #0c5d56;
+  --color-accent-soft: #dcefec;
   --color-warn: #b45309;
   --color-warn-soft: #fbf0df;
   --color-danger: #b3403a;
   --color-danger-soft: #f7e7e5;
 
-  /* 暖色柔和阴影（取自 ink 偏绿暖，非纯黑） */
-  --shadow-soft: 0 2px 8px -2px rgba(31, 38, 30, 0.08);
-  --shadow-lift: 0 10px 28px -10px rgba(31, 38, 30, 0.14);
-  --shadow-float: 0 18px 44px -14px rgba(31, 38, 30, 0.18);
+  /* 中性利落阴影（非绿洲暖绿柔影） */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-lift: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 12px 32px -8px rgba(0, 0, 0, 0.14);
 
-  --font-sans: "Outfit", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+  --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
     monospace;
@@ -34,12 +30,12 @@
 
 html {
   font-family: var(--font-sans);
-  /* 有机暖底：纸色 + 顶部一抹极淡鼠尾草光晕 */
-  background:
-    radial-gradient(120% 60% at 50% -10%, var(--color-sage-soft) 0%, transparent 55%),
-    var(--color-paper);
+  /* 中性案头底：纯中性画布，无暖色径向光晕 */
+  background: var(--color-canvas);
   color: var(--color-ink);
   background-attachment: fixed;
+  /* 等宽数字全局默认（数据优先工作台） */
+  font-variant-numeric: tabular-nums;
 }
 
 body {
@@ -48,20 +44,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* 焦点可见性：柔光环（不用纯 outline 锐线） */
+/* 焦点可见性：利落实线环 */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* 表单聚焦柔光（有机，非纯边框） */
+/* 表单聚焦：细环（非柔光晕） */
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 
 /* 动效降级：尊重系统偏好 */
@@ -74,7 +70,7 @@ textarea:focus-visible {
   }
 }
 
-/* 骨架扫光：暖色位移 */
+/* 骨架扫光：中性灰位移 */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
@@ -107,7 +103,7 @@ textarea:focus-visible {
   border: 0;
 }
 
-/* 报告 Markdown 渲染 */
+/* 报告 Markdown 渲染（案头编辑式排版，等宽分数/表格） */
 .report-md {
   font-size: 15px;
   line-height: 1.7;
@@ -150,6 +146,7 @@ textarea:focus-visible {
   margin: 0.75rem 0;
   font-size: 0.875rem;
   width: 100%;
+  font-variant-numeric: tabular-nums;
 }
 .report-md th,
 .report-md td {
