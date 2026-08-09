@@ -101,14 +101,14 @@ sc/
 
 ## 🚀 快速开始
 
-后端命令在 `backend/` 目录下执行（虚拟环境在项目根 `.venv`）：
+后端命令在 `backend/` 目录下执行（先激活 Python 3.11 虚拟环境）：
 
 ```bash
 cd backend
-../.venv/bin/python -m pytest                     # 🧪 单元 + 金标 + 压力断言（138 项）
-../.venv/bin/python scripts/run_demo.py           # 🎬 合成班级全流程 -> output/*.md
-../.venv/bin/python scripts/effectiveness_largescale.py  # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
-../.venv/bin/python -m uvicorn app.main:app --reload  # ⚙️ API（Swagger: http://localhost:8000/docs）
+python -m pytest                                  # 🧪 单元 + 金标 + 压力断言（138 项）
+python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
+python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
+python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
 ```
 
 前端（另开终端）：
@@ -116,7 +116,7 @@ cd backend
 ```bash
 cd frontend/app
 npm install
-npm run dev                                       # 🖥️ http://localhost:5173（/api 自动代理到 8000）
+npm run dev                                       # 🖥️ 启动前端开发服务器（/api 代理到后端）
 ```
 
 ## ⚙️ 配置（backend/.env）
@@ -152,7 +152,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 ## 📡 核心功能与端点
 
-共 **56 个端点**（完整清单见 Swagger：http://localhost:8000/docs）。
+共 **56 个端点**（启动后可在 Swagger 交互文档查看）。
 
 **📚 知识库**
 - 导入与版本：`POST /kb/import`、`GET|POST /kb/versions`、`PATCH /kb/versions/{id}`、`GET /kb/versions/{id}/compatibility`
@@ -187,7 +187,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 **测试**：138 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
 
 ```bash
-cd backend && ../.venv/bin/python -m pytest
+cd backend && python -m pytest
 ```
 
 ### 三层验证，从"能跑"到"真的准"
