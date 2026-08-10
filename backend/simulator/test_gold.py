@@ -28,7 +28,7 @@ from app.models import Attribution, Class, School
 from app.pipeline.attribution import (
     ATTR_FORGET,
     ATTR_PREREQ,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.pipeline.weakness import (
     GATE_INSUFFICIENT,
@@ -64,7 +64,7 @@ def env():
 
     graph = KpGraph(session, kb.id)
     for stu_id in truth.student_ids.values():
-        run_attribution_for_student(session, graph, stu_id, clazz.id, FINAL_AS_OF)
+        materialize_attribution_verdicts(session, graph, stu_id, clazz.id, FINAL_AS_OF)
     session.commit()
 
     yield session, graph, truth, clazz

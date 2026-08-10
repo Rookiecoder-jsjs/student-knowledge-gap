@@ -18,15 +18,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.deps import _active_kb, _as_dt, _graph, get_db
 from app.config import settings
-from app.db import SessionLocal
 from app.ingestion.commit import add_manual_response, commit_exam
 from app.ingestion.excel import import_excel
 from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
 from app.ingestion.templates import create_template
 from app.kb.graph import KpGraph
 from app.kb.loader import KbImportError, import_kb
-from app.kb.resolver import KbNotActiveError, active_kb
 from app.llm.client import LLMError, MockLLMClient, get_client
 from app.llm.prompts import RESPONSE_BATCH_PROMPT_VERSION
 from app.models import (
@@ -49,9 +48,11 @@ from app.models import (
     TeachingProgress,
     TemplateQuestion,
 )
-from app.pipeline.attribution import run_attribution_for_student
+from app.pipeline.attribution import materialize_attribution_verdicts
 from app.pipeline.mastery import mastery_at
 from app.pipeline.weakness import assess_student_kps
+from app.queries.classes_overview import classes_overview as query_classes_overview
+from app.reports.auto_generate import generate_exam_reports
 from app.reports.quality_analysis import generate_quality_analysis
 from app.reports.student_diagnosis import generate_student_diagnosis
 from app.schemas import (
@@ -75,44 +76,6 @@ from app.schemas import (
 )
 
 router = APIRouter()
-
-
-def get_db():
-    session = SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
-
-
-def _graph(session: Session, kb_version_id: int) -> KpGraph:
-    return KpGraph(session, kb_version_id)
-
-
-def _active_kb(session: Session) -> KbVersion:
-    """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
-
-    strict 无 active → 400；无任何版本 → 400「尚未导入」。HTTP 层只做信号翻译。
-    """
-    try:
-        kb = active_kb(session)
-    except KbNotActiveError as e:
-        raise HTTPException(400, str(e))
-    if kb is None:
-        raise HTTPException(400, "尚未导入知识库，请先 POST /kb/import")
-    return kb
-
-
-def _as_dt(d: date | None) -> datetime:
-    # 默认=本地今日结束：occurred_at 为考试日 naive 本地时间（中午 12:00），
-    # 若用 utcnow() 东八区当天证据会被当成"未来"而漏过证据门槛。
-    return datetime.combine(d, time(23, 59)) if d else datetime.combine(
-        datetime.now().date(), time(23, 59)
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +209,12 @@ def manual_entry(exam_id: int, req: ManualScores, db: Session = Depends(get_db))
 def commit(exam_id: int, db: Session = Depends(get_db)):
     if db.get(ExamTemplate, exam_id) is None:
         raise HTTPException(404, "考试不存在")
+    # 产品语义「提交即自动生成」：commit 只做状态机，报告生成在此显式组合（候选4）。
     result = commit_exam(db, exam_id)
+    if result.committed_responses > 0:
+        reports = generate_exam_reports(db, exam_id)
+        result.quality_report = reports.quality
+        result.diagnoses = reports.diagnoses
     return {
         "committed_responses": result.committed_responses,
         "evidence_events": result.evidence_events,
@@ -316,7 +284,7 @@ def run_attributions(student_id: int, as_of: date | None = None, db: Session = D
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
-    active = run_attribution_for_student(db, graph, student_id, stu.class_id, when)
+    active = materialize_attribution_verdicts(db, graph, student_id, stu.class_id, when)
     return {
         "student_id": student_id,
         "attributions": [
@@ -823,10 +791,12 @@ def diagnosis(
             if exam is None:
                 raise HTTPException(404, "考试不存在")
             report_as_of = datetime.combine(exam.exam_date, time(23, 59))
-            run_attribution_for_student(db, graph, student_id, stu.class_id, report_as_of)
+            # 候选1：诊断 derive-on-read（不再需要先打底）；物化改为「生成后」尾步，
+            # 仅为 override-by-id / 闭合率统计落行，跳过也不影响诊断渲染。
             report = generate_student_diagnosis(
                 db, graph, student_id, as_of=report_as_of, narrative=False, exam_id=exam_id
             )
+            materialize_attribution_verdicts(db, graph, student_id, stu.class_id, report_as_of)
         markdown = report.content_markdown
     elif as_of is None:
         # 无 exam_id 且无 as_of：返回最近一场考试的已存诊断（随时看）；
@@ -834,18 +804,18 @@ def diagnosis(
         report = _latest_stored_diagnosis(db, student_id)
         if report is None:
             when = _as_dt(None)
-            run_attribution_for_student(db, graph, student_id, stu.class_id, when)
             report = generate_student_diagnosis(
                 db, graph, student_id, as_of=when, narrative=False
             )
+            materialize_attribution_verdicts(db, graph, student_id, stu.class_id, when)
         markdown = report.content_markdown
     else:
         # 自定义 as_of 现算（不关联 exam）
         when = _as_dt(as_of)
-        run_attribution_for_student(db, graph, student_id, stu.class_id, when)
         report = generate_student_diagnosis(
             db, graph, student_id, as_of=when, narrative=False
         )
+        materialize_attribution_verdicts(db, graph, student_id, stu.class_id, when)
         markdown = report.content_markdown
 
     if narrative:
@@ -1527,6 +1497,7 @@ def classes_overview(db: Session = Depends(get_db)):
 
     每班汇总：待办考试数、最近一场考试状态、教学进度覆盖（与分析层同分母）。
     active kb 缺失时 progress 返回 {0,0}，不抛错——一级页面不能因未导入知识库整页 500。
+    聚合逻辑在 ``queries/classes_overview``（候选2 深模块）；本端点只做 kb 解析与兜底。
     """
     grade7_set: set[int] = set()
     try:
@@ -1534,70 +1505,7 @@ def classes_overview(db: Session = Depends(get_db)):
         grade7_set = set(_graph(db, kb.id).grade7_kp_ids())
     except HTTPException:
         grade7_set = set()
-
-    out = []
-    for clazz in db.scalars(select(Class).order_by(Class.id)):
-        student_n = db.scalar(
-            select(func.count(Student.id)).where(Student.class_id == clazz.id)
-        ) or 0
-        exams = db.scalars(
-            select(ExamTemplate)
-            .where(ExamTemplate.class_id == clazz.id)
-            .order_by(ExamTemplate.exam_date.desc(), ExamTemplate.id.desc())
-        ).all()
-
-        todo_count = 0
-        latest_exam = None
-        for tpl in exams:
-            status_counts = dict(
-                db.execute(
-                    select(ExamResponse.status, func.count(ExamResponse.id))
-                    .where(ExamResponse.exam_template_id == tpl.id)
-                    .group_by(ExamResponse.status)
-                ).all()
-            )
-            unreviewed = db.scalar(
-                select(func.count(QuestionKp.id))
-                .join(TemplateQuestion, QuestionKp.template_question_id == TemplateQuestion.id)
-                .where(TemplateQuestion.exam_template_id == tpl.id)
-                .where(QuestionKp.reviewed_at.is_(None))
-            ) or 0
-            pending = status_counts.get("待审核", 0)
-            if latest_exam is None:
-                latest_exam = {
-                    "exam_id": tpl.id,
-                    "name": tpl.name,
-                    "exam_date": str(tpl.exam_date),
-                    "type": tpl.type,
-                    "submitted": status_counts.get("已提交", 0),
-                    "pending": pending,
-                }
-            if unreviewed > 0 or pending > 0:
-                todo_count += 1
-
-        taught = 0
-        if grade7_set:
-            taught = db.scalar(
-                select(func.count(TeachingProgress.id))
-                .where(TeachingProgress.class_id == clazz.id)
-                .where(TeachingProgress.kp_id.in_(grade7_set))
-            ) or 0
-
-        out.append(
-            {
-                "class_id": clazz.id,
-                "name": clazz.name,
-                "grade": clazz.grade,
-                "subject": clazz.subject,
-                "school_id": clazz.school_id,
-                "student_count": student_n,
-                "exam_count": len(exams),
-                "todo_count": todo_count,
-                "latest_exam": latest_exam,
-                "progress": {"taught": taught, "total": len(grade7_set)},
-            }
-        )
-    return {"classes": out}
+    return query_classes_overview(db, grade7_set)
 
 
 @router.get("/classes/{class_id}/students")

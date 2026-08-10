@@ -33,7 +33,7 @@ from app.config import (
     PREREQ_ROOT_THRESHOLD,
 )
 from app.kb.graph import KpGraph
-from app.models import Attribution, Student, TeachingProgress
+from app.models import Attribution, EvidenceEvent, Student, TeachingProgress
 from app.pipeline.mastery import evidence_summary, mastery_at, mastery_series
 from app.pipeline.weakness import (
     GATE_INSUFFICIENT,
@@ -279,21 +279,23 @@ def _confusable_pair(
 
 
 # ---------------------------------------------------------------------------
-# 落库：重跑时 upsert，教师否决（overridden）永不被引擎复活
+# 归因解析（derive-on-read，候选1）：推导新鲜假设 ⊕ 叠加持久化的人工裁决。
+# 读路径不依赖「打底」——即便 Attribution 表无 active 行，也能给出正确的推导归因。
 # ---------------------------------------------------------------------------
 
 
-def run_attribution_for_student(
+def _derive_findings(
     session: Session,
     graph: KpGraph,
     student_id: int,
-    class_id: int,
+    assessments: list[KpAssessment],
+    covered: set[int],
     as_of: datetime,
-) -> list[Attribution]:
-    """全量重算该生归因并落库，返回当前 active 归因列表。"""
-    assessments = assess_student_kps(session, graph, student_id, class_id, as_of)
-    covered = covered_kp_ids(session, class_id, as_of)
+) -> list[AttributionFinding]:
+    """纯推导：评估 → 归因假设 + 全局薄弱抑制（不落库，供 resolve/物化共用）。
 
+    与旧 run_attribution 的推导部分同源；抽取后单一真源，避免读/写两条路径漂移。
+    """
     findings: list[AttributionFinding] = []
     for a in assessments:
         for f in attribute_assessment(session, graph, student_id, a, covered, as_of):
@@ -324,6 +326,89 @@ def run_attribution_for_student(
                         "weak_fraction": weak_frac,
                         "note": "学生在多数知识点薄弱，前置缺陷归因解释力下降，建议优先排查整体基础与学习状态",
                     })
+    return findings
+
+
+def resolve_attributions(
+    session: Session,
+    graph: KpGraph,
+    student_id: int,
+    class_id: int,
+    as_of: datetime,
+    *,
+    assessments: list[KpAssessment] | None = None,
+    events_by_sk: dict[tuple[int, int], list[EvidenceEvent]] | None = None,
+) -> list[ResolvedAttribution]:
+    """该生该时点的归因（derive-on-read）：推导新鲜假设 ⊕ 叠加持久化的人工裁决。
+
+    ``assessments`` 可由调用方传入（诊断已算过，避免重复评估）；缺省则内部 assess。
+    **不写库**：即便 Attribution 表无 active 行，也能给出正确的（推导）归因。
+
+    语义：
+    - verdict=active：系统推导，未被人工裁决；
+    - verdict=overridden：教师否决（override 端点）或诊断题证伪（verify），
+      跨重跑保留——读路径据此标记，由消费方决定如何呈现；
+    - resolved 历史行不参与叠加（不复活已失效假设）。
+    """
+    if assessments is None:
+        assessments = assess_student_kps(
+            session, graph, student_id, class_id, as_of, events_by_sk=events_by_sk
+        )
+    covered = covered_kp_ids(session, class_id, as_of)
+    findings = _derive_findings(session, graph, student_id, assessments, covered, as_of)
+
+    # 仅 overridden 参与读路径（active 是「系统推导」的落库缓存；resolved 是失效历史）
+    verdicts = {
+        (att.kp_id, att.type): att
+        for att in session.scalars(
+            select(Attribution).where(
+                Attribution.student_id == student_id,
+                Attribution.status == "overridden",
+            )
+        )
+    }
+    out: list[ResolvedAttribution] = []
+    for f in findings:
+        v = verdicts.get((f.kp_id, f.type))
+        out.append(ResolvedAttribution(
+            kp_id=f.kp_id,
+            type=f.type,
+            confidence=f.confidence,
+            root_kp_id=f.root_kp_id,
+            evidence=f.evidence,
+            prediction=f.prediction,
+            verdict=("overridden" if v is not None else "active"),
+            teacher_note=(v.teacher_note if v is not None else None),
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 落库：重跑时 upsert，教师否决（overridden）永不被引擎复活
+# ---------------------------------------------------------------------------
+
+
+def materialize_attribution_verdicts(
+    session: Session,
+    graph: KpGraph,
+    student_id: int,
+    class_id: int,
+    as_of: datetime,
+    *,
+    assessments: list[KpAssessment] | None = None,
+) -> list[Attribution]:
+    """为已生成报告的归因物化行（供教师否决/证伪/闭合率统计），返回当前 active 归因列表。
+
+    写路径（候选1）：仍是 upsert + 保留 overridden + 旧 active→resolved，表结构与 status
+    状态机不变（override/verify/closure 零影响）。调用时机是「报告生成成功后」的尾步，
+    而非「读」的前置——读路径用 resolve_attributions（derive-on-read）。
+
+    ``assessments`` 可复用调用方已算的评估，避免二次计算；缺省则内部评估。
+    """
+    if assessments is None:
+        assessments = assess_student_kps(session, graph, student_id, class_id, as_of)
+    covered = covered_kp_ids(session, class_id, as_of)
+    findings = _derive_findings(session, graph, student_id, assessments, covered, as_of)
 
     existing = {
         (att.kp_id, att.type): att

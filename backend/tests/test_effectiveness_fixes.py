@@ -27,7 +27,7 @@ from app.models import (
 from app.ingestion.commit import commit_exam
 from app.pipeline.attribution import (
     ATTR_FORGET,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.pipeline.weakness import assess_student_kps
 from tests.conftest import make_exam, add_progress
@@ -220,7 +220,7 @@ def test_forget_threshold_robustness(session, env, monkeypatch):
     as_of = _dt(date(2025, 12, 16))
 
     def forget_fired():
-        active = run_attribution_for_student(session, graph, sids["T01"], env["class"].id, as_of)
+        active = materialize_attribution_verdicts(session, graph, sids["T01"], env["class"].id, as_of)
         return any(a.type == ATTR_FORGET and a.kp_id == p3 for a in active)
 
     monkeypatch.setattr("app.pipeline.attribution.FORGET_PEAK_THRESHOLD", 0.75)

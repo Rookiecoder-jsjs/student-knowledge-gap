@@ -21,7 +21,7 @@ from app.ingestion.commit import commit_exam  # noqa: E402
 from app.kb.graph import KpGraph  # noqa: E402
 from app.kb.loader import import_kb  # noqa: E402
 from app.models import Class, School  # noqa: E402
-from app.pipeline.attribution import run_attribution_for_student  # noqa: E402
+from app.pipeline.attribution import materialize_attribution_verdicts  # noqa: E402
 from app.reports.quality_analysis import generate_quality_analysis  # noqa: E402
 from app.reports.student_diagnosis import generate_student_diagnosis  # noqa: E402
 from simulator.synthetic import build_simulation  # noqa: E402
@@ -55,7 +55,7 @@ def main() -> None:
 
         total_events = 0
         for name, tpl_id in truth.exam_ids.items():
-            r = commit_exam(session, tpl_id, generate_reports=False)
+            r = commit_exam(session, tpl_id)
             total_events += r.evidence_events
             print(f"      提交「{name}」：{r.committed_responses} 人，"
                   f"+{r.evidence_events} 条证据事件")
@@ -65,7 +65,7 @@ def main() -> None:
         n_attr = 0
         for stu_id in truth.student_ids.values():
             n_attr += len(
-                run_attribution_for_student(session, graph, stu_id, clazz.id, as_of)
+                materialize_attribution_verdicts(session, graph, stu_id, clazz.id, as_of)
             )
         print(f"[4/6] 归因引擎：全班产出 {n_attr} 条 active 归因假设")
 

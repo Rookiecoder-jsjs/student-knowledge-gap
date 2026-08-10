@@ -32,7 +32,7 @@ from app.models import (
 )
 from app.pipeline.attribution import (
     ATTR_CONFUSABLE,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.pipeline.mastery import mastery_of_events
 from app.pipeline.weakness import (
@@ -189,7 +189,7 @@ def test_confusable_attribution_when_partner_weak(session):
 
     graph = KpGraph(session, kb.id)
     as_of = _dt(date(2026, 1, 16))
-    active = run_attribution_for_student(session, graph, stu.id, clazz.id, as_of)
+    active = materialize_attribution_verdicts(session, graph, stu.id, clazz.id, as_of)
     types = {(a.kp_id, a.type) for a in active}
     print(f"\n[K1] 归因类型 = {sorted(t for _, t in types)}")
     assert (ids["A"], ATTR_CONFUSABLE) in types, "薄弱 A 与同样弱的 B 易混 → 应产出易混淆归因"
@@ -244,7 +244,7 @@ def test_confusable_partner_strong_no_attribution(session):
         commit_exam(session, tpl.id)
 
     graph = KpGraph(session, kb.id)
-    active = run_attribution_for_student(session, graph, stu.id, clazz.id,
+    active = materialize_attribution_verdicts(session, graph, stu.id, clazz.id,
                                          _dt(date(2026, 1, 16)))
     conf = [a for a in active if a.type == ATTR_CONFUSABLE]
     print(f"\n[K1-负例] 易混淆归因数 = {len(conf)}")

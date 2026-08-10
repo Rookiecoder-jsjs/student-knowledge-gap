@@ -26,8 +26,9 @@ from app.models import (
     Report,
     Student,
 )
-from app.pipeline.attribution import run_attribution_for_student
+from app.pipeline.attribution import materialize_attribution_verdicts
 from app.pipeline.mastery import get_events_batch
+from app.pipeline.weakness import assess_student_kps
 from app.reports.quality_analysis import generate_quality_analysis
 from app.reports.student_diagnosis import generate_student_diagnosis
 
@@ -104,15 +105,23 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
         session, graph, class_id, exam_id, narrative=False, events_by_sk=events_by_sk
     )
     for s in students:
-        run_attribution_for_student(session, graph, s.id, class_id, as_of)
+        # 候选1：评估一次，诊断（derive-on-read）与物化（尾步）共享，省掉重复计算。
+        # 诊断不再依赖「打底」；物化在生成成功后同步执行，供 override-by-id/闭合率统计。
+        assessments = assess_student_kps(
+            session, graph, s.id, class_id, as_of, events_by_sk=events_by_sk
+        )
         generate_student_diagnosis(
             session,
             graph,
             s.id,
             as_of=as_of,
+            assessments=assessments,
             narrative=False,
             events_by_sk=events_by_sk,
             exam_id=exam_id,
+        )
+        materialize_attribution_verdicts(
+            session, graph, s.id, class_id, as_of, assessments=assessments
         )
     session.flush()
     return ExamReportResult(quality=True, diagnoses=len(students))

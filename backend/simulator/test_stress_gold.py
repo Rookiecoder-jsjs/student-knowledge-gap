@@ -44,7 +44,7 @@ from app.pipeline.attribution import (
     ATTR_FORGET,
     ATTR_PREREQ,
     GLOBAL_WEAK_CONF_CAP,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.pipeline.mastery import mastery_at, mastery_of_events
 from app.pipeline.weakness import assess_student_kps
@@ -82,7 +82,7 @@ def sim():
 
     graph = KpGraph(session, kb.id)
     for stu_id in truth.student_ids.values():
-        run_attribution_for_student(session, graph, stu_id, clazz.id, FINAL_AS_OF)
+        materialize_attribution_verdicts(session, graph, stu_id, clazz.id, FINAL_AS_OF)
     session.commit()
     yield session, graph, truth, clazz
     session.close()
@@ -372,7 +372,7 @@ def test_s3_graph_perturbation(sim):
     # 重跑 GROUP_A 归因（upsert：105 断开后，106/111/112 的非 105 祖先若强 -> 归因 resolved）
     for alias, root_code in truth.planted_roots.items():
         if root_code == "M7A-105":
-            run_attribution_for_student(session, graph2, truth.student_ids[alias], clazz.id, FINAL_AS_OF)
+            materialize_attribution_verdicts(session, graph2, truth.student_ids[alias], clazz.id, FINAL_AS_OF)
     session.commit()
 
     hit1, total1 = _root_hit(session, graph2, truth, root_code_filter="M7A-105")
@@ -497,7 +497,7 @@ def test_s4_global_weak_over_attribution(sim):
         commit_exam(session, tpl_id)
     session.commit()
 
-    active = run_attribution_for_student(session, graph, gw_id, clazz.id, FINAL_AS_OF)
+    active = materialize_attribution_verdicts(session, graph, gw_id, clazz.id, FINAL_AS_OF)
     prereq = [a for a in active if a.type == ATTR_PREREQ]
     confs = [a.confidence for a in prereq]
     roots = {a.root_kp_id for a in prereq}

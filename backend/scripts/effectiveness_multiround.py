@@ -36,7 +36,7 @@ from app.pipeline.attribution import (
     ATTR_FORGET,
     ATTR_INSUFFICIENT,
     ATTR_PREREQ,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.pipeline.weakness import assess_student_kps
 from simulator.synthetic import EXAM_SCHEDULE, build_simulation
@@ -84,7 +84,7 @@ def _measure(session, graph, truth, clazz, as_of):
 
     for alias, sid in truth.student_ids.items():
         assessments = assess_student_kps(session, graph, sid, clazz.id, as_of)
-        active = run_attribution_for_student(session, graph, sid, clazz.id, as_of)
+        active = materialize_attribution_verdicts(session, graph, sid, clazz.id, as_of)
         for a in active:
             if a.type in (ATTR_PREREQ, ATTR_FORGET):
                 n_causal += 1
@@ -165,7 +165,7 @@ def part_a_trajectory():
         print(header)
         print("-" * len(header))
         for name, exam_date, _t, _p in EXAM_SCHEDULE:
-            commit_exam(session, truth.exam_ids[name], generate_reports=False)
+            commit_exam(session, truth.exam_ids[name])
             as_of = datetime.combine(exam_date + timedelta(days=1), time(12, 0))
             m = _measure(session, graph, truth, clazz, as_of)
             print(
@@ -195,7 +195,7 @@ def part_b_variance():
             kb, clazz, truth = _build(session, 30, seed)
             graph = KpGraph(session, kb.id)
             for name in truth.exam_ids:
-                commit_exam(session, truth.exam_ids[name], generate_reports=False)
+                commit_exam(session, truth.exam_ids[name])
             m = _measure(session, graph, truth, clazz, FINAL_AS_OF)
             for k in keys:
                 samples[k].append(m[k])

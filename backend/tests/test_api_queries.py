@@ -18,6 +18,7 @@ def client(tmp_path):
     """临时库隔离（同 test_photo：替换 app.db 与 routes 两处 SessionLocal）。"""
     db_path = tmp_path / "queries_test.db"
     import app.api.routes as routes_mod
+    import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -29,12 +30,12 @@ def client(tmp_path):
     Base.metadata.create_all(engine)
     new_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    original = (dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal)
+    original = (dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal)
     dbmod.engine, dbmod.SessionLocal = engine, new_session
-    routes_mod.SessionLocal = new_session
+    deps_mod.SessionLocal = new_session
     with TestClient(app) as c:
         yield c, new_session
-    dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal = original
+    dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = original
 
 
 def _bootstrap(client: TestClient) -> tuple[int, list[int]]:

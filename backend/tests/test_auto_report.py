@@ -20,6 +20,7 @@ from app import models  # noqa: F401
 from app.db import Base
 from app.ingestion.commit import add_manual_response, commit_exam
 from app.models import Report
+from app.reports.auto_generate import generate_exam_reports
 from tests.conftest import add_progress, make_exam
 
 
@@ -34,7 +35,11 @@ def session():
 
 
 def _commit(session, env, first_n=None, day=date(2025, 10, 10)):
-    """全班（或前 first_n 人）手动录入一场考试并提交，返回 (tpl, 已录学生 id 列表)。"""
+    """全班（或前 first_n 人）手动录入一场考试并提交，返回 (tpl, 已录学生 id 列表)。
+
+    候选4：commit_exam 不再生成报告，此处显式组合 generate_exam_reports（与 API
+    commit 端点同构，测试端点级语义「提交即自动生成」）。
+    """
     env["kb"].status = "active"
     session.flush()
     kp = env["kp"]["P1"]
@@ -49,6 +54,10 @@ def _commit(session, env, first_n=None, day=date(2025, 10, 10)):
     for i, sid in enumerate(picked):
         add_manual_response(session, tpl.id, sid, {1: 10.0 - i, 2: 5.0})
     result = commit_exam(session, tpl.id)
+    if result.committed_responses > 0:
+        reports = generate_exam_reports(session, tpl.id)
+        result.quality_report = reports.quality
+        result.diagnoses = reports.diagnoses
     session.flush()
     return tpl, picked, result
 
@@ -96,6 +105,10 @@ def test_commit_regenerates_replacing_old(session, env):
     for i, sid in enumerate(ids[3:]):
         add_manual_response(session, tpl.id, sid, {1: 6.0 - i, 2: 3.0})
     result = commit_exam(session, tpl.id)
+    if result.committed_responses > 0:
+        reports = generate_exam_reports(session, tpl.id)
+        result.quality_report = reports.quality
+        result.diagnoses = reports.diagnoses
     session.flush()
 
     assert result.diagnoses == len(ids)
@@ -138,6 +151,7 @@ def test_commit_no_kb_skips_reports(session, env):
 def client(tmp_path):
     db_path = tmp_path / "auto_report_test.db"
     import app.api.routes as routes_mod
+    import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -151,12 +165,12 @@ def client(tmp_path):
     Base.metadata.create_all(engine)
     new_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    original = (dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal)
+    original = (dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal)
     dbmod.engine, dbmod.SessionLocal = engine, new_session
-    routes_mod.SessionLocal = new_session
+    deps_mod.SessionLocal = new_session
     with TestClient(app) as c:
         yield c, new_session
-    dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal = original
+    dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = original
 
 
 def _bootstrap_api(client):

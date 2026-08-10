@@ -29,7 +29,7 @@ from app.models import (
 from app.pipeline.attribution import (
     ATTR_PREREQ,
     GLOBAL_WEAK_CONF_CAP,
-    run_attribution_for_student,
+    materialize_attribution_verdicts,
 )
 from app.ingestion.commit import commit_exam
 
@@ -152,7 +152,7 @@ def test_global_weak_dampened(session, env):
     as_of = _dt(date(2026, 1, 16))
     s01 = env["students"]["T01"]
 
-    active = run_attribution_for_student(session, graph, s01, env["class"].id, as_of)
+    active = materialize_attribution_verdicts(session, graph, s01, env["class"].id, as_of)
     prereq = [a for a in active if a.type == ATTR_PREREQ]
     assert len(prereq) >= 1, "全局薄弱学生应产生前置缺陷归因"
     print(f"\n[抑制器] T01 前置归因 {len(prereq)} 条，置信度 {[a.confidence for a in prereq]}")
@@ -171,7 +171,7 @@ def test_targeted_weak_not_dampened(session, env):
     as_of = _dt(date(2026, 1, 16))
     s07 = env["students"]["T07"]
 
-    active = run_attribution_for_student(session, graph, s07, env["class"].id, as_of)
+    active = materialize_attribution_verdicts(session, graph, s07, env["class"].id, as_of)
     prereq = [a for a in active if a.type == ATTR_PREREQ]
     # P2 弱且 P1 低 -> 应有 P2 的前置缺陷归因
     p2_att = next((a for a in prereq if a.kp_id == env["kp"]["P2"]), None)

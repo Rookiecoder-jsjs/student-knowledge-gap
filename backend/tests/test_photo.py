@@ -70,6 +70,7 @@ def client(tmp_path):
     """隔离临时库：同时替换 app.db 与 routes 模块内的 SessionLocal 引用。"""
     db_path = tmp_path / "photo_test.db"
     import app.api.routes as routes_mod
+    import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -81,12 +82,12 @@ def client(tmp_path):
     Base.metadata.create_all(engine)
     new_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-    original = (dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal)
+    original = (dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal)
     dbmod.engine, dbmod.SessionLocal = engine, new_session
-    routes_mod.SessionLocal = new_session
+    deps_mod.SessionLocal = new_session
     with TestClient(app) as c:
         yield c
-    dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal = original
+    dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = original
     set_client(None)
 
 
@@ -584,6 +585,7 @@ def test_batch_llm_retry(client, monkeypatch):
 def test_batch_sync_guard(monkeypatch):
     """SC_LLM_PROVIDER!=mock 且无 MockLLMClient 时，sync=true 仍走异步（立即返回 queued）。"""
     import app.api.routes as routes_mod
+    import app.api.deps as deps_mod
     from app.ingestion import batch as batch_mod
 
     # 确保无 mock override（_effective_sync 走 openai 分支 -> 异步）
@@ -604,9 +606,9 @@ def test_batch_sync_guard(monkeypatch):
     eng = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False, "timeout": 15})
     Base.metadata.create_all(eng)
     sl = sessionmaker(bind=eng, autoflush=False, expire_on_commit=False)
-    orig = (dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal)
+    orig = (dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal)
     dbmod.engine, dbmod.SessionLocal = eng, sl
-    routes_mod.SessionLocal = sl
+    deps_mod.SessionLocal = sl
     try:
         with TestClient(app) as c:
             assert c.post("/kb/import", json={"yaml_path": str(KB_YAML)}).status_code == 200
@@ -626,7 +628,7 @@ def test_batch_sync_guard(monkeypatch):
             assert r.json()["items"][0]["status"] == "queued"
             assert len(submitted) == 1
     finally:
-        dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal = orig
+        dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = orig
         set_client(None)
         _os.remove(db_path)
 

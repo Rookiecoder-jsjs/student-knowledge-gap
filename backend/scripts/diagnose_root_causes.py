@@ -35,7 +35,7 @@ from app.ingestion.commit import commit_exam
 from app.kb.graph import KpGraph
 from app.kb.loader import import_kb
 from app.models import Class, EvidenceEvent, KnowledgePoint, School
-from app.pipeline.attribution import ATTR_FORGET, run_attribution_for_student
+from app.pipeline.attribution import ATTR_FORGET, materialize_attribution_verdicts
 from app.pipeline.mastery import mastery_series
 from app.pipeline.weakness import assess_student_kps
 from simulator.synthetic import build_simulation
@@ -64,7 +64,7 @@ def _build(session, seed):
     session.flush()
     truth = build_simulation(session, kb.id, clazz.id, n_students=30, seed=seed)
     for tpl_id in truth.exam_ids.values():
-        commit_exam(session, tpl_id, generate_reports=False)
+        commit_exam(session, tpl_id)
     return kb, clazz, truth
 
 
@@ -128,7 +128,7 @@ def r2_forgetting_peak_fragility():
             details = []
             for alias in c_aliases:
                 sid = truth.student_ids[alias]
-                active = run_attribution_for_student(session, graph, sid, clazz.id, FINAL_AS_OF)
+                active = materialize_attribution_verdicts(session, graph, sid, clazz.id, FINAL_AS_OF)
                 is_fire = any(a.type == ATTR_FORGET and a.kp_id == kp_id for a in active)
                 fired += 1 if is_fire else 0
                 series = mastery_series(session, sid, kp_id, FINAL_AS_OF)

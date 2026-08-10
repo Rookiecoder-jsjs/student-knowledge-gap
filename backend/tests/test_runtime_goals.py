@@ -42,6 +42,7 @@ from tests.test_photo import (
 def client(tmp_path):
     """隔离临时库：替换 app.db / routes 的 SessionLocal + engine。"""
     import app.api.routes as routes_mod
+    import app.api.deps as deps_mod
     import app.db as dbmod
     from app import models  # noqa: F401
     from app.db import Base
@@ -51,13 +52,13 @@ def client(tmp_path):
     )
     Base.metadata.create_all(engine)
     new_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    original = (dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal)
+    original = (dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal)
     dbmod.engine, dbmod.SessionLocal = engine, new_session
-    routes_mod.SessionLocal = new_session
+    deps_mod.SessionLocal = new_session
     get_vision_breaker().reset()
     with TestClient(app) as c:
         yield c
-    dbmod.engine, dbmod.SessionLocal, routes_mod.SessionLocal = original
+    dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = original
     set_client(None)
     get_vision_breaker().reset()
 
