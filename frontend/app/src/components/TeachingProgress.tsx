@@ -38,6 +38,8 @@ export function TeachingProgressCard({ classId }: { classId: number }) {
           {total > 0 ? ` / ${total}` : ""}
         </span>
         <button
+          type="button"
+          aria-label="管理教学进度"
           onClick={() => setManageOpen(true)}
           className="text-xs font-medium text-accent transition-colors hover:text-accent-deep"
         >

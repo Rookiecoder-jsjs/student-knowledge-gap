@@ -8,7 +8,7 @@
   --color-line: #e5e5e1;
   --color-ink: #1c1c1a;
   --color-ink-soft: #575753;
-  --color-ink-faint: #787872; /* 白底 4.6:1 / 中性底 4.5:1 */
+  --color-ink-faint: #6e6e6e; /* 白底 5.10:1 / 侧栏 #f1f1ee 底 ~4.9:1（均 ≥ AA 4.5:1；原 #787872 仅 4.44/4.25 不达标） */
   --color-accent: #0f766e;
   --color-accent-deep: #0c5d56;
   --color-accent-soft: #dcefec;

@@ -39,6 +39,7 @@ export default function Exams() {
         actions={
           <span className="flex items-center gap-2">
             <select
+              name="class-switch"
               value={cid}
               onChange={(e) => nav(`/c/${e.target.value}/exams`)}
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"

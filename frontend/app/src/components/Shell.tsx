@@ -124,6 +124,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <span className="text-sm font-semibold text-ink">{currentName ?? "班级"}</span>
               {(classes.data?.classes ?? []).length > 0 && (
                 <select
+                  name="class-switch"
                   value={cid}
                   onChange={(e) => nav(`/c/${e.target.value}`)}
                   className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm transition-colors focus:border-accent"

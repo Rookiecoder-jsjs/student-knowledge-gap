@@ -11,6 +11,10 @@ __pycache__/
 sc.db
 sc.db-shm
 sc.db-wal
+realistic.db
+realistic.db-shm
+realistic.db-wal
+realistic_truth.json
 output/
 .codegraph/
 

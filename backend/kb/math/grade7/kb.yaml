@@ -1,7 +1,9 @@
 # ============================================================================
-# 知识库：数学 · 七年级（人教版）· 统一图谱
+# 知识库：数学 · 七年级（人教版）· 统一图谱（全学年：七上 + 七下）
 # ----------------------------------------------------------------------------
-# 状态：LLM 起草草稿（v0.1.0），待教研审核后方可置为 active（DESIGN §4）。
+# 状态：LLM 起草草稿（v0.2.0），待教研审核后方可置为 active（DESIGN §4）。
+# v0.2.0 变更：在 v0.1.0（七上 4 章）基础上纯增量——七上各章补细分子技能点，
+#             并新增七下 6 章（第五章 相交线与平行线 … 第十章 数据收集整理）。
 # 原则：统一图谱，年级是节点属性而非分区；含小学衔接节点以支撑跨年级前置边。
 # 认知层级：识记 / 理解 / 应用 / 综合
 # 难度先验 difficulty_prior ∈ [0,1]，班级得分率数据到位后仅作参考。
@@ -9,14 +11,15 @@
 meta:
   subject: 数学
   grade: 7
-  semester: 1
+  semester: 0
   textbook_edition: 人教版
-  version: "0.1.0"
+  version: "0.2.0"
   status: draft
   generated_by: LLM 起草（依据课标与人教版教材目录），未经教研审核
   notes: >
     M6-* 为小学衔接节点（grade: 6），仅用于前置追溯与归因，
     不参与七年级教学进度覆盖判定。C-* 为章节容器节点。
+    C7A-* 为七上章节（semester 1），C7B-* 为七下章节（semester 2）。
 
 knowledge_points:
   # ---- 章节容器节点（contains 边的端点） ----
@@ -25,6 +28,12 @@ knowledge_points:
   - {code: C7A-02, name: 第二章 整式的加减, grade: 7, semester: 1, chapter: 第二章 整式的加减, is_container: true}
   - {code: C7A-03, name: 第三章 一元一次方程, grade: 7, semester: 1, chapter: 第三章 一元一次方程, is_container: true}
   - {code: C7A-04, name: 第四章 几何图形初步, grade: 7, semester: 1, chapter: 第四章 几何图形初步, is_container: true}
+  - {code: C7B-05, name: 第五章 相交线与平行线, grade: 7, semester: 2, chapter: 第五章 相交线与平行线, is_container: true}
+  - {code: C7B-06, name: 第六章 实数, grade: 7, semester: 2, chapter: 第六章 实数, is_container: true}
+  - {code: C7B-07, name: 第七章 平面直角坐标系, grade: 7, semester: 2, chapter: 第七章 平面直角坐标系, is_container: true}
+  - {code: C7B-08, name: 第八章 二元一次方程组, grade: 7, semester: 2, chapter: 第八章 二元一次方程组, is_container: true}
+  - {code: C7B-09, name: 第九章 不等式与不等式组, grade: 7, semester: 2, chapter: 第九章 不等式与不等式组, is_container: true}
+  - {code: C7B-10, name: 第十章 数据的收集整理与描述, grade: 7, semester: 2, chapter: 第十章 数据的收集整理与描述, is_container: true}
 
   # ---- 小学衔接（grade 6，semester 0 = 不限） ----
   - code: M6-01
@@ -466,6 +475,658 @@ knowledge_points:
     difficulty_prior: 0.50
     importance: 核心  # 章节主干
 
+  # ---- 第一章（补）细分子技能 ----
+  - code: M7A-131
+    name: 绝对值的几何意义
+    description: "\"|a-b|\" 表示数轴上两点间距离；利用绝对值几何意义解含绝对值的问题。"
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用, 综合]
+    difficulty_prior: 0.60
+    importance: 核心  # 章节主干
+  - code: M7A-132
+    name: 有理数运算中的简便运算
+    description: 先定符号再算绝对值；凑整、互为相反数先加、结合律优化。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-133
+    name: 数轴上的字母与有理数综合
+    description: 含字母的数在数轴上的位置判断；由位置推符号并比较大小。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-134
+    name: 有理数的实际应用
+    description: 用正负数与有理数运算刻画涨跌、盈亏、海拔、温度等实际问题。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+
+  # ---- 第二章（补）细分子技能 ----
+  - code: M7A-211
+    name: 列代数式
+    description: 把文字语言（和差倍分、两数之和的三倍等）翻译成代数式。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7A-212
+    name: 整式的概念辨析
+    description: 判断代数式是否为整式/单项式/多项式；单项式系数与次数易错辨析。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+  - code: M7A-213
+    name: 含多层括号的整式化简
+    description: 含中括号/小括号的整式加减：由内向外逐层去括号再合并。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+
+  # ---- 第三章（补）细分子技能 ----
+  - code: M7A-311
+    name: 去分母解方程的易错处理
+    description: 方程两边同乘最简公分母；漏乘不含分母的项、分子整体加括号。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.58
+    importance: 核心  # 章节主干
+  - code: M7A-312
+    name: 含参数的一元一次方程
+    description: 已知解求参数；方程同解（两方程解相同）问题。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-313
+    name: 应用：数字问题
+    description: 两位数/三位数的数位表示（十位×10+个位）；数字调换类问题。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.62
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-314
+    name: 应用：方案设计与分段计费
+    description: 阶梯水电气费、话费/会员套餐比较；选择最优方案。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-315
+    name: 应用：年龄与增长问题
+    description: 年龄差不变、若干年后倍数关系；增长率/变化量模型。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第四章（补）细分子技能 ----
+  - code: M7A-411
+    name: 从不同方向看立体图形
+    description: 三视图（主/左/俯）的辨认；由三视图想象立体图形。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-412
+    name: 线段的相关计算
+    description: 线段和差、中点组合、三等分点等线段的计算。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7A-413
+    name: 度分秒的换算与计算
+    description: 1°=60'、1'=60″；度分秒的进位/借位加减。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7A-414
+    name: 角的分类与特殊角
+    description: 锐角/直角/钝角/平角/周角；钟表上时针分针夹角问题。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+
+  # ---- 第五章 相交线与平行线 ----
+  - code: M7B-501
+    name: 对顶角与邻补角
+    description: 对顶角相等；邻补角互补；用这两条性质求角。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7B-502
+    name: 垂线
+    description: 垂线的定义与画法；垂线段最短；点到直线的距离。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7B-503
+    name: 同位角、内错角、同旁内角
+    description: 三线八角的辨认；识别两直线被第三条直线所截形成的角。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+  - code: M7B-504
+    name: 平行线的判定
+    description: 同位角相等/内错角相等/同旁内角互补⇒两直线平行；平行公理及推论。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7B-505
+    name: 平行线的性质
+    description: 两直线平行⇒同位角/内错角相等、同旁内角互补。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7B-506
+    name: 平行线的判定与性质综合
+    description: 判定与性质的互逆运用；拐点/折叠类综合求角。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 核心  # 章节主干
+  - code: M7B-507
+    name: 命题、定理与证明
+    description: 命题的结构（题设/结论）；真假命题判断；简单推理证明。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-508
+    name: 平移
+    description: 平移的概念与性质；平移作图；平移前后对应点连线平行且相等。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第六章 实数 ----
+  - code: M7B-601
+    name: 算术平方根
+    description: 算术平方根的定义与记号√a；非负性（√a≥0，a≥0）。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+  - code: M7B-602
+    name: 平方根
+    description: 正数有两个互为相反数的平方根；0 的平方根是 0；负数没有平方根。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7B-603
+    name: 立方根
+    description: 立方根定义与记号∛a；负数的立方根是负数。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7B-604
+    name: 无理数与实数
+    description: 无理数的概念（无限不循环小数）；实数分类；实数与数轴上的点一一对应。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7B-605
+    name: 实数的运算
+    description: 实数的加减乘除与乘方；含根号的近似计算。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7B-606
+    name: 实数的估算与大小比较
+    description: 估算无理数在相邻整数之间；比较含根号数的大小。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第七章 平面直角坐标系 ----
+  - code: M7B-701
+    name: 有序数对
+    description: 用一对有序数表示位置（行/列）；理解有序性。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [识记, 理解]
+    difficulty_prior: 0.30
+    importance: 基础  # 地基性知识点
+  - code: M7B-702
+    name: 平面直角坐标系
+    description: 坐标轴、原点、单位长度；点的坐标（横/纵坐标）；象限划分。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7B-703
+    name: 点的坐标特征
+    description: 各象限内及坐标轴上点的坐标符号规律；特殊位置（x/y 轴、原点）。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.45
+    importance: 核心  # 章节主干
+  - code: M7B-704
+    name: 用坐标表示地理位置
+    description: 建立坐标系描述某地地理位置；用方向和距离表示位置。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.45
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-705
+    name: 用坐标表示平移
+    description: 点左右/上下平移的坐标变化规律；由坐标变化反推平移。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7B-706
+    name: 坐标系中的图形问题
+    description: 由顶点坐标求图形面积；特殊位置关系（平行于坐标轴的线段长）。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.60
+    importance: 核心  # 章节主干
+
+  # ---- 第八章 二元一次方程组 ----
+  - code: M7B-801
+    name: 二元一次方程与二元一次方程组
+    description: 二元一次方程（组）的定义；含两个未知数、次数为 1。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7B-802
+    name: 二元一次方程组的解
+    description: 二元一次方程（组）的解的定义与检验；代入验证。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+  - code: M7B-803
+    name: 代入消元法
+    description: 用一个未知数表示另一个未知数再代入；选择合适方程变形。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7B-804
+    name: 加减消元法
+    description: 相加/相减消去一个未知数；系数不成倍数时先变形。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7B-805
+    name: 二元一次方程组的应用（和差倍分/配套）
+    description: 设两个未知数；和差倍分、配套（比例）类实际问题。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 核心  # 章节主干
+  - code: M7B-806
+    name: 二元一次方程组的应用（行程/图表）
+    description: 行程、工程与图表信息类实际问题；列方程组求解。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.68
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第九章 不等式与不等式组 ----
+  - code: M7B-901
+    name: 不等式及其解集
+    description: 不等式的概念；不等式的解与解集；在数轴上表示解集。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.40
+    importance: 基础  # 地基性知识点
+  - code: M7B-902
+    name: 不等式的性质
+    description: 性质1/2/3；乘除负数时不等号方向要改变。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.45
+    importance: 基础  # 地基性知识点
+  - code: M7B-903
+    name: 一元一次不等式的解法
+    description: 去分母→去括号→移项→合并→系数化1；变号易错点。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7B-904
+    name: 一元一次不等式组的解法
+    description: 分别解各不等式再取交集；口诀法（同大取大等）。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.58
+    importance: 核心  # 章节主干
+  - code: M7B-905
+    name: 不等式（组）的实际应用
+    description: 方案选择/最值类问题；设未知数列不等式（组）求解。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 核心  # 章节主干
+
+  # ---- 第十章 数据的收集、整理与描述 ----
+  - code: M7B-1001
+    name: 统计调查
+    description: 全面调查与抽样调查的选择；总体/个体/样本/样本容量。
+    grade: 7
+    semester: 2
+    chapter: 第十章 数据的收集整理与描述
+    cog_levels_expected: [理解]
+    difficulty_prior: 0.35
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-1002
+    name: 频数分布与直方图
+    description: 频数分布表、组距组数、频率；频数分布直方图的绘制与识读。
+    grade: 7
+    semester: 2
+    chapter: 第十章 数据的收集整理与描述
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-1003
+    name: 统计图表的识读与运用
+    description: 条形图/扇形图/折线图的识读；由图表提取信息并作推断。
+    grade: 7
+    semester: 2
+    chapter: 第十章 数据的收集整理与描述
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第一章（补2）规律与含绝对值 ----
+  - code: M7A-135
+    name: 含绝对值的简单方程
+    description: 解 |x|=a、|x-a|=b 型方程；分类讨论思想。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [应用, 综合]
+    difficulty_prior: 0.62
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-136
+    name: 有理数的规律探索
+    description: 数阵、符号交替、周期性等规律题的归纳与表示。
+    grade: 7
+    semester: 1
+    chapter: 第一章 有理数
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.62
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第二章（补2）规律与实际 ----
+  - code: M7A-214
+    name: 图形规律与代数式
+    description: 用代数式表示图形（点阵/搭火柴）中的规律。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.62
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-215
+    name: 整式加减的实际应用
+    description: 周长/面积/剩余/配套等用整式表示并化简求值。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7A-216
+    name: 求代数式的值（整体代入）
+    description: 已知代数式的值求另一代数式；整体代入思想。
+    grade: 7
+    semester: 1
+    chapter: 第二章 整式的加减
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第三章（补2） ----
+  - code: M7A-316
+    name: 含绝对值的一元一次方程
+    description: "\"|ax+b|=c\" 型方程的解法；分情况讨论。"
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 拓展  # 独立/高阶应用
+  - code: M7A-317
+    name: 应用：配套问题
+    description: 生产甲乙零件按比例配套；分配工人使产品配套。
+    grade: 7
+    semester: 1
+    chapter: 第三章 一元一次方程
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.62
+    importance: 核心  # 章节主干
+
+  # ---- 第四章（补2） ----
+  - code: M7A-415
+    name: 正方体展开图的分类与判断
+    description: 正方体 11 种展开图特征；判断哪一平面图可折成正方体。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [理解, 应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+  - code: M7A-416
+    name: 角度实际应用（方位角/钟表）
+    description: 方位角描述方向；钟表上时针分针所成角的计算。
+    grade: 7
+    semester: 1
+    chapter: 第四章 几何图形初步
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第五章（补） ----
+  - code: M7B-509
+    name: 拐点（折线）综合求角
+    description: 过折点作平行线，将未知角转移到可求位置。
+    grade: 7
+    semester: 2
+    chapter: 第五章 相交线与平行线
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.65
+    importance: 核心  # 章节主干
+
+  # ---- 第六章（补） ----
+  - code: M7B-607
+    name: 平方根与立方根的简单应用
+    description: 由面积/体积反求边长；开方在实际问题中的应用。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-608
+    name: 实数化简（根号下平方）
+    description: √a²=|a| 的化简；结合符号讨论去绝对值。
+    grade: 7
+    semester: 2
+    chapter: 第六章 实数
+    cog_levels_expected: [应用, 综合]
+    difficulty_prior: 0.60
+    importance: 核心  # 章节主干
+
+  # ---- 第七章（补） ----
+  - code: M7B-707
+    name: 关于坐标轴对称的点的坐标
+    description: 关于 x 轴/y 轴/原点对称的点的坐标规律。
+    grade: 7
+    semester: 2
+    chapter: 第七章 平面直角坐标系
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 核心  # 章节主干
+
+  # ---- 第八章（补） ----
+  - code: M7B-807
+    name: 三元一次方程组的简单应用
+    description: 含三个未知数的问题设三个未知数；消元化归为二元（选学拓展）。
+    grade: 7
+    semester: 2
+    chapter: 第八章 二元一次方程组
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.68
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第九章（补） ----
+  - code: M7B-906
+    name: 不等式的整数解
+    description: 求一元一次不等式（组）的整数解；满足条件的整数个数。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.55
+    importance: 核心  # 章节主干
+  - code: M7B-907
+    name: 含参数的不等式（组）问题
+    description: 已知解集（含端点）反求参数范围；解集为空/全体情形。
+    grade: 7
+    semester: 2
+    chapter: 第九章 不等式与不等式组
+    cog_levels_expected: [综合]
+    difficulty_prior: 0.68
+    importance: 拓展  # 独立/高阶应用
+
+  # ---- 第十章（补） ----
+  - code: M7B-1004
+    name: 扇形统计图圆心角与百分比
+    description: 各部分圆心角 = 百分比 × 360°；由扇形图还原总量与各部分。
+    grade: 7
+    semester: 2
+    chapter: 第十章 数据的收集整理与描述
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.50
+    importance: 拓展  # 独立/高阶应用
+  - code: M7B-1005
+    name: 组距组数与频数分布表
+    description: 依据数据确定组距组数（极差÷组距）；频数分布表的填写。
+    grade: 7
+    semester: 2
+    chapter: 第十章 数据的收集整理与描述
+    cog_levels_expected: [应用]
+    difficulty_prior: 0.52
+    importance: 拓展  # 独立/高阶应用
+
 relations:
   # ---- contains：章节 → 知识点 ----
   - {from: C6-BRIDGE, to: M6-01, type: contains}
@@ -591,3 +1252,239 @@ relations:
   # ---- spiral：跨年级螺旋演进线 ----
   - {from: M6-01, to: M7A-122, type: spiral, weight: 1.0}   # 四则运算律 → 有理数混合运算
   - {from: M6-04, to: M7A-304, type: spiral, weight: 1.0}   # 简易方程 → 一元一次方程解法
+
+  # ---- contains：七上新增细点 ----
+  - {from: C7A-01, to: M7A-131, type: contains}
+  - {from: C7A-01, to: M7A-132, type: contains}
+  - {from: C7A-01, to: M7A-133, type: contains}
+  - {from: C7A-01, to: M7A-134, type: contains}
+  - {from: C7A-02, to: M7A-211, type: contains}
+  - {from: C7A-02, to: M7A-212, type: contains}
+  - {from: C7A-02, to: M7A-213, type: contains}
+  - {from: C7A-03, to: M7A-311, type: contains}
+  - {from: C7A-03, to: M7A-312, type: contains}
+  - {from: C7A-03, to: M7A-313, type: contains}
+  - {from: C7A-03, to: M7A-314, type: contains}
+  - {from: C7A-03, to: M7A-315, type: contains}
+  - {from: C7A-04, to: M7A-411, type: contains}
+  - {from: C7A-04, to: M7A-412, type: contains}
+  - {from: C7A-04, to: M7A-413, type: contains}
+  - {from: C7A-04, to: M7A-414, type: contains}
+
+  # ---- contains：七下六章 ----
+  - {from: C7B-05, to: M7B-501, type: contains}
+  - {from: C7B-05, to: M7B-502, type: contains}
+  - {from: C7B-05, to: M7B-503, type: contains}
+  - {from: C7B-05, to: M7B-504, type: contains}
+  - {from: C7B-05, to: M7B-505, type: contains}
+  - {from: C7B-05, to: M7B-506, type: contains}
+  - {from: C7B-05, to: M7B-507, type: contains}
+  - {from: C7B-05, to: M7B-508, type: contains}
+  - {from: C7B-06, to: M7B-601, type: contains}
+  - {from: C7B-06, to: M7B-602, type: contains}
+  - {from: C7B-06, to: M7B-603, type: contains}
+  - {from: C7B-06, to: M7B-604, type: contains}
+  - {from: C7B-06, to: M7B-605, type: contains}
+  - {from: C7B-06, to: M7B-606, type: contains}
+  - {from: C7B-07, to: M7B-701, type: contains}
+  - {from: C7B-07, to: M7B-702, type: contains}
+  - {from: C7B-07, to: M7B-703, type: contains}
+  - {from: C7B-07, to: M7B-704, type: contains}
+  - {from: C7B-07, to: M7B-705, type: contains}
+  - {from: C7B-07, to: M7B-706, type: contains}
+  - {from: C7B-08, to: M7B-801, type: contains}
+  - {from: C7B-08, to: M7B-802, type: contains}
+  - {from: C7B-08, to: M7B-803, type: contains}
+  - {from: C7B-08, to: M7B-804, type: contains}
+  - {from: C7B-08, to: M7B-805, type: contains}
+  - {from: C7B-08, to: M7B-806, type: contains}
+  - {from: C7B-09, to: M7B-901, type: contains}
+  - {from: C7B-09, to: M7B-902, type: contains}
+  - {from: C7B-09, to: M7B-903, type: contains}
+  - {from: C7B-09, to: M7B-904, type: contains}
+  - {from: C7B-09, to: M7B-905, type: contains}
+  - {from: C7B-10, to: M7B-1001, type: contains}
+  - {from: C7B-10, to: M7B-1002, type: contains}
+  - {from: C7B-10, to: M7B-1003, type: contains}
+
+  # ---- prerequisite：第一章新增 ----
+  - {from: M7A-105, to: M7A-131, type: prerequisite, weight: 0.8}
+  - {from: M7A-103, to: M7A-131, type: prerequisite, weight: 0.6}
+  - {from: M7A-122, to: M7A-132, type: prerequisite, weight: 0.7}
+  - {from: M7A-116, to: M7A-132, type: prerequisite, weight: 0.6}
+  - {from: M7A-103, to: M7A-133, type: prerequisite, weight: 0.6}
+  - {from: M7A-106, to: M7A-133, type: prerequisite, weight: 0.6}
+  - {from: M7A-113, to: M7A-134, type: prerequisite, weight: 0.5}
+  - {from: M7A-122, to: M7A-134, type: prerequisite, weight: 0.5}
+
+  # ---- prerequisite：第二章新增 ----
+  - {from: M7A-201, to: M7A-211, type: prerequisite, weight: 0.7}
+  - {from: M7A-201, to: M7A-212, type: prerequisite, weight: 0.6}
+  - {from: M7A-202, to: M7A-212, type: prerequisite, weight: 0.7}
+  - {from: M7A-204, to: M7A-213, type: prerequisite, weight: 0.8}
+  - {from: M7A-205, to: M7A-213, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：第三章新增 ----
+  - {from: M7A-304, to: M7A-311, type: prerequisite, weight: 0.7}
+  - {from: M7A-303, to: M7A-312, type: prerequisite, weight: 0.8}
+  - {from: M7A-304, to: M7A-312, type: prerequisite, weight: 0.7}
+  - {from: M7A-305, to: M7A-313, type: prerequisite, weight: 0.7}
+  - {from: M7A-305, to: M7A-314, type: prerequisite, weight: 0.7}
+  - {from: M7A-305, to: M7A-315, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：第四章新增 ----
+  - {from: M7A-401, to: M7A-411, type: prerequisite, weight: 0.6}
+  - {from: M7A-402, to: M7A-411, type: prerequisite, weight: 0.6}
+  - {from: M7A-405, to: M7A-412, type: prerequisite, weight: 0.8}
+  - {from: M7A-407, to: M7A-413, type: prerequisite, weight: 0.8}
+  - {from: M7A-407, to: M7A-414, type: prerequisite, weight: 0.5}
+
+  # ---- prerequisite：第五章内 ----
+  - {from: M7B-501, to: M7B-502, type: prerequisite, weight: 0.5}
+  - {from: M7B-501, to: M7B-503, type: prerequisite, weight: 0.6}
+  - {from: M7B-503, to: M7B-504, type: prerequisite, weight: 0.8}
+  - {from: M7B-503, to: M7B-505, type: prerequisite, weight: 0.8}
+  - {from: M7B-504, to: M7B-506, type: prerequisite, weight: 0.7}
+  - {from: M7B-505, to: M7B-506, type: prerequisite, weight: 0.7}
+  - {from: M7B-502, to: M7B-506, type: prerequisite, weight: 0.5}
+  - {from: M7B-506, to: M7B-507, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：第六章内 ----
+  - {from: M7B-601, to: M7B-602, type: prerequisite, weight: 0.9}
+  - {from: M7B-602, to: M7B-603, type: prerequisite, weight: 0.6}
+  - {from: M7B-601, to: M7B-604, type: prerequisite, weight: 0.7}
+  - {from: M7B-604, to: M7B-605, type: prerequisite, weight: 0.8}
+  - {from: M7B-604, to: M7B-606, type: prerequisite, weight: 0.7}
+  - {from: M7B-605, to: M7B-606, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：第七章内 ----
+  - {from: M7B-701, to: M7B-702, type: prerequisite, weight: 0.7}
+  - {from: M7B-702, to: M7B-703, type: prerequisite, weight: 0.8}
+  - {from: M7B-702, to: M7B-704, type: prerequisite, weight: 0.6}
+  - {from: M7B-702, to: M7B-705, type: prerequisite, weight: 0.7}
+  - {from: M7B-703, to: M7B-706, type: prerequisite, weight: 0.7}
+  - {from: M7B-705, to: M7B-706, type: prerequisite, weight: 0.7}
+  - {from: M7B-704, to: M7B-706, type: prerequisite, weight: 0.5}
+
+  # ---- prerequisite：第八章内 ----
+  - {from: M7B-801, to: M7B-802, type: prerequisite, weight: 0.8}
+  - {from: M7B-802, to: M7B-803, type: prerequisite, weight: 0.7}
+  - {from: M7B-802, to: M7B-804, type: prerequisite, weight: 0.7}
+  - {from: M7B-803, to: M7B-804, type: prerequisite, weight: 0.6}
+  - {from: M7B-803, to: M7B-805, type: prerequisite, weight: 0.7}
+  - {from: M7B-804, to: M7B-805, type: prerequisite, weight: 0.7}
+  - {from: M7B-805, to: M7B-806, type: prerequisite, weight: 0.7}
+
+  # ---- prerequisite：第九章内 ----
+  - {from: M7B-901, to: M7B-902, type: prerequisite, weight: 0.8}
+  - {from: M7B-902, to: M7B-903, type: prerequisite, weight: 0.8}
+  - {from: M7B-903, to: M7B-904, type: prerequisite, weight: 0.8}
+  - {from: M7B-903, to: M7B-905, type: prerequisite, weight: 0.6}
+  - {from: M7B-904, to: M7B-905, type: prerequisite, weight: 0.7}
+
+  # ---- prerequisite：第十章内 ----
+  - {from: M7B-1001, to: M7B-1002, type: prerequisite, weight: 0.7}
+  - {from: M7B-1001, to: M7B-1003, type: prerequisite, weight: 0.6}
+  - {from: M7B-1002, to: M7B-1003, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：跨章（七上 → 七下） ----
+  - {from: M7A-103, to: M7B-604, type: prerequisite, weight: 0.7}   # 数轴 → 实数与数轴
+  - {from: M7A-122, to: M7B-605, type: prerequisite, weight: 0.6}   # 混合运算 → 实数运算
+  - {from: M7A-303, to: M7B-803, type: prerequisite, weight: 0.7}   # 解方程 → 代入消元
+  - {from: M7A-303, to: M7B-804, type: prerequisite, weight: 0.7}   # 解方程 → 加减消元
+  - {from: M7A-301, to: M7B-801, type: prerequisite, weight: 0.8}   # 方程概念 → 二元一次方程组
+  - {from: M7A-305, to: M7B-805, type: prerequisite, weight: 0.6}   # 建模 → 方程组应用
+  - {from: M7A-303, to: M7B-903, type: prerequisite, weight: 0.7}   # 解方程 → 解不等式
+  - {from: M7A-301, to: M7B-901, type: prerequisite, weight: 0.5}   # 方程 → 不等式同源
+  - {from: M7A-103, to: M7B-702, type: prerequisite, weight: 0.8}   # 数轴 → 平面直角坐标系
+  - {from: M7A-407, to: M7B-501, type: prerequisite, weight: 0.6}   # 角的概念 → 对顶角邻补角
+  - {from: M7A-404, to: M7B-508, type: prerequisite, weight: 0.5}   # 线段概念 → 平移
+  - {from: M7A-131, to: M7B-606, type: prerequisite, weight: 0.5}   # 距离与绝对值 → 估算比较
+  - {from: M7A-102, to: M7B-604, type: prerequisite, weight: 0.6}   # 有理数分类 → 实数分类
+  - {from: M7A-408, to: M7B-506, type: prerequisite, weight: 0.5}   # 角的运算 → 平行线综合求角
+
+  # ---- prerequisite：M6 衔接 → 七下 ----
+  - {from: M6-01, to: M7B-605, type: prerequisite, weight: 0.5}   # 四则运算 → 实数运算
+  - {from: M6-04, to: M7B-803, type: prerequisite, weight: 0.5}   # 简易方程 → 代入消元
+  - {from: M6-05, to: M7B-805, type: prerequisite, weight: 0.5}   # 比例 → 配套问题
+  - {from: M6-06, to: M7B-905, type: prerequisite, weight: 0.5}   # 百分数 → 方案选择
+  - {from: M6-07, to: M7B-501, type: prerequisite, weight: 0.5}   # 角的初步 → 对顶角邻补角
+
+  # ---- confusable：易混淆点对（新增） ----
+  - {from: M7B-601, to: M7B-602, type: confusable, weight: 1.0}    # 算术平方根 / 平方根
+  - {from: M7B-602, to: M7B-603, type: confusable, weight: 1.0}    # 平方根 / 立方根
+  - {from: M7B-601, to: M7A-105, type: confusable, weight: 1.0}    # √a 与 |a| 的非负性
+  - {from: M7B-504, to: M7B-505, type: confusable, weight: 1.0}    # 平行线判定 / 性质
+  - {from: M7B-902, to: M7A-302, type: confusable, weight: 1.0}    # 不等式性质 / 等式性质
+  - {from: M7B-803, to: M7B-804, type: confusable, weight: 1.0}    # 代入消元 / 加减消元
+  - {from: M7A-204, to: M7B-903, type: confusable, weight: 1.0}    # 去括号 / 不等式变号
+
+  # ---- spiral：新增跨学期螺旋线 ----
+  - {from: M7A-303, to: M7B-803, type: spiral, weight: 1.0}   # 移项解方程 → 代入消元
+  - {from: M7A-103, to: M7B-702, type: spiral, weight: 1.0}   # 数轴 → 平面直角坐标系
+  - {from: M7A-122, to: M7B-605, type: spiral, weight: 1.0}   # 有理数运算 → 实数运算
+
+  # ---- contains：第二批新增细点 ----
+  - {from: C7A-01, to: M7A-135, type: contains}
+  - {from: C7A-01, to: M7A-136, type: contains}
+  - {from: C7A-02, to: M7A-214, type: contains}
+  - {from: C7A-02, to: M7A-215, type: contains}
+  - {from: C7A-02, to: M7A-216, type: contains}
+  - {from: C7A-03, to: M7A-316, type: contains}
+  - {from: C7A-03, to: M7A-317, type: contains}
+  - {from: C7A-04, to: M7A-415, type: contains}
+  - {from: C7A-04, to: M7A-416, type: contains}
+  - {from: C7B-05, to: M7B-509, type: contains}
+  - {from: C7B-06, to: M7B-607, type: contains}
+  - {from: C7B-06, to: M7B-608, type: contains}
+  - {from: C7B-07, to: M7B-707, type: contains}
+  - {from: C7B-08, to: M7B-807, type: contains}
+  - {from: C7B-09, to: M7B-906, type: contains}
+  - {from: C7B-09, to: M7B-907, type: contains}
+  - {from: C7B-10, to: M7B-1004, type: contains}
+  - {from: C7B-10, to: M7B-1005, type: contains}
+
+  # ---- prerequisite：第二批七上细点 ----
+  - {from: M7A-105, to: M7A-135, type: prerequisite, weight: 0.8}
+  - {from: M7A-122, to: M7A-136, type: prerequisite, weight: 0.6}
+  - {from: M7A-211, to: M7A-214, type: prerequisite, weight: 0.6}
+  - {from: M7A-213, to: M7A-215, type: prerequisite, weight: 0.7}
+  - {from: M7A-205, to: M7A-215, type: prerequisite, weight: 0.6}
+  - {from: M7A-206, to: M7A-216, type: prerequisite, weight: 0.7}
+  - {from: M7A-135, to: M7A-316, type: prerequisite, weight: 0.6}
+  - {from: M7A-304, to: M7A-316, type: prerequisite, weight: 0.5}
+  - {from: M7A-305, to: M7A-317, type: prerequisite, weight: 0.7}
+  - {from: M7A-402, to: M7A-415, type: prerequisite, weight: 0.7}
+  - {from: M7A-414, to: M7A-416, type: prerequisite, weight: 0.6}
+  - {from: M7A-409, to: M7A-416, type: prerequisite, weight: 0.5}
+
+  # ---- prerequisite：第二批七下细点 ----
+  - {from: M7B-505, to: M7B-509, type: prerequisite, weight: 0.8}
+  - {from: M7B-504, to: M7B-509, type: prerequisite, weight: 0.7}
+  - {from: M7B-602, to: M7B-607, type: prerequisite, weight: 0.7}
+  - {from: M7B-603, to: M7B-607, type: prerequisite, weight: 0.6}
+  - {from: M7B-604, to: M7B-608, type: prerequisite, weight: 0.6}
+  - {from: M7B-601, to: M7B-608, type: prerequisite, weight: 0.6}
+  - {from: M7B-702, to: M7B-707, type: prerequisite, weight: 0.8}
+  - {from: M7B-705, to: M7B-707, type: prerequisite, weight: 0.6}
+  - {from: M7B-804, to: M7B-807, type: prerequisite, weight: 0.7}
+  - {from: M7B-903, to: M7B-906, type: prerequisite, weight: 0.7}
+  - {from: M7B-904, to: M7B-906, type: prerequisite, weight: 0.6}
+  - {from: M7B-903, to: M7B-907, type: prerequisite, weight: 0.6}
+  - {from: M7B-904, to: M7B-907, type: prerequisite, weight: 0.6}
+  - {from: M7B-1003, to: M7B-1004, type: prerequisite, weight: 0.6}
+  - {from: M7B-1002, to: M7B-1005, type: prerequisite, weight: 0.6}
+
+  # ---- prerequisite：第二批跨章 ----
+  - {from: M7A-216, to: M7B-608, type: prerequisite, weight: 0.5}   # 整体代入 → 根号化简
+  - {from: M7A-409, to: M7B-509, type: prerequisite, weight: 0.5}   # 余角补角 → 拐点求角
+  - {from: M7A-305, to: M7B-907, type: prerequisite, weight: 0.4}   # 含参方程 → 含参不等式
+  - {from: M7A-306, to: M7B-806, type: prerequisite, weight: 0.5}   # 行程(一元) → 行程(二元)
+  - {from: M7A-413, to: M7B-1004, type: prerequisite, weight: 0.4}  # 角度运算 → 扇形圆心角
+
+  # ---- confusable：第二批 ----
+  - {from: M7B-608, to: M7A-105, type: confusable, weight: 1.0}    # √a² 化简 / 绝对值
+  - {from: M7B-707, to: M7B-703, type: confusable, weight: 1.0}    # 对称坐标 / 象限坐标
+  - {from: M7B-906, to: M7B-903, type: confusable, weight: 1.0}    # 整数解 / 一般解
+  - {from: M7A-415, to: M7A-402, type: confusable, weight: 1.0}    # 展开图判断 / 展开图概念
+  - {from: M7B-1004, to: M7B-1003, type: confusable, weight: 1.0}  # 扇形图计算 / 图表识读
