@@ -24,7 +24,8 @@ output/
 .vscode/
 node_modules/
 
-# 设计文档（仅本地，不入库）
-docs/
+# 设计文档（仅本地，不入库；architecture-fix-plan.md 为例外，随方案交付入库）
+docs/*
+!docs/architecture-fix-plan.md
 frontend/design/
 design-system/

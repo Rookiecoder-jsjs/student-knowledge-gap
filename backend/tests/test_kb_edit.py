@@ -544,7 +544,7 @@ def test_export_yaml(client):
     # 可被 import_kb 读回（同 code 集合 -> 幂等返回既有）
     import tempfile
     import yaml as _yaml
-    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
+    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w", encoding="utf-8") as f:
         f.write(text)
         path = f.name
     r2 = c.post("/kb/import", json={"yaml_path": path})
@@ -562,14 +562,14 @@ def test_export_archived_roundtrip(client):
     text = c.get("/kb/export").text
     assert "archived: true" in text
     import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w") as f:
+    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w", encoding="utf-8") as f:
         f.write(text)
         path = f.name
     # 改 version 号建新版本导入（否则幂等返回既有）
     import yaml as _yaml
     data = _yaml.safe_load(text)
     data["meta"]["version"] = "export-test"
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         _yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
     r = c.post("/kb/import", json={"yaml_path": path})
     assert r.status_code == 200

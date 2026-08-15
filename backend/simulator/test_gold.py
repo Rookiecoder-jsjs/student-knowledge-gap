@@ -69,6 +69,7 @@ def env():
 
     yield session, graph, truth, clazz
     session.close()
+    engine.dispose()  # Windows: 释放连接池句柄，否则 unlink 被文件锁阻塞
     os.unlink(db_path)
 
 

@@ -51,7 +51,7 @@ def _new_session():
     engine = create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(engine)
     S = sessionmaker(bind=engine, expire_on_commit=False)
-    return S(), db_path
+    return S(), db_path, engine  # 返回 engine 供调用方 dispose 后删库（Windows 文件锁）
 
 
 def _build(session, n, seed):
@@ -157,7 +157,7 @@ def part_a_trajectory():
     print("=" * 92)
     print("Part A · 考试逐轮累积有效性轨迹（种子 42，30 学生）")
     print("=" * 92)
-    session, db_path = _new_session()
+    session, db_path, engine = _new_session()
     try:
         kb, clazz, truth = _build(session, 30, 42)
         graph = KpGraph(session, kb.id)
@@ -178,6 +178,7 @@ def part_a_trajectory():
         session.commit()
     finally:
         session.close()
+        engine.dispose()  # Windows: 释放连接池句柄后删库
         os.unlink(db_path)
 
 
@@ -190,7 +191,7 @@ def part_b_variance():
     samples: dict[str, list] = {k: [] for k in keys}
     forget_hits = []
     for seed in range(42, 47):
-        session, db_path = _new_session()
+        session, db_path, engine = _new_session()
         try:
             kb, clazz, truth = _build(session, 30, seed)
             graph = KpGraph(session, kb.id)
@@ -204,6 +205,7 @@ def part_b_variance():
                   f"根源={m['root_hit']}  遗忘={m['forget']}  覆盖={_fmt(m['coverage'])}")
         finally:
             session.close()
+            engine.dispose()  # Windows: 释放连接池句柄后删库
             os.unlink(db_path)
 
     print("-" * 60)

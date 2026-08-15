@@ -620,6 +620,9 @@ def test_batch_sync_guard(monkeypatch):
                          data={"class_id": 1, "name": "t", "exam_date": "2025-10-25", "type": "单元"}).json()
             eid = tpl["exam_id"]
             set_client(None)  # 关键：无 mock override
+            # 关键：强制非 mock provider，走 `_effective_sync` 的 guard 分支 → 异步。
+            # 不依赖开发机 .env（Mac 有 provider 配置、Windows 无，两者行为必须一致）。
+            monkeypatch.setenv("SC_LLM_PROVIDER", "openai")
             r = c.post(f"/exams/{eid}/photo-batch",
                        files=[("files", ("s.jpg", _jpeg_bytes(), "image/jpeg"))],
                        data={"sync": "true"})
@@ -630,5 +633,6 @@ def test_batch_sync_guard(monkeypatch):
     finally:
         dbmod.engine, dbmod.SessionLocal, deps_mod.SessionLocal = orig
         set_client(None)
+        eng.dispose()  # Windows: 释放连接池句柄，否则 remove 被文件锁阻塞
         _os.remove(db_path)
 

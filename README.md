@@ -2,7 +2,7 @@
 
 一个面向中学教师的**学情诊断工具**🎓。长期追踪学生每次考试/练习表现，估计各知识点的掌握度，归因薄弱点的成因，并生成可直接用于讲评课、家长会、教务汇报的文档，通过复测形成闭环。考试一提交，班级报告与个人诊断就**自动生成并落库**——一次生成，随时回看 💾。试点学科是初一数学（人教版七上）📐——不过年级只是知识库数据层参数，换个 YAML 就能切换学科。
 
-> 📌 设计依据、改进方案、诊断有效性验证、知识图谱改进等设计文档仅保留本地（`docs/`），不入库。
+> 📌 设计依据、改进方案、诊断有效性验证、知识图谱改进等设计文档仅保留本地（`docs/`），不入库（唯一例外：`docs/architecture-fix-plan.md` 随架构方案交付入库）。
 
 ---
 
@@ -70,13 +70,15 @@
 sc/
 ├── backend/                  # Python 后端（FastAPI，五层管线，56 端点）
 │   ├── app/
-│   │   ├── api/routes.py     #   全部路由
+│   │   ├── api/              #   routes（全部路由）+ deps（依赖注入）
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
-│   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph（前置边遍历 + 可疑边反查）
-│   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪）
-│   │   ├── reports/          #   quality_analysis / student_diagnosis / auto_generate（提交后自动生成）/ narrative（LLM 解读）
-│   │   ├── llm/              #   provider 无关客户端 + prompts
-│   │   ├── models.py schemas.py config.py db.py main.py
+│   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph（前置边遍历 + 可疑边反查）/ resolver（active 版本）
+│   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪、归因读视图）
+│   │   ├── queries/          #   只读聚合查询（classes_overview 等）
+│   │   ├── reports/          #   compute/render 分层：quality_model|quality_render / diagnosis_model|diagnosis_render / auto_generate / narrative（LLM 解读）/ labels
+│   │   ├── llm/              #   provider 无关客户端 + prompts + gateway（文本闸门）
+│   │   ├── labels_source.py  #   枚举标签单一真源（codegen 出前端 labels.ts，防两处漂移）
+│   │   ├── models.py schemas.py config.py db.py observability.py main.py
 │   ├── kb/math/grade7/kb.yaml #   知识库（人教版七上，待教研审核）
 │   ├── tests/                #   单元测试（含有效性修复、归因抑制、证伪闭环、P25 误报）
 │   ├── simulator/            #   合成模拟器 + 金标端到端断言 + 压力金标 + 大规模随机模拟
@@ -89,7 +91,7 @@ sc/
 └── .venv/                    #   Python 3.11 虚拟环境（项目根，backend 共用）
 ```
 
-> ⚠️ 设计文档（`docs/`、`frontend/design/`、`design-system/`）仅本地保留，已加入 `.gitignore` 不入库。
+> ⚠️ 设计文档（`docs/`、`frontend/design/`、`design-system/`）仅本地保留，已加入 `.gitignore` 不入库（`docs/architecture-fix-plan.md` 为例外，已入库）。
 
 ---
 
@@ -99,7 +101,7 @@ sc/
 
 ```bash
 cd backend
-python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（150 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（187 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
 python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
@@ -179,7 +181,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 ## ✅ 验证体系
 
-**测试**：150 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
+**测试**：187 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
 
 ```bash
 cd backend && python -m pytest tests simulator

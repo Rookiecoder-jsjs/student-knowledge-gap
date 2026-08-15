@@ -51,7 +51,7 @@ def _new_session():
     engine = create_engine(f"sqlite:///{db_path}")
     Base.metadata.create_all(engine)
     S = sessionmaker(bind=engine, expire_on_commit=False)
-    return S(), db_path
+    return S(), db_path, engine  # 返回 engine 供调用方 dispose 后删库（Windows 文件锁）
 
 
 def _build(session, seed):
@@ -73,7 +73,7 @@ def r1_evidence_per_chapter():
     print("R1 · 覆盖率天花板 0.40 的根因：每生证据数按章分布")
     print(f"   MIN_EVIDENCE_COUNT = {MIN_EVIDENCE_COUNT}（config.py）")
     print("=" * 80)
-    session, db_path = _new_session()
+    session, db_path, engine = _new_session()
     try:
         kb, clazz, truth = _build(session, 42)
         n_students = len(truth.student_ids)
@@ -106,6 +106,7 @@ def r1_evidence_per_chapter():
         print("   根因链：MIN_EVIDENCE_COUNT=3(config.py:43) × 每kp每考1题(synthetic.py:159) × EXAM_SCHEDULE 按章覆盖。")
     finally:
         session.close()
+        engine.dispose()  # Windows: 释放连接池句柄后删库
         os.unlink(db_path)
 
 
@@ -117,7 +118,7 @@ def r2_forgetting_peak_fragility():
     print("=" * 80)
     forget_kp_name = "加减混合运算"
     for seed in range(42, 47):
-        session, db_path = _new_session()
+        session, db_path, engine = _new_session()
         try:
             kb, clazz, truth = _build(session, seed)
             graph = KpGraph(session, kb.id)
@@ -138,6 +139,7 @@ def r2_forgetting_peak_fragility():
             print(f"   seed {seed}: 遗忘 {fired}/3  | " + "  ".join(details))
         finally:
             session.close()
+            engine.dispose()  # Windows: 释放连接池句柄后删库
             os.unlink(db_path)
     print(f"\n   结论：M7A-113 早期仅 E1/E2 两条证据，峰值 mastery 是 1-2 个噪声样本的均值；")
     print(f"   gauss(0,0.18) 噪声(synthetic.py:227) 易把真实 0.85 拉到 <{FORGET_PEAK_THRESHOLD} -> 峰值门槛不过 -> 遗忘不触发。")
@@ -149,7 +151,7 @@ def r3_recall_misses():
     print("=" * 80)
     print("R3 · 召回非 1.0 的根因：噪声把植入弱点均值拉过 floor")
     print("=" * 80)
-    session, db_path = _new_session()
+    session, db_path, engine = _new_session()
     try:
         kb, clazz, truth = _build(session, 42)
         graph = KpGraph(session, kb.id)
@@ -173,6 +175,7 @@ def r3_recall_misses():
             print("   seed 42 无漏召（全部植入弱点命中）。")
     finally:
         session.close()
+        engine.dispose()  # Windows: 释放连接池句柄后删库
         os.unlink(db_path)
 
 
