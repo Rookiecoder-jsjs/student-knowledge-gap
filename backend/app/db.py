@@ -9,6 +9,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -21,6 +22,17 @@ from app.config import settings
 
 class Base(DeclarativeBase):
     """ORM 基类。"""
+
+
+def utcnow() -> datetime:
+    """naive-UTC 系统时间戳（列默认值 / 看门狗计时用）。
+
+    ``datetime.utcnow()`` 自 Python 3.12 弃用；本助手保持原「naive UTC」语义不变。
+    约定：系统戳（created_at/generated_at/started_at/reviewed_at）只写不参与证据
+    计算，统一走本助手；领域截止时间（_as_dt 一系的 as_of）用本地时刻——
+    两类基准不可混用（东八区下 utcnow 作证据截止会漏掉当天上午的证据）。
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 _connect_args: dict = {"check_same_thread": False}  # SQLite + FastAPI 线程池
@@ -61,11 +73,12 @@ def _set_sqlite_pragma(dbapi_conn, _):  # noqa: ANN001
 
 
 def init_db() -> None:
-    """建表。
+    """建表（schema 迁移的唯一入口；双轨决策见 alembic/README——问题8 统一后）。
 
     SC_USE_ALEMBIC=1 时走 ``alembic upgrade head``（G10：schema 变更可追踪、可回滚）；
-    否则 ``create_all``（测试 fixture / 新库）。既有库切 alembic 前需先
-    ``alembic stamp head`` 基线（见 alembic/README）。迁移失败回落 create_all 保证启动。
+    否则 ``create_all``（测试 fixture / 新库），并为存量库补增量列（``_legacy_alter_bootstrap``
+    幂等 ALTER——create_all 不给已有表加列；alembic 轨不需要，初始迁移已含这些列）。
+    迁移失败回落 create_all 保证启动。
     """
     from app import models  # noqa: F401  确保模型注册
 
@@ -78,6 +91,21 @@ def init_db() -> None:
             Base.metadata.create_all(engine)
             return
     Base.metadata.create_all(engine)
+    _legacy_alter_bootstrap()
+
+
+def _legacy_alter_bootstrap() -> None:
+    """存量库增量列（幂等；仅 create_all 轨执行——alembic 轨已由迁移链含列）。
+
+    历史：这两个 ALTER 曾写在 main.py lifespan 每次启动无条件执行（双轨并存，
+    改 schema 的人不知该走哪轨）。现收进 init_db 的 create_all 分支，与 alembic 轨
+    单点隔离：走 alembic 的库不跑 ALTER；走 create_all 的库跑幂等补列。
+    """
+    from scripts.migrate_kb_archived import add_archived_column
+    from scripts.migrate_parse_batch_started_at import add_started_at_column
+
+    add_archived_column()
+    add_started_at_column()
 
 
 def _alembic_upgrade_head() -> None:

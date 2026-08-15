@@ -81,6 +81,18 @@ class KpGraph:
     def code(self, kp_code: str) -> int:
         return self._code_to_id[kp_code]
 
+    def kp_ids(self) -> set[int]:
+        """本版本全部 kp 主键集合（版本隔离过滤用；外部不得摸 _kp）。"""
+        return set(self._kp)
+
+    def prerequisite_edges(self) -> list[tuple[int, int, float]]:
+        """全部前置边 [(from_kp_id, to_kp_id, weight)]（脚本/统计遍历用）。"""
+        return [
+            (from_id, to_id, w)
+            for to_id, edges in self._prereq.items()
+            for from_id, w in edges
+        ]
+
     def is_container(self, kp_id: int) -> bool:
         return self._kp[kp_id].code.startswith("C")
 

@@ -52,7 +52,8 @@ def compute_diagnosis_model(
     student = session.get(Student, student_id)
     clazz = session.get(Class, student.class_id)
     if as_of is None:
-        as_of = datetime.utcnow()
+        # 本地时刻：utcnow 作证据截止在东八区会漏掉当天上午的证据（deps._as_dt 同一约定）
+        as_of = datetime.now()
 
     # events_by_sk 由调用方批量预取传入（提交自动生成时全班共享一次扫描），缺省则内部各取。
     # assessments 可复用（候选1：诊断与物化共享一次评估），缺省则内部评估。

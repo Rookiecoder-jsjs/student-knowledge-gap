@@ -15,9 +15,8 @@ from app.main import app
 
 @pytest.fixture()
 def client(tmp_path):
-    """临时库隔离（同 test_photo：替换 app.db 与 routes 两处 SessionLocal）。"""
+    """临时库隔离（替换 app.db 与 deps 两处 SessionLocal；候选2 拆路由后 routes 无依赖）。"""
     db_path = tmp_path / "queries_test.db"
-    import app.api.routes as routes_mod
     import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine
@@ -218,6 +217,31 @@ def test_override_attribution_not_revived(client):
         db_att = s.get(Attribution, att_id)
         assert db_att.status == "overridden"  # 重跑后仍是 overridden
         assert db_att.teacher_note == "该生课前已自学"
+
+
+def test_attributions_closure_endpoint(client):
+    """回归：端点曾与导入的领域函数 attribution_closure 同名——def shadow 导入后
+    `return attribution_closure(...)` 变自调用 → RecursionError → 500（活体冒烟发现）。
+    """
+    c, session_factory = client
+    class_id, student_ids = _bootstrap(c)
+
+    from app.models import Attribution
+
+    with session_factory() as s:
+        s.add(Attribution(student_id=student_ids[0], kp_id=1, type="前置缺陷",
+                          confidence=0.8, status="active"))
+        s.commit()
+
+    r = c.get("/attributions/closure", params={"class_id": class_id})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["total"] == 1
+    assert data["by_status"]["active"] == 1
+    assert data["closure_rate"] == 0.0  # 尚未经诊断题验证
+
+    # 无 class_id 的全局分支同样可达
+    assert c.get("/attributions/closure").status_code == 200
 
 
 # ---------------------------------------------------------------------------

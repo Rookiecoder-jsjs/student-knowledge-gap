@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from app.db import Base, utcnow
 
 # ---------------------------------------------------------------------------
 # 租户与组织（多租户仅预留字段，MVP 不建权限体系）
@@ -89,7 +89,7 @@ class KbVersion(Base):
     subject: Mapped[str] = mapped_column(String(20))
     textbook_edition: Mapped[str] = mapped_column(String(100))
     version: Mapped[str] = mapped_column(String(20), default="0.1.0")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|reviewed|active
 
     knowledge_points: Mapped[list[KnowledgePoint]] = relationship(back_populates="kb_version")
@@ -308,7 +308,7 @@ class Attribution(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     # active|overridden（教师否决）|resolved（复测验证）
     teacher_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class InterventionPlan(Base):
@@ -317,7 +317,7 @@ class InterventionPlan(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
     status: Mapped[str] = mapped_column(String(20), default="草稿")  # 草稿|已批准|执行中|已完成
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     approved_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     items: Mapped[list[PlanItem]] = relationship(
@@ -398,7 +398,7 @@ class ParseBatchItem(Base):
     response_id: Mapped[int | None] = mapped_column(ForeignKey("exam_response.id"), nullable=True)
     warnings: Mapped[list] = mapped_column(JSON, default=list)  # 不得内嵌原始姓名
     payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 未匹配指派时免重调 LLM
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     # G6：进入 parsing 的时刻，看门狗（reconcile_stale_runtime）计时基准；None=未开始解析
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -415,7 +415,7 @@ class CorrectionLog(Base):
     old: Mapped[str | None] = mapped_column(Text, nullable=True)
     new: Mapped[str | None] = mapped_column(Text, nullable=True)
     corrected_by: Mapped[str] = mapped_column(String(50))
-    at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Report(Base):
@@ -427,7 +427,7 @@ class Report(Base):
     type: Mapped[str] = mapped_column(String(30))      # quality_analysis|student_diagnosis
     class_id: Mapped[int | None] = mapped_column(ForeignKey("class.id"), nullable=True)
     student_id: Mapped[int | None] = mapped_column(ForeignKey("student.id"), nullable=True)
-    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     snapshot_json: Mapped[dict] = mapped_column(JSON, default=dict)
     content_markdown: Mapped[str] = mapped_column(Text, default="")
     # 提交后自动生成时关联到具体考试；历史按需生成的报告为 None

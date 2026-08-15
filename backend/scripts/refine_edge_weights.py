@@ -62,14 +62,13 @@ def refine_edge_weights(
 ) -> list[dict]:
     """返回每边的建议权重报告；样本不足的边不进结果（保持 LLM 先验）。"""
     if as_of is None:
-        as_of = datetime.utcnow()
+        as_of = datetime.now()  # 本地时刻作证据截止（utcnow 在东八区漏当天上午证据）
     students = list(
         session.scalars(select(Student).where(Student.class_id == class_id))
     )
 
     rows: list[dict] = []
-    for to_id, pres in graph._prereq.items():
-        for from_id, weight in pres:
+    for from_id, to_id, weight in graph.prerequisite_edges():
             xs: list[float] = []
             ys: list[float] = []
             for stu in students:

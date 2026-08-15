@@ -17,9 +17,8 @@ from app.main import app
 
 @pytest.fixture()
 def client(tmp_path):
-    """临时库隔离：替换 app.db 与 routes 两处 SessionLocal。"""
+    """临时库隔离：替换 app.db 与 deps 两处 SessionLocal。"""
     db_path = tmp_path / "overview_test.db"
-    import app.api.routes as routes_mod
     import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine

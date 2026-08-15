@@ -41,7 +41,7 @@ def main() -> None:
         kb = import_kb(session, "kb/math/grade7/kb.yaml")
         graph = KpGraph(session, kb.id)
         print(f"[1/6] 知识库导入：{kb.subject} {kb.textbook_edition} v{kb.version}"
-              f"（{len(graph._kp)} 个节点）")
+              f"（{len(graph.kp_ids())} 个节点）")
 
         school = School(name="演示学校")
         session.add(school)

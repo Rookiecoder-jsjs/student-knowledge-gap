@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router
+from app.api.routers import analysis, ingestion, kb, org, reports
 from app.db import init_db
 from app.observability import setup_logging
 
@@ -16,13 +16,8 @@ from app.observability import setup_logging
 async def lifespan(app: FastAPI):
     # ---- startup ----
     setup_logging()  # G7：结构化日志先于一切
+    # 单一 schema 入口（问题8：存量库增量列 ALTER 已并入 init_db 的 create_all 分支）
     init_db()
-    # 存量库 ALTER（create_all 不给已有表加列，缺则全站 500）
-    from scripts.migrate_kb_archived import add_archived_column
-    from scripts.migrate_parse_batch_started_at import add_started_at_column
-
-    add_archived_column()
-    add_started_at_column()  # G6：看门狗计时列
     # 批量录入：回收崩溃遗留的 parsing 僵尸 item / running job（见 §7）
     from app.ingestion.batch import gc_orphan_tempfiles, reconcile_stale
 
@@ -51,4 +46,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+# 健康检查（与各域路由并列；候选2 拆分后独立于业务 router）
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+app.include_router(org.router)
+app.include_router(kb.router)
+app.include_router(ingestion.router)
+app.include_router(analysis.router)
+app.include_router(reports.router)

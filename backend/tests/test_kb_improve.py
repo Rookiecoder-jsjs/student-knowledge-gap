@@ -308,8 +308,8 @@ def test_importance_field_roundtrip(session):
     session.flush()
     kp = _add_kp(session, kb.id, "K1", "基础")
     session.flush()
-    from app.api import routes
-    brief = routes._kp_brief(kp)
+    from app.api.routers.kb import _kp_brief
+    brief = _kp_brief(kp)
     print(f"\n[K5] brief importance = {brief['importance']}")
     assert brief["importance"] == "基础"
     # loader 校验非法重要度

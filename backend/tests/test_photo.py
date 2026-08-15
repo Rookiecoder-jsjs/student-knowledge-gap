@@ -67,9 +67,8 @@ def _jpeg_bytes() -> bytes:
 
 @pytest.fixture()
 def client(tmp_path):
-    """隔离临时库：同时替换 app.db 与 routes 模块内的 SessionLocal 引用。"""
+    """隔离临时库：替换 app.db 与 deps 模块内的 SessionLocal 引用。"""
     db_path = tmp_path / "photo_test.db"
-    import app.api.routes as routes_mod
     import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine
@@ -584,7 +583,6 @@ def test_batch_llm_retry(client, monkeypatch):
 
 def test_batch_sync_guard(monkeypatch):
     """SC_LLM_PROVIDER!=mock 且无 MockLLMClient 时，sync=true 仍走异步（立即返回 queued）。"""
-    import app.api.routes as routes_mod
     import app.api.deps as deps_mod
     from app.ingestion import batch as batch_mod
 

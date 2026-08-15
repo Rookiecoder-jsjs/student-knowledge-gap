@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import TAG_REVIEW_SAMPLE_RATE
+from app.db import utcnow
 from app.ingestion.pii import mask_image
 from app.llm.client import LLMError, get_client
 from app.llm.prompts import (
@@ -401,7 +402,7 @@ def approve_template_tags(session: Session, template_id: int, reviewer: str = "t
     教师在审核台逐题保存（PATCH tags）后，才会真正落闸。
     """
     n = 0
-    now = datetime.utcnow()
+    now = utcnow()
     for tq in session.scalars(
         select(TemplateQuestion).where(TemplateQuestion.exam_template_id == template_id)
     ):

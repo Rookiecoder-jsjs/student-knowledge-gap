@@ -40,8 +40,7 @@ from tests.test_photo import (
 
 @pytest.fixture()
 def client(tmp_path):
-    """隔离临时库：替换 app.db / routes 的 SessionLocal + engine。"""
-    import app.api.routes as routes_mod
+    """隔离临时库：替换 app.db / deps 的 SessionLocal + engine。"""
     import app.api.deps as deps_mod
     import app.db as dbmod
     from app import models  # noqa: F401

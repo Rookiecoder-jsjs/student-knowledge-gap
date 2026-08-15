@@ -150,7 +150,6 @@ def test_commit_no_kb_skips_reports(session, env):
 @pytest.fixture()
 def client(tmp_path):
     db_path = tmp_path / "auto_report_test.db"
-    import app.api.routes as routes_mod
     import app.api.deps as deps_mod
     import app.db as dbmod
     from sqlalchemy import create_engine

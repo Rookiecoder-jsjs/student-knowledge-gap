@@ -11,6 +11,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db import utcnow
 from app.llm.client import LLMError, get_client
 from app.llm.prompts import TAGGER_PROMPT_VERSION, TAGGER_SYSTEM, tagger_user_prompt
 from app.models import (
@@ -76,7 +77,7 @@ def create_template(
                     confidence=1.0,
                     # 教师/脚本直供的标注本身即已审核（只有 LLM 草稿才等闸门）
                     reviewed_by="teacher",
-                    reviewed_at=datetime.utcnow(),
+                    reviewed_at=utcnow(),
                 )
             )
 

@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import BATCH_STALE_MINUTES, BATCH_TEMPFILE_MAX_AGE_HOURS, settings
+from app.db import utcnow
 from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
 from app.llm.circuit import CircuitOpenError, get_vision_breaker
 from app.llm.client import LLMError, MockLLMClient, get_client
@@ -137,7 +138,7 @@ def reconcile_stale_runtime(now: datetime | None = None) -> int:
     本函数处理运行期卡死（worker 线程被外部 kill / 阻塞超 2× LLM TIMEOUT）。
     惰性触发：教师轮询 batch-jobs 时调用，无需后台线程。返回改判的 item 数。
     """
-    cutoff = (now or datetime.utcnow()) - timedelta(minutes=BATCH_STALE_MINUTES)
+    cutoff = (now or utcnow()) - timedelta(minutes=BATCH_STALE_MINUTES)
     with _new_session() as s:
         stale = list(
             s.scalars(
@@ -242,7 +243,7 @@ def _process_async_impl(item_id: int) -> None:
         if item is None or item.status != QUEUED:
             return
         item.status = PARSING
-        item.started_at = datetime.utcnow()  # G6：看门狗计时基准
+        item.started_at = utcnow()  # G6：看门狗计时基准
         _set_job_running(s, item.parse_job_id)
         file_path = item.file_path
         exam_template_id = item.exam_template_id
@@ -292,7 +293,7 @@ def run_item_sync(item_id: int, session) -> None:
     if item is None or item.status != QUEUED:
         return
     item.status = PARSING
-    item.started_at = datetime.utcnow()  # G6：与异步路径一致，看门狗计时基准
+    item.started_at = utcnow()  # G6：与异步路径一致，看门狗计时基准
     _set_job_running(session, item.parse_job_id)
     session.flush()
 
@@ -512,6 +513,106 @@ def _is_retryable(err: Exception) -> bool:
         msg = str(err).lower()
         return not any(h in msg for h in _NON_RETRYABLE_HINTS)
     return False
+
+
+# ---------------------------------------------------------------------------
+# 人工介入状态机（assign / retry / discard；架构修复 候选2：从 routes 收回）
+# 领域层只抛 ValueError；404（目标不存在）用 BatchItemNotFound 区分。
+# ---------------------------------------------------------------------------
+
+
+class BatchItemNotFound(ValueError):
+    """批量项不存在 → HTTP 404。"""
+
+
+def assign_item(session, item_id: int, student_id: int) -> dict:
+    """未匹配项指派到具体学生：用 payload_json 落库，免重调 LLM。
+
+    返回 ``{response_id, status}``。并发/重复上传（uq_tpl_student）经
+    IntegrityError 降级为 duplicate 并关联既有 response（不抛错）。
+    """
+    item = session.get(ParseBatchItem, item_id)
+    if item is None:
+        raise BatchItemNotFound("批量项不存在")
+    if item.status != UNMATCHED:
+        raise ValueError(f"仅未匹配项可指派，当前状态 {item.status}")
+    payload = item.payload_json or {}
+    if not payload.get("answers"):
+        raise ValueError("该项无有效作答数据，无法指派")
+    template = session.get(ExamTemplate, item.exam_template_id)
+    student = session.get(Student, student_id)
+    if student is None or template is None or student.class_id != template.class_id:
+        raise ValueError("学生不属于该班级")
+
+    result = PhotoParseResult()
+    try:
+        nested = session.begin_nested()
+        response = _persist_response_from_payload(
+            session, template, student_id, payload, result
+        )
+        nested.commit()
+        item.status = MATCHED
+        item.matched_student_id = student_id
+        item.match_confidence = None  # 人工指派，非算法匹配
+        item.response_id = response.id
+        item.detected_name = None
+        item.warnings = (item.warnings or []) + result.warnings
+        session.flush()
+    except IntegrityError:
+        nested.rollback()
+        existing = session.scalar(
+            select(ExamResponse.id).where(
+                ExamResponse.exam_template_id == item.exam_template_id,
+                ExamResponse.student_id == student_id,
+            )
+        )
+        item.status = DUPLICATE
+        item.matched_student_id = student_id
+        item.response_id = existing
+        item.detected_name = None
+        item.warnings = (item.warnings or []) + ["该生本场已有作答（重复上传）"]
+        session.flush()
+
+    fp = item.file_path
+    item.file_path = None
+    session.flush()
+    _safe_remove(fp)
+    return {"response_id": item.response_id, "status": item.status}
+
+
+def retry_item(session, item_id: int) -> ParseBatchItem:
+    """失败项重试：校验 tempfile 仍在 -> 重置 queued 清 warnings。
+
+    同步/异步执行的决策（effective_sync）由调用方完成，这里只做状态迁移。
+    """
+    item = session.get(ParseBatchItem, item_id)
+    if item is None:
+        raise BatchItemNotFound("批量项不存在")
+    if item.status != FAILED:
+        raise ValueError(f"仅失败项可重试，当前状态 {item.status}")
+    if not item.file_path or not os.path.exists(item.file_path):
+        raise ValueError("原始文件已不存在，请重新上传")
+    item.status = QUEUED
+    item.warnings = []
+    item.detected_name = None
+    session.flush()
+    return item
+
+
+def discard_item(session, item_id: int) -> ParseBatchItem:
+    """教师主动放弃未匹配/失败项：置 discarded，清 detected_name，删 tempfile。"""
+    item = session.get(ParseBatchItem, item_id)
+    if item is None:
+        raise BatchItemNotFound("批量项不存在")
+    if item.status not in (UNMATCHED, FAILED):
+        raise ValueError(f"仅未匹配/失败项可丢弃，当前状态 {item.status}")
+    fp = item.file_path
+    item.status = DISCARDED
+    item.detected_name = None
+    item.file_path = None
+    session.flush()
+    _safe_remove(fp)
+    return item
 
 
 # ---------------------------------------------------------------------------
