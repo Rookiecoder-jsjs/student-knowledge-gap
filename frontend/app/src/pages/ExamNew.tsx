@@ -1,8 +1,9 @@
 import { Camera, Sparkle, Table, WarningCircle } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, Card, Field, Input, PageHeader } from "../components/ui";
+import { Button, Card, Field, Input, Page, PageHeader } from "../components/ui";
 import { createExam, listKps, photoTemplate, suggestQuestionTags } from "../lib/api";
+import { ACCENTS } from "../lib/theme";
 import type { QuestionCreate } from "../lib/types";
 
 const TYPES = ["单元", "期中", "期末", "练习", "补录", "诊断"];
@@ -144,12 +145,12 @@ export default function ExamNew() {
   ];
 
   return (
-    <div>
+    <Page accent={ACCENTS.exam}>
       <PageHeader title="新建考试" desc="拍照路径由 AI 解析题目并初步标注知识点，建卷后需在审核台确认" />
 
       {/* 分段控件：tab 语义（修 P1-2） */}
       <div
-        className="mb-5 inline-flex gap-1 rounded-xl border border-line bg-surface p-1"
+        className="mb-5 inline-flex gap-1 rounded-md border border-line-strong bg-surface p-1"
         role="tablist"
         aria-label="录入方式"
       >
@@ -170,7 +171,7 @@ export default function ExamNew() {
       </div>
 
       {warnings.length > 0 && (
-        <div className="mb-4 rounded-xl border border-warn/20 bg-warn-soft p-4" role="status">
+        <div className="mb-4 rounded-lg border border-warn/20 bg-warn-soft p-4" role="status">
           <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-warn">
             <WarningCircle size={16} />
             解析警告（即将进入审核台）
@@ -183,7 +184,7 @@ export default function ExamNew() {
         </div>
       )}
       {error && (
-        <div className="mb-4 rounded-xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
+        <div className="mb-4 rounded-lg border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger" role="alert">
           {error}
         </div>
       )}
@@ -200,7 +201,7 @@ export default function ExamNew() {
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="rounded-xl border border-line bg-surface px-3 py-2.5 text-sm transition-colors focus:border-accent"
+              className="rounded-md border border-line-strong bg-surface px-3 py-2.5 text-sm transition-colors focus:border-accent"
             >
               {TYPES.map((t) => (
                 <option key={t}>{t}</option>
@@ -215,7 +216,7 @@ export default function ExamNew() {
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2/60 px-6 py-10 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
+              className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-surface-2/60 px-6 py-10 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
                 <Camera size={24} className="text-accent" weight="thin" />
@@ -243,7 +244,7 @@ export default function ExamNew() {
                 rows={8}
                 value={rows}
                 onChange={(e) => setRows(e.target.value)}
-                className="rounded-xl border border-line bg-surface px-3.5 py-2.5 font-mono text-sm transition-colors focus:border-accent"
+                className="rounded-md border border-line-strong bg-surface px-3.5 py-2.5 font-mono text-sm transition-colors focus:border-accent"
               />
             </Field>
             <div className="flex items-center gap-2 text-xs text-ink-faint">
@@ -262,6 +263,6 @@ export default function ExamNew() {
           </div>
         )}
       </Card>
-    </div>
+    </Page>
   );
 }

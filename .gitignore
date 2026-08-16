@@ -14,6 +14,9 @@ sc.db-wal
 realistic.db
 realistic.db-shm
 realistic.db-wal
+demo_style.db
+demo_style.db-shm
+demo_style.db-wal
 realistic_truth.json
 output/
 .codegraph/

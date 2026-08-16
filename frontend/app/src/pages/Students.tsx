@@ -1,9 +1,10 @@
 import { ChartBar, FirstAidKit } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
-import { Card, EmptyState, ErrorState, PageHeader, Skeleton } from "../components/ui";
+import { Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { listStudents } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 
 /** 学生列表（名单原序，不按任何分数排序）。 */
 export default function Students() {
@@ -12,7 +13,7 @@ export default function Students() {
   const { data, loading, error, reload } = useAsync(() => listStudents(cid), [cid]);
 
   return (
-    <div>
+    <Page accent={ACCENTS.student}>
       <PageHeader
         title="学生诊断"
         desc="按名单原序展示；诊断单先看进步，再看待加强项"
@@ -43,14 +44,14 @@ export default function Students() {
               <span className="flex gap-2">
                 <Link
                   to={`/c/${cid}/students/${s.student_id}/diagnosis`}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
                 >
                   <FirstAidKit size={14} />
                   诊断单
                 </Link>
                 <Link
                   to={`/c/${cid}/students/${s.student_id}/mastery`}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
                 >
                   <ChartBar size={14} />
                   掌握程度
@@ -61,6 +62,6 @@ export default function Students() {
           </Card>
         </Reveal>
       )}
-    </div>
+    </Page>
   );
 }

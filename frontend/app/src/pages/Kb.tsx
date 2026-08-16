@@ -2,7 +2,7 @@ import { ArrowsLeftRight, DownloadSimple, MagnifyingGlass, Plus } from "@phospho
 import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { KpDetailEditor } from "../components/KpDetailEditor";
-import { Badge, Button, Card, EmptyState, ErrorState, Modal, PageHeader, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Modal, Page, PageHeader, Skeleton } from "../components/ui";
 import { Reveal, StaggerItem, StaggerList } from "../components/motion";
 import {
   exportKbUrl,
@@ -18,6 +18,7 @@ import {
 } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { versionStatusLabel } from "../lib/labels";
+import { ACCENTS } from "../lib/theme";
 
 /** 知识库浏览与编辑页（全局，不绑班级；kb-edit §4.1/§7.2）。 */
 export default function Kb() {
@@ -115,7 +116,10 @@ export default function Kb() {
   }
 
   return (
-    <div className="mx-auto min-h-[100dvh] max-w-[1200px] px-6 py-10">
+    <Page
+      accent={ACCENTS.knowledge}
+      className="mx-auto min-h-[100dvh] max-w-[1200px] px-6 py-10"
+    >
       <Link
         to="/"
         className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
@@ -137,7 +141,7 @@ export default function Kb() {
                 setVersionId(Number(e.target.value));
                 setSelectedId(null);
               }}
-              className="rounded-xl border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+              className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
               aria-label="切换版本"
             >
               {versions.data.versions.map((v) => (
@@ -193,7 +197,7 @@ export default function Kb() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="搜索编码 / 名称 / 章节…"
-                className="w-full rounded-xl border border-line bg-surface py-2 pl-9 pr-3 text-sm transition-colors focus:border-accent"
+                className="w-full rounded-md border border-line-strong bg-surface py-2 pl-9 pr-3 text-sm transition-colors focus:border-accent"
               />
             </div>
             <h2 className="mb-3 text-sm font-semibold text-ink-soft">
@@ -288,7 +292,7 @@ export default function Kb() {
             </p>
 
             {switchComp.missing_codes.length > 0 && (
-              <div className="rounded-xl border border-danger/25 bg-danger-soft p-3 text-xs">
+              <div className="rounded-lg border border-danger/25 bg-danger-soft p-3 text-xs">
                 <p className="font-semibold text-danger">
                   缺失 {switchComp.missing_codes.length} 个知识点
                 </p>
@@ -299,7 +303,7 @@ export default function Kb() {
             )}
 
             {switchComp.attribute_changes.length > 0 && (
-              <div className="rounded-xl border border-warn/25 bg-warn-soft p-3 text-xs">
+              <div className="rounded-lg border border-warn/25 bg-warn-soft p-3 text-xs">
                 <p className="font-semibold text-warn">
                   {switchComp.attribute_changes.length} 个知识点关键参数变化
                 </p>
@@ -325,6 +329,6 @@ export default function Kb() {
           </div>
         )}
       </Modal>
-    </div>
+    </Page>
   );
 }

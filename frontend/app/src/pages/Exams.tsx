@@ -1,9 +1,10 @@
 import { ArrowRight, Plus } from "@phosphor-icons/react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, StatusDot } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusDot } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { listClasses, listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 import type { ExamSummary } from "../lib/types";
 
 const STAGE_LABELS = ["建卷", "审核", "采集", "提交", "报告"];
@@ -32,7 +33,7 @@ export default function Exams() {
   const classes = useAsync(() => listClasses(), []);
 
   return (
-    <div>
+    <Page accent={ACCENTS.exam}>
       <PageHeader
         title="考试"
         desc="每场考试是一条流水线：建卷 → 审核 → 采集 → 提交 → 报告"
@@ -147,6 +148,6 @@ export default function Exams() {
           })}
         </StaggerList>
       )}
-    </div>
+    </Page>
   );
 }

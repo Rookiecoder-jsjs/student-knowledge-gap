@@ -21,9 +21,9 @@ const REL_LABEL: Record<string, string> = {
 };
 
 const inputCls =
-  "rounded-xl border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent";
+  "rounded-md border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent";
 const selectCls =
-  "rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent";
+  "rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent";
 
 /** 知识点详情编辑面板：属性 + 〔v0.2〕preview + 归档/恢复/硬删 + 关系增删。 */
 export function KpDetailEditor({
@@ -253,7 +253,7 @@ export function KpDetailEditor({
 
       {/* 归档二次确认（〔v0.2〕409） */}
       {archiveConfirm && (
-        <div className="rounded-xl border border-warn/25 bg-warn-soft p-3 text-xs">
+        <div className="rounded-lg border border-warn/25 bg-warn-soft p-3 text-xs">
           <p className="text-warn">{err}</p>
           <p className="mt-1 text-ink-soft">
             停用后这些题目的知识点分析将缺失（题目标注保留但不计入）。确认请继续。
@@ -339,7 +339,7 @@ export function KpDetailEditor({
 
       {/* 〔v0.2〕preview 影响数 */}
       {preview && (
-        <div className="rounded-xl border border-accent/25 bg-accent-soft p-3 text-xs">
+        <div className="rounded-lg border border-accent/25 bg-accent-soft p-3 text-xs">
           <p className="font-semibold text-accent-deep">影响预览</p>
           <p className="mt-1">
             当前 {preview.current.weak_count} 人待加强（及格线 {preview.current.floor}）→ 改后{" "}
@@ -415,7 +415,7 @@ export function KpDetailEditor({
       )}
 
       {/* 添加关系 */}
-      <div className="rounded-xl border border-line bg-surface-2 p-3">
+      <div className="rounded-md border border-line-strong bg-surface-2 p-3">
         <p className="mb-2 text-xs font-semibold text-ink-soft">添加关系</p>
         <div className="flex flex-wrap items-center gap-2">
           <select value={relType} onChange={(e) => setRelType(e.target.value)} className={selectCls}>

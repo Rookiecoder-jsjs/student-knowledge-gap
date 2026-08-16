@@ -277,7 +277,7 @@ function ManualForm({
               max={q.full_score}
               value={scores[q.idx] ?? ""}
               onChange={(e) => setScores((s) => ({ ...s, [q.idx]: e.target.value }))}
-              className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-sm transition-colors focus:border-accent"
+              className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm transition-colors focus:border-accent"
             />
           </label>
         ))}
@@ -476,7 +476,7 @@ function BatchCollect({
         <div className="mb-3 text-xs text-ink-faint">本场考试已提交，批量录入已置只读。</div>
       )}
       {err && (
-        <div className="mb-3 rounded-xl border border-danger/20 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
+        <div className="mb-3 rounded-lg border border-danger/20 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">
           {err}
         </div>
       )}

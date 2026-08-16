@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Card, EmptyState, ErrorState, Input, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
+import { Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { getMastery, listStudents } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 import type { MasteryItem } from "../lib/types";
 
 /** 掌握度画像：按章节分组的掌握度网格（仅表达个体变化，不做横向比较）。 */
@@ -27,7 +28,7 @@ export default function Mastery() {
   }, [mastery.data]);
 
   return (
-    <div>
+    <Page accent={ACCENTS.student}>
       <PageHeader
         title={student ? `${student.name_or_alias} 的掌握程度画像` : "掌握程度画像"}
         desc="掌握程度会随时间慢慢下降，只反映该生自身变化"
@@ -80,7 +81,7 @@ export default function Mastery() {
                 return (
                   <div
                     key={k.code}
-                    className={`rounded-2xl border p-4 transition-colors ${
+                    className={`rounded-lg border p-4 transition-colors ${
                       high
                         ? "border-accent/25 bg-accent-soft/60"
                         : mid
@@ -114,6 +115,6 @@ export default function Mastery() {
           </section>
         ))}
       </div>
-    </div>
+    </Page>
   );
 }

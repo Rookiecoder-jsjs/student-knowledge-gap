@@ -1,10 +1,11 @@
-import { ArrowRight, FileArrowUp } from "@phosphor-icons/react";
+import { ArrowRight, ChartLineUp, ClipboardText, Exam, FileArrowUp, Student } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Card, EmptyState, ErrorState, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
+import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { TeachingProgressCard } from "../components/TeachingProgress";
 import { listClasses, listClassesOverview, listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 import type { ExamSummary } from "../lib/types";
 
 /** 由考试摘要推算下一动作（与 Exams 页一致）。 */
@@ -33,7 +34,7 @@ export default function Overview() {
   const pct = ov && ov.progress.total > 0 ? Math.round((ov.progress.taught / ov.progress.total) * 100) : 0;
 
   return (
-    <div>
+    <Page accent={ACCENTS.dashboard}>
       <PageHeader
         title={clazz?.name ?? "班级概览"}
         desc={
@@ -54,10 +55,10 @@ export default function Overview() {
 
       {/* 统计条 */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile value={ov?.exam_count ?? 0} label="考试" />
-        <StatTile value={ov?.todo_count ?? 0} label="待办" tone={(ov?.todo_count ?? 0) > 0 ? "warn" : "neutral"} />
-        <StatTile value={`${pct}%`} label="教学进度" hint={ov ? `${ov.progress.taught}/${ov.progress.total}` : undefined} tone="accent" />
-        <StatTile value={clazz?.student_count ?? 0} label="学生" />
+        <StatTile value={ov?.exam_count ?? 0} label="考试" icon={<Exam size={20} weight="fill" />} />
+        <StatTile value={ov?.todo_count ?? 0} label="待办" tone={(ov?.todo_count ?? 0) > 0 ? "warn" : "neutral"} icon={<ClipboardText size={20} weight="fill" />} />
+        <StatTile value={`${pct}%`} label="教学进度" hint={ov ? `${ov.progress.taught}/${ov.progress.total}` : undefined} tone="accent" icon={<ChartLineUp size={20} weight="fill" />} />
+        <StatTile value={clazz?.student_count ?? 0} label="学生" icon={<Student size={20} weight="fill" />} />
       </div>
 
       {classes.error && <ErrorState message={classes.error} onRetry={classes.reload} />}
@@ -141,6 +142,6 @@ export default function Overview() {
           </div>
         </section>
       </Reveal>
-    </div>
+    </Page>
   );
 }

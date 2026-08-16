@@ -115,12 +115,12 @@ export default function Review() {
       </div>
 
       {notice && (
-        <div className="mb-4 rounded-xl border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep" role="status">
+        <div className="mb-4 rounded-lg border border-accent/20 bg-accent-soft px-4 py-2.5 text-sm text-accent-deep" role="status">
           {notice}
         </div>
       )}
       {err && (
-        <div className="mb-4 rounded-xl border border-danger/20 bg-danger-soft px-4 py-2.5 text-sm text-danger" role="alert">
+        <div className="mb-4 rounded-lg border border-danger/20 bg-danger-soft px-4 py-2.5 text-sm text-danger" role="alert">
           {err}
         </div>
       )}
@@ -194,7 +194,7 @@ export default function Review() {
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
                           placeholder="每行：知识点编码 权重（如 M7A-105 1.0）"
-                          className="w-full rounded-xl border border-line bg-surface px-3 py-2 font-mono text-xs transition-colors focus:border-accent"
+                          className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 font-mono text-xs transition-colors focus:border-accent"
                         />
                         <div className="flex items-center gap-2">
                           <input
@@ -202,7 +202,7 @@ export default function Review() {
                             value={pickCode}
                             onChange={(e) => setPickCode(e.target.value)}
                             placeholder="搜索知识点编码…"
-                            className="w-56 rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent"
+                            className="w-56 rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent"
                           />
                           <Button
                             variant="secondary"
@@ -277,7 +277,7 @@ export default function Review() {
                       onChange={(e) =>
                         setFixScore((s) => ({ ...s, [a.answer_id]: e.target.value }))
                       }
-                      className="w-28 rounded-xl border border-line bg-surface px-2.5 py-1.5 text-sm transition-colors focus:border-accent"
+                      className="w-28 rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm transition-colors focus:border-accent"
                     />
                     <Button
                       variant="secondary"

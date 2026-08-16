@@ -1,7 +1,7 @@
 import { CaretDown, CaretRight, HandPalm } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, Input, PageHeader, SectionTitle, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import {
@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { attrLabel, criterionLabel, trajLabel } from "../lib/labels";
+import { ACCENTS } from "../lib/theme";
 import type { AttributionView } from "../lib/types";
 
 const ATTR_HINT: Record<string, string> = {
@@ -73,7 +74,7 @@ export default function Diagnosis() {
   }, [sid, narrative, asOf]);
 
   return (
-    <div>
+    <Page accent={ACCENTS.student}>
       <PageHeader
         title={student ? `${student.name_or_alias} 的诊断单` : "学生诊断单"}
         desc="先看进步，再看待加强项；每条结论可展开依据"
@@ -190,7 +191,7 @@ export default function Diagnosis() {
           </div>
         </section>
       </div>
-    </div>
+    </Page>
   );
 }
 
@@ -255,13 +256,13 @@ function AttributionCard({
               不认可这条原因？
             </Button>
           ) : (
-            <div className="space-y-2 rounded-xl bg-surface-2 p-3">
+            <div className="space-y-2 rounded-lg bg-surface-2 p-3">
               <textarea
                 rows={2}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="备注（可选）：如该生课前已自学、近期状态特殊…"
-                className="w-full rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent"
+                className="w-full rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent"
               />
               {err && <p className="text-xs text-danger">{err}</p>}
               <div className="flex gap-2">

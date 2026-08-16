@@ -1,8 +1,9 @@
 import { Fragment, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { StatusDot } from "./ui";
+import { Page, StatusDot } from "./ui";
 import { listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 
 /** 考试流水线 5 阶。to 相对于 /c/:cid/exams/:eid。 */
 const STAGES = [
@@ -38,9 +39,9 @@ export function ExamWorkspace({ stage, children }: { stage: number; children: Re
   };
 
   return (
-    <div>
+    <Page accent={ACCENTS.exam}>
       {/* 考试上下文 + 流水线 stepper */}
-      <div className="mb-6 rounded-[10px] border border-line bg-surface px-5 py-4 shadow-soft">
+      <div className="mb-6 rounded-2xl bg-surface px-5 py-4 shadow-soft">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold tracking-tight text-ink">
@@ -108,6 +109,6 @@ export function ExamWorkspace({ stage, children }: { stage: number; children: Re
       </div>
 
       {children}
-    </div>
+    </Page>
   );
 }

@@ -19,13 +19,18 @@ export default function ClassPicker() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-[1200px] flex-col px-6 py-12">
-      <header className="mb-10 flex items-center gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent text-white shadow-soft">
-          <TreeStructure size={22} weight="bold" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">班级概览</h1>
-          <p className="text-sm text-ink-soft">选择班级进入工作台</p>
+      {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
+      <header className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f766e] via-[#14b8a6] to-[#2563eb] px-8 py-9 text-white shadow-lift">
+        <div className="flex items-center gap-4">
+          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
+            <TreeStructure size={24} weight="bold" />
+          </span>
+          <div>
+            <h1 className="font-display text-3xl font-bold tracking-tight">班级概览</h1>
+            <p className="mt-1 text-sm text-white/80">
+              选择班级进入工作台，或创建新班级开始分析
+            </p>
+          </div>
         </div>
       </header>
 
@@ -33,7 +38,7 @@ export default function ClassPicker() {
       {error && <ErrorState message={error} onRetry={reload} />}
 
       {data && data.classes.length === 0 && (
-        <div className="flex flex-col items-center gap-4 rounded-3xl border border-dashed border-line bg-surface/60 px-10 py-16 text-center shadow-soft">
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-line bg-surface/70 px-10 py-16 text-center shadow-soft">
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
             <PlusCircle size={30} className="text-accent" weight="thin" />
           </span>
@@ -46,7 +51,7 @@ export default function ClassPicker() {
           </div>
           <Link
             to="/wizard"
-            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
+            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
           >
             <PlusCircle size={17} />
             开始初始化（约 5 分钟）
@@ -91,7 +96,7 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group flex w-full flex-col rounded-2xl border border-line bg-surface p-6 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:border-accent/30 hover:shadow-lift active:scale-[0.99]"
+      className="group flex w-full flex-col rounded-2xl bg-surface p-6 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:shadow-lift hover:ring-2 hover:ring-accent/15 active:scale-[0.99]"
     >
       <div className="flex items-start justify-between">
         <p className="text-lg font-semibold tracking-tight">{c.name}</p>

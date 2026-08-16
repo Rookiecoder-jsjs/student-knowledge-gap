@@ -1,11 +1,12 @@
 import { FileText } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Button, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "../components/ui";
+import { Button, Card, EmptyState, ErrorState, Page, SectionTitle, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { ReportMarkdown, ReportTOC } from "../components/Markdown";
 import { listExams, qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { ACCENTS } from "../lib/theme";
 
 /**
  * 班级质量分析（考试流水线第 5 阶，亦作 /c/:cid/quality 直达入口）。
@@ -43,7 +44,7 @@ export default function Quality() {
   const selectedExam = exams.data?.exams.find((e) => e.exam_id === examId);
 
   return (
-    <div>
+    <Page accent={ACCENTS.exam}>
       <SectionTitle>{presetExamId ? "班级质量分析" : "班级质量分析（选择考试）"}</SectionTitle>
 
       <Card className="mb-5 flex flex-wrap items-end gap-4 p-4">
@@ -112,7 +113,7 @@ export default function Quality() {
         <Reveal>
           <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
             <aside className="hidden lg:block">
-              <div className="sticky top-4 rounded-[10px] border border-line bg-surface p-4 shadow-soft">
+              <div className="sticky top-4 rounded-lg border border-line bg-surface p-4 shadow-soft">
                 <ReportTOC content={report} />
               </div>
             </aside>
@@ -122,6 +123,6 @@ export default function Quality() {
           </div>
         </Reveal>
       )}
-    </div>
+    </Page>
   );
 }

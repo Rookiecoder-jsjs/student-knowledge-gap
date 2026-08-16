@@ -1,36 +1,57 @@
 @import "tailwindcss";
 
 @theme {
-  /* 案头 Workbench 配色：暖灰中性底 + 单一松青主色，无 AI 紫蓝，无绿洲暖绿/陶土 */
-  --color-canvas: #f6f6f4;
+  /* 彩色模块教育风（Duolingo / Khan Academy 系）：
+     冷灰画布 + 纯白卡片 + 16px 大圆角无描边 + 模块色编码。
+     关键机制：accent-soft/deep 由 --color-accent 运行时派生（见下方 :root），
+     页面根节点用 <Page accent="#f97316"> 覆盖 --color-accent，整页随之换模块色。
+     导航胶囊用模块字面色（mod-*），不随页面 accent 变化。 */
+  --color-canvas: #f6f7fb;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f1ee;
-  --color-line: #e5e5e1;
-  --color-ink: #1c1c1a;
-  --color-ink-soft: #575753;
-  --color-ink-faint: #6e6e6e; /* 白底 5.10:1 / 侧栏 #f1f1ee 底 ~4.9:1（均 ≥ AA 4.5:1；原 #787872 仅 4.44/4.25 不达标） */
-  --color-accent: #0f766e;
-  --color-accent-deep: #0c5d56;
-  --color-accent-soft: #dcefec;
-  --color-warn: #b45309;
-  --color-warn-soft: #fbf0df;
-  --color-danger: #b3403a;
-  --color-danger-soft: #f7e7e5;
+  --color-surface-2: #f1f3f8;
 
-  /* 中性利落阴影（非绿洲暖绿柔影） */
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-lift: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
-  --shadow-float: 0 12px 32px -8px rgba(0, 0, 0, 0.14);
+  --color-line: #e5e9f2;
+  --color-line-strong: #d3d9e6;
+
+  --color-ink: #1f2937;
+  --color-ink-soft: #55617a;
+  --color-ink-faint: #7a86a1;
+
+  /* 模块色单一来源是 src/lib/theme.ts 的 ACCENTS（Shell 导航胶囊 + 各页 <Page accent> 共用）。
+     此处只保留页面 accent 默认值 = 工作台青绿；soft/deep 见下方 :root 派生块。 */
+  --color-accent: #14b8a6;
+  --color-accent-deep: #0f766e;
+  --color-accent-soft: #ccfbf1;
+
+  --color-warn: #d97706;
+  --color-warn-soft: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fee2e2;
+
+  /* 柔和分层：层级主要靠底色差与纯白卡片，阴影只做轻托举 */
+  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-lift: 0 2px 4px -1px rgb(15 23 42 / 0.06),
+    0 6px 14px -4px rgb(15 23 42 / 0.09);
+  --shadow-float: 0 10px 24px -8px rgb(15 23 42 / 0.14),
+    0 20px 48px -16px rgb(15 23 42 / 0.18);
 
   --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     system-ui, sans-serif;
+  --font-display: "Outfit", "Inter", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo,
     monospace;
 }
 
+/* 模块色派生：soft = 主色 14% 兑白，deep = 主色 82% 兑黑。
+   var() 在使用处才求值——页面覆盖 --color-accent 后，soft/deep 自动跟随换色。 */
+:root {
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, white);
+  --color-accent-deep: color-mix(in srgb, var(--color-accent) 82%, black);
+}
+
 html {
   font-family: var(--font-sans);
-  /* 中性案头底：纯中性画布，无暖色径向光晕 */
   background: var(--color-canvas);
   color: var(--color-ink);
   background-attachment: fixed;
@@ -44,6 +65,19 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 标题族统一走 display 字体（Outfit，几何利落偏亲和） */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
+
+/* 文本选中：主色淡底，替代浏览器默认蓝 */
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-deep);
+}
+
 /* 焦点可见性：利落实线环 */
 :focus-visible {
   outline: 2px solid var(--color-accent);
@@ -51,13 +85,13 @@ body {
   border-radius: 4px;
 }
 
-/* 表单聚焦：细环（非柔光晕） */
+/* 表单聚焦：细环 */
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
 /* 动效降级：尊重系统偏好 */
@@ -103,21 +137,28 @@ textarea:focus-visible {
   border: 0;
 }
 
-/* 报告 Markdown 渲染（案头编辑式排版，等宽分数/表格） */
+/* 滚动条：细中性条（桌面 SaaS 观感） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+/* 报告 Markdown 渲染（编辑式排版，等宽分数/表格；标题走 display 字体） */
 .report-md {
   font-size: 15px;
   line-height: 1.7;
 }
 .report-md h1 {
-  font-size: 1.3rem;
+  font-size: 1.35rem;
   font-weight: 600;
   margin: 1.5rem 0 0.75rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 .report-md h2 {
   font-size: 1.12rem;
   font-weight: 600;
   margin: 1.25rem 0 0.5rem;
+  letter-spacing: -0.01em;
 }
 .report-md h3 {
   font-size: 1rem;

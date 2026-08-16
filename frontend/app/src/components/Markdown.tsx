@@ -83,7 +83,7 @@ export function ReportMarkdown({ content }: { content: string }) {
         </ReactMarkdown>
       </div>
       {ai && (
-        <div className="mt-6 rounded-[10px] border border-accent/20 bg-accent-soft/70 p-5 shadow-soft">
+        <div className="mt-6 rounded-lg border border-accent/20 bg-accent-soft/70 p-5 shadow-soft">
           <div className="mb-3 flex items-center gap-2 border-b border-accent/15 pb-3">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15">
               <Robot size={16} className="text-accent-deep" />

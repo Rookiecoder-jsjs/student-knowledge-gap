@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, CheckCircle, Upload } from "@phosphor-icons/react";
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Field, Input } from "../components/ui";
+import { Button, Card, Field, Input, Page } from "../components/ui";
 import {
   createClass,
   createSchool,
@@ -10,6 +10,7 @@ import {
   listKps,
   updateProgress,
 } from "../lib/api";
+import { ACCENTS } from "../lib/theme";
 import type { KpNode } from "../lib/api";
 
 const STEPS = ["导入知识库", "建班与名单", "教学进度"];
@@ -102,9 +103,12 @@ export default function Wizard() {
     });
 
   return (
-    <div className="mx-auto min-h-[100dvh] max-w-[760px] px-6 py-12">
+    <Page
+      accent={ACCENTS.knowledge}
+      className="mx-auto min-h-[100dvh] max-w-[760px] px-6 py-12"
+    >
       <header className="mb-10">
-        <h1 className="text-2xl font-semibold tracking-tight">初始化设置</h1>
+        <h1 className="font-display text-3xl font-bold tracking-tight">初始化设置</h1>
         <div className="mt-5 flex items-center gap-2">
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-2">
@@ -130,7 +134,7 @@ export default function Wizard() {
 
       {error && (
         <div
-          className="mb-4 rounded-xl border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"
+          className="mb-4 rounded-lg border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger"
           role="alert"
         >
           {error}
@@ -170,7 +174,7 @@ export default function Wizard() {
               value={roster}
               onChange={(e) => setRoster(e.target.value)}
               placeholder={"张三\n李四\n王五"}
-              className="rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm transition-colors focus:border-accent"
+              className="rounded-md border border-line-strong bg-surface px-3.5 py-2.5 text-sm transition-colors focus:border-accent"
             />
           </Field>
           <p className="text-xs leading-relaxed text-ink-faint">
@@ -201,7 +205,7 @@ export default function Wizard() {
           </div>
           <div className="max-h-[46vh] space-y-3 overflow-y-auto pr-2">
             {chapters.map(([chap, nodes]) => (
-              <div key={chap} className="rounded-xl border border-line p-4">
+              <div key={chap} className="rounded-md border border-line-strong p-4">
                 <label className="flex items-center gap-2 text-sm font-semibold">
                   <input
                     type="checkbox"
@@ -244,7 +248,7 @@ export default function Wizard() {
           </p>
         </Card>
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -267,7 +271,7 @@ function StepOne({
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="mt-2 flex w-full cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2/60 px-6 py-9 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
+          className="mt-2 flex w-full cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-line bg-surface-2/60 px-6 py-9 text-center transition-colors hover:border-accent/50 hover:bg-surface-2"
         >
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft">
             <Upload size={22} className="text-accent" weight="thin" />
