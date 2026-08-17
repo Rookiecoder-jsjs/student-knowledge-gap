@@ -61,6 +61,7 @@
 | LLM | provider 无关接口层（vision + text 双能力），云端 API；试点用 DashScope `qwen3.7-flash` |
 | 知识库源 | YAML + Git，导入脚本入库 |
 | 图计算 | 关系表存储 + networkx 内存遍历（百级节点，无需图数据库）|
+| 部署 | Docker（后端/前端镜像）+ docker compose 三服务编排（backend / frontend / backup）· nginx `/api` 反代 · 单 uvicorn 进程（架构不变量）· SQLite 热备 |
 
 ---
 
@@ -70,24 +71,29 @@
 sc/
 ├── backend/                  # Python 后端（FastAPI，五层管线，56 端点）
 │   ├── app/
-│   │   ├── api/              #   routes（全部路由）+ deps（依赖注入）
+│   │   ├── api/routers/      #   路由（org / ingestion / kb / analysis / reports）+ deps（依赖注入）
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
-│   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph（前置边遍历 + 可疑边反查）/ resolver（active 版本）
+│   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph / resolver（active 版本）/ edit / versioning / compatibility
 │   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪、归因读视图）
 │   │   ├── queries/          #   只读聚合查询（classes_overview 等）
 │   │   ├── reports/          #   compute/render 分层：quality_model|quality_render / diagnosis_model|diagnosis_render / auto_generate / narrative（LLM 解读）/ labels
-│   │   ├── llm/              #   provider 无关客户端 + prompts + gateway（文本闸门）
+│   │   ├── llm/              #   provider 无关客户端 + prompts + gateway（文本闸门）+ circuit（熔断器）
 │   │   ├── labels_source.py  #   枚举标签单一真源（codegen 出前端 labels.ts，防两处漂移）
-│   │   ├── models.py schemas.py config.py db.py observability.py main.py
+│   │   ├── models.py schemas.py config.py db.py observability.py main.py（含 /health + /ready 探针）
 │   ├── kb/math/grade7/kb.yaml #   知识库（人教版七上，待教研审核）
-│   ├── tests/                #   单元测试（含有效性修复、归因抑制、证伪闭环、P25 误报）
+│   ├── tests/                #   单元测试（含有效性修复、归因抑制、证伪闭环、P25 误报、健康探针）
 │   ├── simulator/            #   合成模拟器 + 金标端到端断言 + 压力金标 + 大规模随机模拟
-│   ├── scripts/              #   run_demo / effectiveness_multiround / effectiveness_largescale / audit_kb_edges
+│   ├── scripts/              #   run_demo / effectiveness_multiround / effectiveness_largescale / audit_kb_edges / backup_db / backup_loop.sh
 │   ├── output/               #   demo 产出（质量分析、个人诊断单）
+│   ├── Dockerfile            #   后端镜像（单 uvicorn 进程，架构不变量；见 DEPLOY.md「单进程原理」）
 │   └── .env                  #   LLM 与质量开关配置（勿入库）
 ├── frontend/
 │   ├── app/                  #   教师端 Web（Vite + React + TS + Tailwind，案头 Workbench 风格）
-│   │   └── src/{pages,components,lib}/
+│   │   ├── src/{pages,components,lib}/
+│   │   ├── Dockerfile        #   前端镜像（node 构建 -> nginx 托管 dist + /api 反代）
+│   │   └── nginx.conf        #   /api 前缀剥离反代 backend（与 Vite dev 代理等价）
+├── docker-compose.yml        #   单机「基础可靠」部署编排（backend / frontend / backup 三服务 + 卷）
+├── DEPLOY.md                 #   部署与运维文档（备份恢复三步法 / 单进程原理 / 演进路径）
 └── .venv/                    #   Python 3.11 虚拟环境（项目根，backend 共用）
 ```
 
@@ -114,6 +120,8 @@ cd frontend/app
 npm install
 npm run dev                                       # 🖥️ 启动前端开发服务器（/api 代理到后端）
 ```
+
+> 🐳 **容器化部署**（基础可靠 / 单机，三服务编排 backend + frontend + backup）见 [DEPLOY.md](DEPLOY.md)。
 
 ## ⚙️ 配置（backend/.env）
 
@@ -144,11 +152,13 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 这三个参数是系统"诊断准不准"的核心旋钮 🎛️。默认值不是拍脑袋定的——是用 150 人 × 12 场考试 × 6 个随机种子的模拟跑出来的（见下文「验证体系」）：`MIN=2` 让系统不用熬到期末才出诊断，`strict` 把"全班都挺好却硬挑出 25% 薄弱"的误报砍掉 11%，召回和根源命中率不掉。想退回最保守的基线，设 `SC_MIN_EVIDENCE_COUNT=3 SC_WEAKNESS_MODE=standard` 即可。
 
+**部署相关变量**（`SC_CORS_ORIGINS` / `SC_BACKUP_*` / `SC_DATABASE_URL` 容器化语义等）见 [DEPLOY.md](DEPLOY.md) 与 `backend/.env.example`。
+
 ---
 
 ## 📡 核心功能与端点
 
-共 **56 个端点**（启动后可在 Swagger 交互文档查看）。
+共 **56 个端点**（启动后可在 Swagger 交互文档查看）。运维探针：`GET /health`（liveness，进程存活）与 `GET /ready`（readiness——DB 可达即 200；LLM 熔断仅标 `degraded:true`，DB 不可达 503，供编排器自愈）。
 
 **📚 知识库**
 - 导入与版本：`POST /kb/import`、`GET|POST /kb/versions`、`PATCH /kb/versions/{id}`、`GET /kb/versions/{id}/compatibility`

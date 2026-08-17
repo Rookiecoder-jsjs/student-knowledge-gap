@@ -1,0 +1,20 @@
+# 密钥与环境：绝不入镜像
+.env
+.env.local
+
+# 本地虚拟环境 / Python 产物
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 测试与演示脚本（生产镜像不需要；CI 裸跑）
+tests/
+simulator/
+output/
+
+# 真实数据库与运行态产物
+*.db
+*.db-shm
+*.db-wal
+realistic_truth.json

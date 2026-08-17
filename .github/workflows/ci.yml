@@ -44,3 +44,18 @@ jobs:
       - name: Build
         working-directory: frontend/app
         run: npm run build
+
+  docker:
+    # 防镜像/compose bit-rot：镜像可构建 + compose 语法正确性进 CI
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build --pull -t sc-backend:ci ./backend
+      - name: Build frontend image
+        run: docker build -t sc-frontend:ci ./frontend/app
+      - name: Validate docker compose
+        run: |
+          touch backend/.env   # env_file 占位；真实值由运维本地提供（见 DEPLOY.md）
+          docker compose config -q

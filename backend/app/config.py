@@ -147,6 +147,9 @@ class Settings:
 
     # G10/G2：env 驱动 DB URL，迁 PG 只改 SC_DATABASE_URL（derive-on-read 不受影响）
     database_url: str = os.environ.get("SC_DATABASE_URL", "sqlite:///./sc.db")
+    # 部署（容器化）：逗号分隔的允许来源；空 = 回落本地开发默认（见 main.py CORS）。
+    # 生产同源经 nginx 反代不需要跨域，留空即可。
+    cors_origins: str = os.environ.get("SC_CORS_ORIGINS", "")
     kb_dir: str = "kb"
     output_dir: str = "output"
     allow_sync_batch: bool = False  # 批量录入 sync=true 守卫（仅测试/演示开）
