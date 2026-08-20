@@ -24,7 +24,8 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
 COPY scripts ./scripts
-COPY kb ./kb   # 知识库导入源（yaml_path 相对 WORKDIR 解析，导入后 DB 即真源）
+# 知识库导入源（yaml_path 相对 WORKDIR 解析，导入后 DB 即真源）
+COPY kb ./kb
 
 RUN mkdir -p /data/tmp /backups && chown -R app:app /data /backups
 
