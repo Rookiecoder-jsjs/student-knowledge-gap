@@ -1,7 +1,7 @@
 """考试提交后自动生成并落库班级质量报告 + 已参加学生诊断（plan §1.2）。
 
 触发：commit_exam 提交后同步调用。基础报告不含 LLM（秒级~十几秒）；
-AI 解读在首次查看时生成并缓存到 narrative_markdown，一次生成永久查看。
+AI 解读在首次查看时生成并缓存到 narrative_markdown，同 prompt 版本直接复用。
 
 幂等：同一场考试重复生成按 (exam_id, type[, student_id]) 替换，不产生重复行。
 失败降级：整体包在 savepoint 里，报告生成失败仅回滚 savepoint，

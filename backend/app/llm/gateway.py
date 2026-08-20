@@ -1,7 +1,7 @@
 """文本 LLM 闸门（架构修复 候选3：强化不变量③④）。
 
 唯一文本 LLM seam：熔断 → 调用 → 校验 → 返回带标注段落；不可用返回 ``''``。
-- 不变量③（降级不阻塞）：LLM 失败/熔断/未配置 → 静默返回空串，报告保持纯模板；
+- 不变量③（降级不阻塞）：LLM 失败/熔断/未配置/网络异常 → 静默返回空串，报告保持纯模板；
 - 不变量④（数字零幻觉）：段落显式标注「模型生成，数字以系统计算为准」，
   且 prompt 只允许模型引用确定性报告里的数字（`NARRATIVE_SYSTEM`「铁律」）。
 
@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from app.llm.circuit import CircuitBreaker, CircuitOpenError
-from app.llm.client import LLMError, get_client
+from app.llm.client import get_client
 from app.llm.prompts import (
     NARRATIVE_PROMPT_VERSION,
     NARRATIVE_SYSTEM,
@@ -54,7 +54,9 @@ def narrate(report_markdown: str, report_type: str) -> str:
             None,
         )
         _text_breaker.record_success()
-    except (LLMError, CircuitOpenError):
+    except CircuitOpenError:
+        return ""
+    except Exception:  # noqa: BLE001 —— 不变量③：LLMError/httpx 网络/超时/5xx/JSON 解析等一律降级
         _text_breaker.record_failure()
         return ""
 

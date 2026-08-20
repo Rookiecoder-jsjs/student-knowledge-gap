@@ -22,7 +22,8 @@ export default function Quality() {
   const [examId, setExamId] = useState<number | null>(
     presetExamId ?? (params.get("exam") ? Number(params.get("exam")) : null)
   );
-  const [narrative, setNarrative] = useState(false);
+  // 默认生成 AI 解读；教师仍可主动关闭，以保留确定性模板报告。
+  const [narrative, setNarrative] = useState(true);
   const [report, setReport] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

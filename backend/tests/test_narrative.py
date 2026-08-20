@@ -70,3 +70,8 @@ def test_narrative_system_relaxes_verbatim_and_keeps_guardrails():
     assert "建议教师核实" in sys_prompt  # 归因仍表述为假设
     assert "无进步点则不勉强" in sys_prompt  # 成长框架兜底
     assert "排名" in sys_prompt  # 不排名约束保留
+    assert "**核心判断**" in sys_prompt
+    assert "**关键证据**" in sys_prompt
+    assert "**优先行动**" in sys_prompt
+    assert "**验证与边界**" in sys_prompt
+    assert "350~550" in sys_prompt and "450~700" in sys_prompt

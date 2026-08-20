@@ -31,6 +31,7 @@ from app.ingestion.commit import commit_exam  # noqa: E402
 from app.kb.graph import KpGraph  # noqa: E402
 from app.kb.loader import import_kb  # noqa: E402
 from app.pipeline.attribution import materialize_attribution_verdicts  # noqa: E402
+from app.reports.diagnosis_orchestrator import get_or_create_narrative  # noqa: E402
 from app.reports.quality_analysis import generate_quality_analysis  # noqa: E402
 from app.reports.student_diagnosis import generate_student_diagnosis  # noqa: E402
 from simulator.realistic import REALISTIC_SCHEDULE, build_realistic_simulation  # noqa: E402
@@ -85,24 +86,28 @@ def main() -> None:
         print(f"[4/6] 归因引擎：4 班共产出 {n_attr} 条 active 归因假设")
 
         # ---- 5. 真实叙事报告（代表性学生 / 关键考试） ----
+        # narrative=False + 走 narrative_markdown 缓存列（与生产 get-or-generate 路径同约定），
+        # 避免 AI 段嵌进 content_markdown 后教师打开页面时被二次追加、双重渲染。
         sample_names = sorted(truth.planted_roots.keys())[:2] + \
                        sorted(truth.forgetting.keys())[:1] + \
                        sorted(truth.student_ids.keys())[-1:]
         for nm in sample_names:
             stu_id = truth.student_ids[nm]
             report = generate_student_diagnosis(
-                session, graph, stu_id, as_of, narrative=True
+                session, graph, stu_id, as_of, narrative=False
             )
+            section = get_or_create_narrative(session, report)
             path = out / f"诊断单_{nm}.md"
-            path.write_text(report.content_markdown, encoding="utf-8")
+            path.write_text(report.content_markdown + section, encoding="utf-8")
             print(f"      诊断单 {nm} → {path.name}")
         for exam_name in ("期末考试（上）", "期中考试（下）", "学年期末考试"):
             exam_id = truth.exam_ids[(exam_name, truth.class_ids[0])]
             report = generate_quality_analysis(
-                session, graph, truth.class_ids[0], exam_id, narrative=True
+                session, graph, truth.class_ids[0], exam_id, narrative=False
             )
+            section = get_or_create_narrative(session, report)
             path = out / f"质量分析_{exam_name}.md"
-            path.write_text(report.content_markdown, encoding="utf-8")
+            path.write_text(report.content_markdown + section, encoding="utf-8")
             print(f"      质量分析 {exam_name} → {path.name}")
         print(f"[5/6] 报告 → {out}/")
 

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.kb.graph import KpGraph
+from app.llm.prompts import NARRATIVE_PROMPT_VERSION
 from app.models import ExamTemplate, Report, Student
 from app.pipeline.attribution import materialize_attribution_verdicts
 from app.reports.narrative import render_narrative
@@ -137,16 +138,19 @@ def get_or_generate_quality_report(
 
 
 def get_or_create_narrative(session: Session, report: Report) -> str:
-    """AI 解读段缓存：首次查看生成并写入 narrative_markdown，之后永久可看。
+    """AI 解读段缓存：同一 prompt 版本复用，版本升级时尝试重新生成。
 
-    仅在 LLM 可用时返回段落；不可用返回空串（调用方按无解读处理）。
+    新版本生成失败时保留并返回旧缓存，避免 LLM 短暂不可用导致已有解读消失。
     """
-    if report.narrative_markdown:
-        return report.narrative_markdown
+    cached = report.narrative_markdown or ""
+    # 与 narrate 落款格式一致（"prompt <ver>；"）——带分号定界，避免 v0.3 → v0.3.1 前缀误命中
+    cache_signature = f"prompt {NARRATIVE_PROMPT_VERSION}；"
+    if cached and cache_signature in cached:
+        return cached
 
     section = render_narrative(report.content_markdown, report.type)
     if section:
         report.narrative_markdown = section
         session.flush()
         return report.narrative_markdown
-    return ""
+    return cached

@@ -14,6 +14,9 @@ import pytest
 from sqlalchemy import select
 
 from app.kb.graph import KpGraph
+from app.llm.client import MockLLMClient, set_client
+from app.llm.gateway import get_text_breaker
+from app.llm.prompts import NARRATIVE_PROMPT_VERSION
 from app.models import Report
 from app.reports.diagnosis_orchestrator import (
     get_or_create_narrative,
@@ -171,6 +174,67 @@ def test_narrative_caches_once(env, session, graph):
     if report.narrative_markdown:
         second = get_or_create_narrative(session, report)
         assert second == report.narrative_markdown
+
+
+def test_narrative_refreshes_stale_prompt_cache(env, session, graph):
+    """prompt 升级后替换旧短解读，确保既有报告也能看到新版详细结构。"""
+    exam = _exam(session, env)
+    session.commit()
+    report, _ = get_or_generate_diagnosis(session, graph, env["students"][T01], exam_id=exam.id)
+    report.narrative_markdown = "\n## AI 解读（模型生成）\n旧版短解读\n\n_（prompt narrative-v0.2.0）_"
+
+    get_text_breaker().reset()
+    mock = MockLLMClient([{"text": "**核心判断**\n新版详细解读"}])
+    set_client(mock)
+    try:
+        refreshed = get_or_create_narrative(session, report)
+    finally:
+        set_client(None)
+        get_text_breaker().reset()
+
+    assert "新版详细解读" in refreshed
+    assert f"prompt {NARRATIVE_PROMPT_VERSION}" in refreshed
+    assert "旧版短解读" not in refreshed
+
+
+def test_narrative_keeps_old_cache_when_refresh_fails(env, session, graph):
+    """升级时 LLM 不可用不应让已有解读从页面消失。"""
+    exam = _exam(session, env)
+    session.commit()
+    report, _ = get_or_generate_diagnosis(session, graph, env["students"][T01], exam_id=exam.id)
+    old = "\n## AI 解读（模型生成）\n旧版仍可阅读\n\n_（prompt narrative-v0.2.0）_"
+    report.narrative_markdown = old
+
+    get_text_breaker().reset()
+    set_client(MockLLMClient())
+    try:
+        assert get_or_create_narrative(session, report) == old
+    finally:
+        set_client(None)
+        get_text_breaker().reset()
+
+
+def test_narrative_cache_signature_requires_delimiter(env, session, graph):
+    """签名匹配带定界符：narrative-v0.3 缓存不得被 v0.3.1 判为新鲜（前缀误命中）。"""
+    exam = _exam(session, env)
+    session.commit()
+    report, _ = get_or_generate_diagnosis(session, graph, env["students"][T01], exam_id=exam.id)
+    # 构造「当前版本号是既有缓存版本号前缀」的场景：落款里写一个更长的版本号
+    longer = NARRATIVE_PROMPT_VERSION + ".1"
+    report.narrative_markdown = (
+        f"\n## AI 解读（模型生成）\n旧版\n\n_（prompt {longer}；对外使用前请教师预览确认）_"
+    )
+
+    get_text_breaker().reset()
+    mock = MockLLMClient([{"text": "**核心判断**\n新版"}])
+    set_client(mock)
+    try:
+        refreshed = get_or_create_narrative(session, report)
+    finally:
+        set_client(None)
+        get_text_breaker().reset()
+
+    assert "新版" in refreshed, "前缀版本不得误判新鲜，应触发重新生成"
 
 
 # ---------------------------------------------------------------------------
