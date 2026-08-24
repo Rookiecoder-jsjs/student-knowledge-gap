@@ -45,6 +45,8 @@ curl -X POST http://localhost:8080/api/kb/import \
 | `SC_BACKUP_INTERVAL_HOURS` | `24` | 热备间隔小时 |
 | `SC_BACKUP_KEEP` | `30` | 保留备份份数 |
 | `SC_BACKUP_DIR` | `/backups` | 备份落盘目录（compose 内为命名卷 `sc-backups`） |
+| `SC_LLM_AUDIT` | 开 | LLM 调用全程审计（`llm_call_log` 表，append-only）；`=0` 关闭 |
+| `SC_LLM_AUDIT_PAYLOAD` | 关 | `=1` 时审计额外存响应 JSON（调试用；输入原文任何情况不落库） |
 | `TMPDIR` | `/data/tmp` | **compose 注入**：批量上传临时文件挂卷，重启后 failed item 可重试 |
 
 其余算法/质量参数（`SC_MIN_EVIDENCE_COUNT`、`SC_WEAKNESS_MODE` 等）见 `.env.example` 与 README，不改默认即用生产已转正的取值。

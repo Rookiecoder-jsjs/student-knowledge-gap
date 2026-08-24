@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import TAG_REVIEW_SAMPLE_RATE
 from app.db import utcnow
 from app.ingestion.pii import mask_image
+from app.llm.audit import audit_context
 from app.llm.client import LLMError, get_client
 from app.llm.prompts import (
     PROMPT_VERSION,
@@ -91,7 +92,8 @@ def parse_template_from_photo(
     closed_set = "\n".join(f"{c} | {kp.name}" for c, kp in sorted(kp_rows.items()))
 
     try:
-        payload = client.parse_json(TEMPLATE_SYSTEM, template_user_prompt(closed_set), image_bytes)
+        with audit_context("template_parse", PROMPT_VERSION):
+            payload = client.parse_json(TEMPLATE_SYSTEM, template_user_prompt(closed_set), image_bytes)
     except LLMError as e:
         job.status = "failed"
         session.flush()
@@ -231,7 +233,8 @@ def parse_student_response_from_photo(
     masked = mask_image(image_bytes)
 
     try:
-        payload = client.parse_json(RESPONSE_SYSTEM, response_user_prompt(desc), masked)
+        with audit_context("response_parse", PROMPT_VERSION):
+            payload = client.parse_json(RESPONSE_SYSTEM, response_user_prompt(desc), masked)
     except LLMError as e:
         job.status = "failed"
         session.flush()

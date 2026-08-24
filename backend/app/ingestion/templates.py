@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import utcnow
+from app.llm.audit import audit_context
 from app.llm.client import LLMError, get_client
 from app.llm.prompts import TAGGER_PROMPT_VERSION, TAGGER_SYSTEM, tagger_user_prompt
 from app.models import (
@@ -116,9 +117,10 @@ def suggest_question_tags(
     client = get_client("text")
     warnings: list[str] = []
     try:
-        payload = client.parse_json(
-            TAGGER_SYSTEM, tagger_user_prompt(questions_desc, closed_set), None
-        )
+        with audit_context("tagger", TAGGER_PROMPT_VERSION):
+            payload = client.parse_json(
+                TAGGER_SYSTEM, tagger_user_prompt(questions_desc, closed_set), None
+            )
     except LLMError as e:
         return {
             "suggestions": [],

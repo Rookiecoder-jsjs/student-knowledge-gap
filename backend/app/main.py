@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,6 +24,11 @@ async def lifespan(app: FastAPI):
 
     reconcile_stale()
     gc_orphan_tempfiles()  # G6：清扫孤儿 tempfile
+    # LLM 调用全程审计（rollout 思想）：单写线程异步落 llm_call_log
+    if os.environ.get("SC_LLM_AUDIT", "").lower() not in ("0", "false", "no"):
+        from app.llm.audit import start_audit_worker
+
+        start_audit_worker(None)  # None -> 延迟取 SessionLocal（测试可注入工厂）
     yield
     # ---- shutdown ----
     from app.ingestion.batch import shutdown as batch_shutdown

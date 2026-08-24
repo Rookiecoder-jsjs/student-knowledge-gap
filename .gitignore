@@ -21,6 +21,9 @@ realistic_truth.json
 output/
 .codegraph/
 
+# 参考仓库（openai/codex，仅本地借鉴用，不入库）
+codex/
+
 # 系统与编辑器
 .DS_Store
 .idea/
