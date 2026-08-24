@@ -21,12 +21,23 @@
 |---|---|---|---|---|
 | P1-0（核实批，未执行删除） | cloud-tasks / cloud-tasks-client / cloud-tasks-mock-client | 拟删除（已核实依赖面：cli 直依赖 codex-cloud-tasks；tui 亦牵连） | §6.1 预定名单；云端任务非单校私有化形态 | 2026-08-25 |
 | P1-0（核实批，未执行删除） | tui | 拟删除（被 cli 与 cloud-tasks 依赖——删除需同步改 cli 依赖声明，属首批 DELTA 记账项） | 唯一前门是 app-server；教育产品无终端 UI 需求 | 2026-08-25 |
-| P1-0（核实批，未执行删除） | v8-poc / connectors(+ext/connectors) | 拟删除（v8-poc 仅 workspace 成员关系无 crate 反依赖；connectors 被 codex-mcp/tools/core 引用，删除面大，排第二批评估） | §6.1 预定名单 | 2026-08-25 |
-| P1-0（核实批，未执行删除） | linux-sandbox / windows-sandbox / network-proxy | 暂缓（linux-sandbox 被 arg0 引用；windows-sandbox 被 core/tui/sandboxing/cli/network-proxy 广泛引用——内部函数调用场景无需 OS 沙箱属实，但删除牵动 sandboxing 抽象层，须先设计替代或保留 sandboxing 门面） | §6.1 名单标注「连带删其依赖评估后定」 | 2026-08-25 |
+| P1-0（核实批，未执行删除） | connectors(+ext/connectors) | 拟删除（被 codex-mcp/tools/core 共 58 处源码引用，牵动 MCP 工具暴露/审批/路由，独立手术批处理） | §6.1 预定名单 | 2026-08-25 |
+| P1-0（核实批，未执行删除） | linux-sandbox / windows-sandbox / network-proxy / bwrap | 暂缓（windows-sandbox 被 core/tui/sandboxing/cli/network-proxy 广泛引用；bwrap 同属沙箱抽象，一并暂缓） | 删除牵动 sandboxing 抽象层，须先设计替代或保留门面 | 2026-08-25 |
+| P1-1（执行批 ✅） | v8-poc | **删除**（members/workspace.deps/cargo-shear 三处 manifest + 目录；零反向依赖已核实）；连带效果：workspace 全量 check 不再拉 V8 编译（v8 现仅剩 code-mode-runtime 引用） | code-mode/v8 全家范畴（§6.1） | 2026-08-25 |
+| P1-1（执行批 ✅） | code-mode-host | **删除**（member 移除 + 目录；独立二进制零反向依赖） | code-mode/v8 全家范畴（§6.1） | 2026-08-25 |
+| P1-1（执行批 ✅） | thread-manager-sample | **删除**（member 移除 + 目录；sample 类，零反向依赖） | 示例工程不随产品分发 | 2026-08-25 |
 
-**执行前提**：本机开发环境暂无 Rust 工具链，删除动作必须等 cargo 可用后
-逐批「删 → `just test` 全绿 → CRATES.md 记账 → DELTA.md 开账（cli 依赖声明变更
-即首批源码分歧）」推进。P1-0 批次只做依赖面核实，不改动任何源码。
+P1-1 验证：`cargo check -p codex-app-server` 全绿（基线 2m12s → 删除后复验通过）；
+`--workspace` 全量检查因 code-mode-runtime→v8 的既有依赖仍需 V8 归档，
+随 connectors/code-mode 手术批一并解决。133 → 130 members。
+
+### 后续批次规划
+
+- **P1-2 手术批**：connectors 家（58 处引用）+ code-mode 全家（含 code-mode-runtime 的
+  v8 依赖）——每处源码引用改写即 DELTA 记账项，须全量测试护航；
+- **P1-3 前门批**：tui + cloud-tasks 全家 + exec 人类输出面（cli 依赖声明改写）；
+- **P1-4 沙箱批**：linux/windows-sandbox + bwrap + network-proxy（先设计 sandboxing
+  门面保留方案）。
 
 ### 预定删除名单（§6.1 规划，Phase 1 逐个核实依赖后执行）
 

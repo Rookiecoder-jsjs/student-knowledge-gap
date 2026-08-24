@@ -19,9 +19,14 @@
 
 ## 分歧台账
 
-*当前为空——Phase 0 为零源码修改验链（设计文档 §10.1），收编即锚点原样。*
+| # | 位置 | 内容 | 原因 | 日期 |
+|---|---|---|---|---|
+| D-001 | `codex-rs/Cargo.toml` `[workspace.members]` | 移除 `"v8-poc"`、`"code-mode-host"`、`"thread-manager-sample"` 三项 | §6.1 裁剪（CRATES.md P1-1 批）；三 crate 零反向依赖，目录一并删除 | 2026-08-25 |
+| D-002 | `codex-rs/Cargo.toml` `[workspace.dependencies]` | 移除 `codex-v8-poc = { path = "v8-poc" }` | 同上（随成员删除的声明清理） | 2026-08-25 |
+| D-003 | `codex-rs/Cargo.toml` `[workspace.metadata.cargo-shear]` ignored | 移除 `"codex-v8-poc"` | 同上 | 2026-08-25 |
 
-Phase 1 首笔修改（预计：基础 system prompt 替换 / 默认工具面退场）起开账。
+验证：`cargo check -p codex-app-server` 通过（产品二进制依赖闭包不受影响）。
+后续批次的源码级分歧（connectors/code-mode/tui 手术）在此逐笔追加。
 
 ## 上游参考途径（D10，codex/ 参考克隆已删）
 

@@ -23,7 +23,6 @@ members = [
     "install-context",
     "codex-backend-openapi-models",
     "code-mode",
-    "code-mode-host",
     "code-mode-protocol",
     "code-mode-runtime",
     "codex-home",
@@ -94,7 +93,6 @@ members = [
     "otel",
     "tui",
     "tools",
-    "v8-poc",
     "websocket-client",
     "workload-identity",
     "utils/absolute-path",
@@ -127,7 +125,6 @@ members = [
     "state",
     "terminal-detection",
     "test-binary-support",
-    "thread-manager-sample",
     "thread-store",
     "uds",
     "codex-experimental-api-macros",
@@ -273,7 +270,6 @@ codex-utils-sleep-inhibitor = { path = "utils/sleep-inhibitor" }
 codex-utils-stream-parser = { path = "utils/stream-parser" }
 codex-utils-string = { path = "utils/string" }
 codex-utils-template = { path = "utils/template" }
-codex-v8-poc = { path = "v8-poc" }
 codex-workload-identity = { path = "workload-identity" }
 codex-windows-sandbox = { path = "windows-sandbox-rs" }
 core_test_support = { path = "core/tests/common" }
@@ -543,7 +539,6 @@ unwrap_used = "deny"
 ignored = [
     "icu_provider",
     "openssl-sys",
-    "codex-v8-poc",
 ]
 
 [profile.dev]
