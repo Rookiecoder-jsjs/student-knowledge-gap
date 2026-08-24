@@ -19,7 +19,14 @@
 
 | 批次 | crate | 动作 | 理由 | 日期 |
 |---|---|---|---|---|
-| — | （尚未开始裁剪） | | | |
+| P1-0（核实批，未执行删除） | cloud-tasks / cloud-tasks-client / cloud-tasks-mock-client | 拟删除（已核实依赖面：cli 直依赖 codex-cloud-tasks；tui 亦牵连） | §6.1 预定名单；云端任务非单校私有化形态 | 2026-08-25 |
+| P1-0（核实批，未执行删除） | tui | 拟删除（被 cli 与 cloud-tasks 依赖——删除需同步改 cli 依赖声明，属首批 DELTA 记账项） | 唯一前门是 app-server；教育产品无终端 UI 需求 | 2026-08-25 |
+| P1-0（核实批，未执行删除） | v8-poc / connectors(+ext/connectors) | 拟删除（v8-poc 仅 workspace 成员关系无 crate 反依赖；connectors 被 codex-mcp/tools/core 引用，删除面大，排第二批评估） | §6.1 预定名单 | 2026-08-25 |
+| P1-0（核实批，未执行删除） | linux-sandbox / windows-sandbox / network-proxy | 暂缓（linux-sandbox 被 arg0 引用；windows-sandbox 被 core/tui/sandboxing/cli/network-proxy 广泛引用——内部函数调用场景无需 OS 沙箱属实，但删除牵动 sandboxing 抽象层，须先设计替代或保留 sandboxing 门面） | §6.1 名单标注「连带删其依赖评估后定」 | 2026-08-25 |
+
+**执行前提**：本机开发环境暂无 Rust 工具链，删除动作必须等 cargo 可用后
+逐批「删 → `just test` 全绿 → CRATES.md 记账 → DELTA.md 开账（cli 依赖声明变更
+即首批源码分歧）」推进。P1-0 批次只做依赖面核实，不改动任何源码。
 
 ### 预定删除名单（§6.1 规划，Phase 1 逐个核实依赖后执行）
 
