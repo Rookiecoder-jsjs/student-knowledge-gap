@@ -26,16 +26,21 @@
 | P1-1（执行批 ✅） | v8-poc | **删除**（members/workspace.deps/cargo-shear 三处 manifest + 目录；零反向依赖已核实）；连带效果：workspace 全量 check 不再拉 V8 编译（v8 现仅剩 code-mode-runtime 引用） | code-mode/v8 全家范畴（§6.1） | 2026-08-25 |
 | P1-1（执行批 ✅） | code-mode-host | **删除**（member 移除 + 目录；独立二进制零反向依赖） | code-mode/v8 全家范畴（§6.1） | 2026-08-25 |
 | P1-1（执行批 ✅） | thread-manager-sample | **删除**（member 移除 + 目录；sample 类，零反向依赖） | 示例工程不随产品分发 | 2026-08-25 |
+| P1-2（前门批 ✅） | cli / tui / cloud-tasks / cloud-tasks-client / cloud-tasks-mock-client | **删除五件套**（依赖闭包核实：cli→cloud-tasks→tui 链外无其他依赖者；manifest 移除 5 members + 3 workspace.deps）。随批退役 app-server 测试：code_mode_host.rs、executor_mcp.rs（codex bin 作 executor）、selected_capability_stack.rs（cargo_bin("codex")）、turn_start 的 code_mode analytics 用例、imagegen 的 code_mode_only 用例 | 教育产品唯一前门 = app-server；终端 UI/云端任务/交互式 CLI 均不随产品分发 | 2026-08-25 |
 
 P1-1 验证：`cargo check -p codex-app-server` 全绿（基线 2m12s → 删除后复验通过）；
 `--workspace` 全量检查因 code-mode-runtime→v8 的既有依赖仍需 V8 归档，
 随 connectors/code-mode 手术批一并解决。133 → 130 members。
+P1-2 验证：`cargo check -p codex-app-server` 全绿；app-server 测试 **949 passed 全绿**
+（RUST_MIN_STACK=8388608）；core 2260 passed，唯一失败
+（blocking_snapshot_waits_for_starting_environment）经锚点 worktree 对照确认为
+**上游自带红测试**，与本批无关。130 → 125 members。
 
 ### 后续批次规划
 
-- **P1-2 手术批**：connectors 家（58 处引用）+ code-mode 全家（含 code-mode-runtime 的
-  v8 依赖）——每处源码引用改写即 DELTA 记账项，须全量测试护航；
-- **P1-3 前门批**：tui + cloud-tasks 全家 + exec 人类输出面（cli 依赖声明改写）；
+- **P1-3 手术批（剩余最大件）**：connectors 家（58 处引用）+ code-mode 全家
+  （含 code-mode-runtime 的 v8 依赖、core/tools/app-server 的 342 处引用）——
+  深度织入 spec_plan 工具暴露路径，需独立会话专项处理，全量测试护航；
 - **P1-4 沙箱批**：linux/windows-sandbox + bwrap + network-proxy（先设计 sandboxing
   门面保留方案）。
 

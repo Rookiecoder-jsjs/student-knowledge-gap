@@ -24,9 +24,13 @@
 | D-001 | `codex-rs/Cargo.toml` `[workspace.members]` | 移除 `"v8-poc"`、`"code-mode-host"`、`"thread-manager-sample"` 三项 | §6.1 裁剪（CRATES.md P1-1 批）；三 crate 零反向依赖，目录一并删除 | 2026-08-25 |
 | D-002 | `codex-rs/Cargo.toml` `[workspace.dependencies]` | 移除 `codex-v8-poc = { path = "v8-poc" }` | 同上（随成员删除的声明清理） | 2026-08-25 |
 | D-003 | `codex-rs/Cargo.toml` `[workspace.metadata.cargo-shear]` ignored | 移除 `"codex-v8-poc"` | 同上 | 2026-08-25 |
+| D-004 | `codex-rs/Cargo.toml` members + deps | 移除 cli / tui / cloud-tasks / cloud-tasks-client / cloud-tasks-mock-client 五成员及 `codex-cloud-tasks-client/-mock-client/codex-tui` 三条 workspace.deps | §6.1 前门批（P1-2）：产品唯一前门 = app-server；验证 app-server 949 测试全绿（CRATES.md P1-2 行） | 2026-08-25 |
+| D-005 | `codex-rs/app-server/tests/suite/v2/{mod.rs, code_mode_host.rs, executor_mcp.rs, selected_capability_stack.rs, turn_start.rs, imagegen_extension.rs}` | 删除三个测试文件 + 两个用例（均依赖已删除的 codex/cli 二进制或 code-mode-host 执行面） | AGENTS-FORK 纪律：不为已删逻辑保留测试；随 D-004 连带退役 | 2026-08-25 |
 
-验证：`cargo check -p codex-app-server` 通过（产品二进制依赖闭包不受影响）。
-后续批次的源码级分歧（connectors/code-mode/tui 手术）在此逐笔追加。
+验证：`cargo check -p codex-app-server` 通过（产品二进制依赖闭包不受影响）；
+app-server 测试 949 passed 全绿。已知上游自带红测试：
+`environment_selection::tests::blocking_snapshot_waits_for_starting_environment`
+（锚点 worktree 对照复现，非 fork 引起）。
 
 ## 上游参考途径（D10，codex/ 参考克隆已删）
 
