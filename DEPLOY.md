@@ -13,8 +13,8 @@
 # 1) 准备环境变量（模板见 backend/.env.example；填 SC_LLM_* 才能真实调用 LLM）
 cp backend/.env.example backend/.env
 
-# 2) 构建并启动（backend + frontend + backup 三服务）
-docker compose up -d --build
+# 2) 构建并启动（backend + frontend + backup 三服务；compose 位于 deploy/ 目录）
+cd deploy && docker compose up -d --build && cd ..
 
 # 3) 访问
 #    前端  : http://localhost:8080
@@ -68,7 +68,7 @@ curl -X POST http://localhost:8080/api/kb/import \
 `SC_BACKUP_KEEP`（默认 30）份。备份只读源库、写独立 `.bak`，**不构成第二个写进程**（守住单写者不变量）。
 失败不退出循环，下一轮自愈。
 
-手动触发一轮备份：
+手动触发一轮备份（以下 `docker compose` 命令均在 `deploy/` 目录内执行）：
 
 ```bash
 docker compose exec backup python -m scripts.backup_db /backups/manual.bak
@@ -112,7 +112,7 @@ curl -s localhost:8080/ready
 - 日志为 **JSON 行 → stderr**（`docker compose logs -f` 直接可读），聚合器可直接摄取。
 - LLM 断供时：Excel 导入、推导、报告模板等确定性路径照常工作；仅拍照解析/报告 AI 解读段受影响。
 
-## 7. 常见运维
+## 7. 常见运维（均在 `deploy/` 目录内执行）
 
 ```bash
 docker compose ps                            # 三服务状态（backend 应 healthy）

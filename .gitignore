@@ -30,9 +30,10 @@ codex/
 .vscode/
 node_modules/
 
-# 设计文档（仅本地，不入库；architecture-fix-plan.md 为例外，随方案交付入库）
+# 设计文档（仅本地，不入库；随方案交付入库的例外见下方白名单）
 docs/*
 !docs/architecture-fix-plan.md
+!docs/agent-product-design.md
 frontend/design/
 design-system/
 

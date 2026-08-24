@@ -1,0 +1,59 @@
+# sc 单机「基础可靠」部署（非多实例 HA；演进路径见 DEPLOY.md 末尾）。
+# 用法：cp backend/.env.example backend/.env  →  填 SC_LLM_*  →  cd deploy && docker compose up -d --build
+#
+# 三个服务：
+#   backend  单 uvicorn 进程（架构不变量，见 DEPLOY.md「单进程原理」），崩溃自愈靠 restart
+#   frontend nginx 托管 SPA + /api 前缀剥离反代 backend（同源，免 CORS）
+#   backup   复用后端镜像跑备份循环（SQLite 热备，只读源库写独立 .bak，不构成第二写者）
+# 卷：
+#   sc-data    唯一不可丢失状态：sc.db(+WAL/SHM) + 批量上传临时文件（TMPDIR）
+#   sc-backups 备份产物（保留 N 份，与 DB 卷物理隔离，便于恢复演练）
+services:
+  backend:
+    build: ../backend
+    image: sc-backend:latest
+    env_file: ../backend/.env
+    environment:
+      SC_DATABASE_URL: "sqlite:////data/sc.db"   # 卷内持久化（覆盖 env_file）
+      TMPDIR: /data/tmp                          # 批量 tempfile 挂卷：重启后 failed item 可重试
+    volumes:
+      - sc-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"                    # 仅本机调试/验证，不对外
+    restart: unless-stopped
+    stop_grace_period: 180s                      # > LLM 120s 超时，容在途请求跑完
+    healthcheck:
+      # readiness：DB 可达才 healthy（依赖不可用 503 → 触发重启自愈）
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  frontend:
+    build: ../frontend/app
+    image: sc-frontend:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy               # backend 就绪后才接流量
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  backup:
+    image: sc-backend:latest                     # 复用后端镜像，只跑备份循环
+    command: ["/app/scripts/backup_loop.sh"]
+    env_file: ../backend/.env
+    environment:
+      SC_DATABASE_URL: "sqlite:////data/sc.db"
+    volumes:
+      - sc-data:/data
+      - sc-backups:/backups
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+volumes:
+  sc-data:
+  sc-backups:

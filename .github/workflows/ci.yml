@@ -58,4 +58,4 @@ jobs:
       - name: Validate docker compose
         run: |
           touch backend/.env   # env_file 占位；真实值由运维本地提供（见 DEPLOY.md）
-          docker compose config -q
+          docker compose -f deploy/docker-compose.yml config -q

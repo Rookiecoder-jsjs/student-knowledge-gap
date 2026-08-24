@@ -92,7 +92,8 @@ sc/
 │   │   ├── src/{pages,components,lib}/
 │   │   ├── Dockerfile        #   前端镜像（node 构建 -> nginx 托管 dist + /api 反代）
 │   │   └── nginx.conf        #   /api 前缀剥离反代 backend（与 Vite dev 代理等价）
-├── docker-compose.yml        #   单机「基础可靠」部署编排（backend / frontend / backup 三服务 + 卷）
+├── deploy/
+│   └── docker-compose.yml    #   单机「基础可靠」部署编排（backend / frontend / backup 三服务 + 卷）
 ├── DEPLOY.md                 #   部署与运维文档（备份恢复三步法 / 单进程原理 / 演进路径）
 └── .venv/                    #   Python 3.11 虚拟环境（项目根，backend 共用）
 ```
