@@ -54,6 +54,30 @@ services:
     depends_on:
       - backend
 
+  # ---- Phase 1（agent-product-design §10.1）：会话网关 + codex 壳 ----
+  # 网关对上是浏览器友好的 鉴权 RPC + SSE，对下是 app-server 子进程 stdio。
+  # 壳经 MCP 调 backend 的分析端点；CODEX_HOME 卷持久化 rollout/线程记忆（§5.6）。
+  gateway:
+    build: ../gateway
+    image: sc-gateway:latest
+    environment:
+      SC_GATEWAY_CODEX_HOME: /data/codex-home
+      SC_GATEWAY_APP_SERVER: codex
+      SC_GATEWAY_APP_SERVER_ARGS: app-server
+      # MCP server 指向 compose 内的 backend（容器名解析）；DeepSeek key 由账号文件
+      # 对应的 CODEX_HOME config.toml 注入（装机向导渲染 assets/deepseek 模板）
+      SC_MCP_BACKEND_URL: http://backend:8000
+    volumes:
+      - gw-codex-home:/data/codex-home
+    ports:
+      - "127.0.0.1:8100:8100"                    # 同 backend：仅本机调试，生产走 nginx 反代
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 60s                       # > app-server 单 turn 收尾余量
+
 volumes:
   sc-data:
   sc-backups:
+  gw-codex-home:
