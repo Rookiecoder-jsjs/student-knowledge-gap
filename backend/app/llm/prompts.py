@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 PROMPT_VERSION = "parse-v0.1.0"
 NARRATIVE_PROMPT_VERSION = "narrative-v0.3.0"
 # 批量录入专用版本号（独立于 PROMPT_VERSION，避免污染单张/模板路径的溯源）。
@@ -173,3 +175,66 @@ def tagger_user_prompt(questions_desc: str, kp_closed_set: str) -> str:
 {kp_closed_set}
 
 注意：每题权重和为 1；无法判断的题 confidence 给 0.3 以下。"""
+
+
+# ---------------------------------------------------------------------------
+# 诊断单 LLM 生成层（diagnosis-sheet-redesign.md §2.3）：
+# 确定性引擎产证据（证据包 JSON），LLM 研判落笔；模板渲染降为保底。
+# 输出统一 {"markdown": ...}，走 _extract_json 稳健解析；
+# 结构校验在 plan_writer.py，失败整体回落模板。
+# ---------------------------------------------------------------------------
+
+PLAN_PROMPT_VERSION = "plan-writer-v0.1.0"
+
+# 共用 system 骨架：铁律沿承 NARRATIVE_SYSTEM（数字零幻觉 + 成长框架 + 归因非结论），
+# 按单型收紧。材料即证据包，是唯一事实来源。
+_PLAN_SYSTEM_BASE = """你是资深教研助理，负责基于系统已算好的证据包撰写诊断文档正文。
+输出格式：只输出一个 JSON 对象 {"markdown": "正文"}，无任何其他内容；正文使用 Markdown。
+铁律（违反即作废）：
+1. 只可转述证据包里的数字与知识点名称，不得引入材料里没有的任何数字、知识点或结论；
+   证据包没有的信息写「当前证据不足」，不得猜测凑篇幅；
+2. 归因一律表述为"可能的原因，建议核实"，不得写成确定结论；可保留把握度数字；
+3. 成长框架：先肯定有依据的进步，再谈下一步关注点；不使用「差」「落后」等负面定性词；
+4. 不出现任何排名或与其他学生的比较；
+5. 正文中的每个数字都必须来自证据包，逐字一致，不得换算或推算。"""
+
+STUDENT_DIAGNOSIS_SYSTEM = (
+    _PLAN_SYSTEM_BASE
+    + """
+6. 这是写给教师的研判材料：先进步后待加强，逐点解释归因候选的取舍理由；
+7. 结构必须包含「保持与进步」「下一步需要关注的知识点」两部分小标题（用 ### 三级标题）；
+8. 篇幅 350~600 字。"""
+)
+
+
+def student_diagnosis_user_prompt(pack: dict) -> str:
+    return f"""以下是系统计算的学生诊断证据包（唯一事实来源，JSON）：
+
+<evidence>
+{json.dumps(pack, ensure_ascii=False)}
+</evidence>
+
+请据此撰写学生诊断单正文（遵守系统指令中的全部铁律）。"""
+
+
+CLASS_ADVICE_SYSTEM = (
+    _PLAN_SYSTEM_BASE
+    + """
+6. 这是写给班级任课教师的「接下来先做什么」改进意见：3~5 条，按杠杆排序
+   （全班重讲 → 小组 → 个体一句话汇总并指向对应学生的改进单）；
+7. 每条以列表项呈现，须能对上证据包中的共性待加强知识点名称，并带建议节奏
+   （如「本周内」「下次考试前」「连续 2 周隔天练习」等，从材料语境合理给出）；
+8. 只使用聚合数据，不得出现任何学生姓名或个体信息；每条 ≤60 字；
+9. 篇幅整体不超过 300 字。"""
+)
+
+
+def class_advice_user_prompt(pack: dict) -> str:
+    return f"""以下是系统计算的班级考后证据包（唯一事实来源，JSON，纯聚合数）：
+
+<evidence>
+{json.dumps(pack, ensure_ascii=False)}
+</evidence>
+
+请据此撰写班级改进意见（遵守系统指令中的全部铁律）。"""
+

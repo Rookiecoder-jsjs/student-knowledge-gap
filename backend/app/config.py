@@ -140,6 +140,12 @@ BATCH_TEMPFILE_MAX_AGE_HOURS = max(1, int(os.environ.get("SC_BATCH_TEMPFILE_MAX_
 LLM_CB_THRESHOLD = max(1, int(os.environ.get("SC_LLM_CB_THRESHOLD", "5")))
 LLM_CB_COOLDOWN_SECONDS = max(1, int(os.environ.get("SC_LLM_CB_COOLDOWN_SECONDS", "60")))
 
+# 诊断单 LLM 生成层（diagnosis-sheet-redesign.md §2.6）：总开关，默认关。
+# =1 时两张诊断单正文与班级改进意见由 LLM 基于证据包生成，模板渲染降为保底；
+# =0（或 mock provider / 熔断开启）全模板。默认关的理由：.env 已配真实 provider/key，
+# 默认开会让任何触发报告生成的测试/演示都真调 LLM 消耗额度；部署方显式置 1 开启。
+LLM_PLAN_ENABLE = os.environ.get("SC_LLM_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
+
 
 @dataclass(frozen=True)
 class Settings:
