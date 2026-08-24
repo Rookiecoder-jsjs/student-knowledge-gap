@@ -270,7 +270,7 @@ sc/                        # 产品仓库 = fork 本体（D7 定名后可整体�
 - 壳的 model-provider 抽象原生支持 OpenAI 兼容端点，学校 key 填在管理设置页（加密落库）；
 - 开通向导列主流国产模型的申请步骤（推荐序列见【D5】）；
 - 本地逃生舱：compose 提供 `--profile offline` 起 Ollama，同一台盒子全离线运行（质量打折但数据绝不出校），作为销售选项而非默认；
-- 诚实注记：壳的 response_id 书签续传与远程压缩以 OpenAI Responses API 为前提，国产兼容端点走 Chat 兼容层时这两项能力降级为本地实现——刀口在 `model-provider`/`client.rs`/compact 系列，属 §6「换」的范围，Phase 1 处理。
+- **协议形态修订（2026-08-24 Phase 0 实测，见 handbook/FINDINGS.md F3）**：锚点版本已移除 `wire_api="chat"`，壳只说 Responses 协议；而 DeepSeek 官方已原生支持 Responses API 并发布 Codex 接入指南（function 工具支持、SSE 同构、官方 models.json 模型目录）。国产模型接入路径从「网关侧 Chat 翻译层」修正为「**原生 Responses 直连 + 无状态适配**」：`previous_response_id`/`store` 不支持 → response_id 书签续传与远程压缩仍走本地实现（§6.2 的 compact 刀口保留），但协议翻译层不再需要。其他候选厂商的原生 Responses 支持情况在验链③实测时一并核对。
 
 ---
 
@@ -288,8 +288,8 @@ cloud-tasks 全家、realtime 全家、code-mode/v8 全家、connectors、TUI（
 |---|---|
 | 基础 system prompt | → §5.2 教育分析师人格 |
 | 默认工具面 | shell/apply_patch/web_search 退场 → MCP 白名单 |
-| 默认审批策略 | → §5.3 映射 |
-| compact 远程路径 | → 本地实现（国产端点） |
+| 默认审批策略 | → §5.3 映射（只读免审批已有原生机制：MCP annotations `readOnlyHint`，见 FINDINGS F2） |
+| compact 远程路径 | → 本地实现（国产端点无状态，书签续传同走本地；见 §5.10 修订与 FINDINGS F3） |
 
 ### 6.3 加（新 crate，集中放）
 
