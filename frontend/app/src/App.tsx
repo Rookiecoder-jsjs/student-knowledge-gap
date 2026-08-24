@@ -4,6 +4,7 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { ExamWorkspace } from "./components/ExamWorkspace";
 import { Shell } from "./components/Shell";
 import ClassPicker from "./pages/ClassPicker";
+import Assistant from "./pages/Assistant";
 import Collect from "./pages/Collect";
 import CommitView from "./pages/CommitView";
 import Diagnosis from "./pages/Diagnosis";
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="/kb" element={<Animated><Kb /></Animated>} />
 
         <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
+        <Route path="/assistant" element={<Shell><Animated><Assistant /></Animated></Shell>} />
         <Route path="/c/:classId/exams" element={<Shell><Animated><Exams /></Animated></Shell>} />
         <Route path="/c/:classId/exams/new" element={<Shell><Animated><ExamNew /></Animated></Shell>} />
 

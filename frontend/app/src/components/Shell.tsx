@@ -1,4 +1,4 @@
-import { BookOpen, Exam, House, Student, TreeStructure } from "@phosphor-icons/react";
+import { BookOpen, ChatCircleDots, Exam, House, Student, TreeStructure } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -90,6 +90,13 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
+            <Link
+              to="/assistant"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <ChatCircleDots size={15} />
+              AI 教研员
+            </Link>
             <Link
               to="/kb"
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
