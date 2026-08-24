@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import _active_kb, _as_dt, _graph, get_db
 from app.kb.edit import log_correction
-from app.models import Attribution, Student
+from app.models import Attribution, Class, Student
 from app.pipeline.attribution import (
     attribution_closure,
     materialize_attribution_verdicts,
@@ -21,6 +21,7 @@ from app.pipeline.attribution import (
 )
 from app.pipeline.mastery import mastery_at
 from app.pipeline.weakness import assess_student_kps
+from app.queries.diagnosis_sheet import class_diagnosis_sheet
 from app.reports.diagnosis_orchestrator import (
     get_or_create_narrative,
     get_or_generate_diagnosis,
@@ -128,7 +129,23 @@ def quality_report(
     markdown = report.content_markdown
     if narrative:
         markdown += get_or_create_narrative(db, report)
-    return {"report_id": report.id, "markdown": markdown}
+    # snapshot（概况页数据源，diagnosis-sheet-redesign §1.1）：已含
+    # question_rates/common_weak/committed/stats，概况页一屏直接渲染，零新增计算端点。
+    return {"report_id": report.id, "markdown": markdown, "snapshot": report.snapshot_json}
+
+
+@router.get("/classes/{class_id}/diagnosis-sheet")
+def class_diagnosis_sheet_endpoint(class_id: int, db: Session = Depends(get_db)):
+    """班级诊断单聚合（diagnosis-sheet-redesign §1.2/B1）。
+
+    滚动现状（跨考试 derive-on-read）+ 最新班级改进意见（LLM/模板）+
+    行动与闭环摘要（intervention-loop 落地后接入，本期空占位）。
+    """
+    if db.get(Class, class_id) is None:
+        raise HTTPException(404, "班级不存在")
+    kb = _active_kb(db)
+    graph = _graph(db, kb.id)
+    return class_diagnosis_sheet(db, graph, class_id)
 
 
 @router.get("/students/{student_id}/diagnosis")

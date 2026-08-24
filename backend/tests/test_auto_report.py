@@ -338,3 +338,89 @@ def test_diagnosis_exam_param_returns_stored(client):
     assert "学习诊断单" in r["markdown"]
     assert r["as_of"] == "2025-11-02", "快照 as_of 应等于考试日，供前端标注与右侧面板同步"
     assert c.get(f"/students/{student_ids[0]}/diagnosis?exam_id=9999").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 班级诊断单聚合端点 + quality-report snapshot（diagnosis-sheet-redesign B1/B2）
+# ---------------------------------------------------------------------------
+
+
+def test_quality_report_response_contains_snapshot(client):
+    """B2：quality-report 响应补带 snapshot（概况页数据源，零新增计算端点）。"""
+    c, _ = client
+    class_id, student_ids = _bootstrap_api(c)
+    exam_id = _commit_via_api(c, class_id, student_ids)
+
+    r = c.get(f"/classes/{class_id}/quality-report?exam_id={exam_id}").json()
+    snap = r["snapshot"]
+    assert snap is not None
+    assert set(snap) >= {"committed", "pending", "question_rates", "common_weak", "stats"}
+    assert snap["committed"] == len(student_ids)
+
+
+def test_diagnosis_sheet_endpoint_shape(client):
+    """B1：滚动现状 + 最新改进意见 + 行动占位 + 存档网格。"""
+    c, _ = client
+    class_id, student_ids = _bootstrap_api(c)
+    _commit_via_api(c, class_id, student_ids)
+
+    r = c.get(f"/classes/{class_id}/diagnosis-sheet").json()
+    status = r["status"]
+    assert status["student_count"] == len(student_ids)
+    assert status["data_as_of"] == "2025-11-02"
+    assert isinstance(status["weak_kp_total"], int)
+    assert isinstance(status["common_weak"], list)
+    assert isinstance(status["trend"], dict)
+
+    advice = r["improvement_advice"]
+    assert advice is not None, "提交即生成改进意见 → 端点应取到最新一份"
+    assert "班级改进意见" in advice["markdown"] or advice["markdown"]
+    assert "writer" in advice  # 模板版为 None，LLM 版带 model/prompt_version
+    assert advice["exam_id"] is not None
+
+    # intervention-loop 未落地：行动/闭环为空占位（前端据此隐藏区块）
+    assert r["actions"] == {"pending_confirm": 0, "rows": []}
+    assert r["intervention_summary"] is None
+
+    # 存档网格：至少本场考试在列
+    assert any(e["exam_id"] == advice["exam_id"] for e in r["past_exams"])
+
+    # 不存在的班级 404
+    assert c.get("/classes/9999/diagnosis-sheet").status_code == 404
+
+
+def test_diagnosis_sheet_rolling_takes_latest_advice(client):
+    """滚动语义：两场考试后端点取最新一场的改进意见。"""
+    c, _ = client
+    class_id, student_ids = _bootstrap_api(c)
+    exam1 = _commit_via_api(c, class_id, student_ids)
+    # 第二场：不同日期、同 kp
+    exam2 = c.post(
+        "/exams",
+        json={
+            "kb_version_id": 1,
+            "class_id": class_id,
+            "name": "第二场卷",
+            "exam_date": "2025-11-20",
+            "type": "单元",
+            "questions": [
+                {"idx": 1, "stem": "q1", "q_type": "选择", "full_score": 5,
+                 "cog_level": "理解", "n_options": 4,
+                 "kps": [{"code": "M7A-105", "weight": 1.0}]},
+            ],
+        },
+    ).json()["exam_id"]
+    for i, sid in enumerate(student_ids):
+        c.post(
+            f"/exams/{exam2}/manual",
+            json={"student_id": sid, "scores": {"1": [5, 4, 3, 2][i]}},
+        )
+    r_commit = c.post(f"/exams/{exam2}/commit").json()
+    assert r_commit["quality_report"] is True
+
+    sheet = c.get(f"/classes/{class_id}/diagnosis-sheet").json()
+    assert sheet["status"]["data_as_of"] == "2025-11-20", "数据截至应为最新一场考试日"
+    assert sheet["improvement_advice"]["exam_id"] == exam2, "改进意见应取最新一场"
+    # 两场都在存档网格
+    ids_in_archive = {e["exam_id"] for e in sheet["past_exams"]}
+    assert {exam1, exam2} <= ids_in_archive
