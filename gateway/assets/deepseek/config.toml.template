@@ -1,0 +1,25 @@
+# DeepSeek 接入 sc 壳的 config.toml 模板（Phase 1 §5.10；来源：DeepSeek 官方 Codex 接入指南
+# https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/codex ，2026-08-25 抓取）。
+# 占位符：{{DEEPSEEK_API_KEY}} / {{CODEX_HOME}} 由装机向导注入；models.json 与本文件同目录分发。
+# 纪律：真实部署写隔离 CODEX_HOME（绝不碰用户 ~/.codex）；本模板供 gateway v1 装机向导渲染。
+#
+# 实测注记（2026-08-25，codex-cli 0.149.1 + deepseek-v4-flash）：
+# 官方 models.json 的 supports_search_tool=true 会启用 deferred tool loading——MCP 工具
+# 不直发为 namespace 组，藏进 tool_search BM25 检索面，模型零引导时发现不了 sc 工具
+# （实测模型答「没有可用的工具来查询班级概览」）。本仓库分发的 models.json 已将该字段
+# 覆写为 false：MCP 工具回直发路径，模型一次调用即中（实测通过）。
+# 认证字段值域注意：preferred_auth_method/forced_login_method 取 chatgpt|api（官方脚本
+# 写 "apikey" 在 0.149.1 会报 unknown variant）。
+
+model = "deepseek-v4-flash"
+model_provider = "deepseek"
+preferred_auth_method = "api"
+forced_login_method = "api"
+model_reasoning_effort = "high"
+model_catalog_json = "{{CODEX_HOME}}/models.json"
+
+[model_providers.deepseek]
+name = "deepseek"
+base_url = "https://api.deepseek.com/"
+wire_api = "responses"
+experimental_bearer_token = "{{DEEPSEEK_API_KEY}}"

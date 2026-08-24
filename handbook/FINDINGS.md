@@ -85,6 +85,41 @@ sc MCP Server 的落地：FastMCP `@mcp.tool(annotations={"readOnlyHint": True})
 DeepSeek 官方提供了现成 `models.json`（见 F3），Phase 1 接入时直接采用，
 顺带消除该 warning 并获得正确的 context_window 等参数。
 
+## F8 · models.json 的 supports_search_tool 决定 MCP 工具直发还是藏进 tool_search（Phase 1 实测）
+
+**实测环境**：codex-cli 0.149.1（npm 预编译）+ DeepSeek 官方 models.json + sc MCP Server，
+隔离 CODEX_HOME，本地 dump 代理抓真实请求体。
+
+0.149.1 的 MCP 工具暴露有**两条路径**（`core/src/tools/spec_plan.rs`）：
+
+- `model_info.supports_search_tool == false` → MCP 工具 **DIRECT 直发**为
+  `{"type":"namespace","name":"mcp__sc",...}` 组（Phase 0 mock 验链走的这条——
+  fallback metadata 该字段默认 false，见 `models-manager/src/model_info.rs:177`）；
+- `== true` → **deferred tool loading**：工具面里没有 namespace 组，代之以一个
+  `tool_search` 工具（BM25 检索 deferred 元数据），模型必须主动检索才能拿到
+  sc 工具。DeepSeek 官方 models.json 三模型全部声明 `supports_search_tool: true`
+  → 实测模型零引导时调 `list_mcp_resources`（空）、翻文件、查 sqlite，
+  最后答「没有可用的工具来查询班级概览」。
+
+特性开关已死（`features/src/lib.rs:190` ToolSearch 标注 "always enabled"），
+唯一杠杆是 model metadata 本身。**处置：仓库分发的 `gateway/assets/deepseek/models.json`
+把该字段覆写为 false** → 实测模型一次调用即中 `sc/get_class_overview` 返回真实班级数据。
+这是配置资产修改，非源码分歧（DELTA 不记账）；若未来改用官方原版 models.json，
+人格 prompt 必须教会模型「先 tool_search 再用工具」。
+
+顺带实测：官方一键脚本写的 `preferred_auth_method="apikey"` 在 0.149.1 报
+unknown variant，正确值域是 `chatgpt|api`（config.toml.template 已修正）。
+
+`scripts/verify_chain3_deepseek.py` 直连 `https://api.deepseek.com/responses`
+（model=`deepseek-v4-flash`）两步往返实测：
+1. 带 sc 工具定义提问 → 返回合法 `function_call`（arguments 合法 JSON、call_id 正常）；
+2. 回喂真实班级数据 → 回答只引用工具数字，且**数据不含被问班级时明确说
+   "我不知道"而非编造**（人格 prompt 铁律①在真实国产模型上天然成立）。
+token 用量在 `usage.input_tokens/output_tokens` 正常返回。
+
+环境注记：本机链路有自签 CA（代理 MITM），脚本经 truststore 桥接系统钥匙串解决；
+校内部署为直连出站，无此问题。key 已入 `backend/.env` 的 DEEPSEEK_API_KEY。
+
 ## F7 · DeepSeek 原生 Responses 实测通过（验链③，2026-08-25）
 
 `scripts/verify_chain3_deepseek.py` 直连 `https://api.deepseek.com/responses`
@@ -109,3 +144,4 @@ token 用量在 `usage.input_tokens/output_tokens` 正常返回。
 | ② | 单进程双教师并发 | ✅ 通过 | `--concurrent`，并发比 1.96 |
 | ③ | 国产模型工具调用保真度 | ✅ 通过 | `scripts/verify_chain3_deepseek.py`，deepseek-v4-flash 实测（F7） |
 | 附 | 网关雏形（WS⇄stdio 翻译） | ✅ 通过 | `scripts/verify_gateway.py` |
+| P1 | 真 shell + DeepSeek models.json + sc MCP 端到端 | ✅ 通过 | codex exec 实测调 get_class_overview 返回七(1)班 30 人（F8） |
