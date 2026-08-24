@@ -64,25 +64,36 @@ def _validate_student_diagnosis(md: str) -> bool:
     return _RANK_PAT.search(md) is None
 
 
+# 列表项前缀：无序（- * +）与有序（1. 2.）都算——模型两种写法都会输出，
+# 内容合格但格式不同不该触发整体回落
+_LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.、)])\s*(.+)$")
+
+
+def _list_items(md: str) -> list[str]:
+    out = []
+    for ln in md.splitlines():
+        m = _LIST_ITEM.match(ln.lstrip())
+        if m and m.group(1).strip():
+            out.append(m.group(1).strip())
+    return out
+
+
 def _validate_class_advice(md: str, pack: dict, forbidden_names: list[str] | None) -> bool:
     """班级改进意见：条目 3~5；每条能对上证据包中的知识点名；无学生姓名；≤300 字级。"""
     if not md or len(md) > 600:
         return False
-    items = [
-        ln.lstrip()[1:].strip()
-        for ln in md.splitlines()
-        if ln.lstrip()[:1] in ("-", "*")
-    ]
-    items = [i for i in items if i]
+    items = _list_items(md)
     if not (3 <= len(items) <= 5):
         return False
     known_kps = {d["kp"] for d in pack.get("common_weak", []) if d.get("kp")}
     for q in pack.get("low_rate_questions", []):
         known_kps.update(k for k in re.split(r"[、,，]\s*", q.get("kps") or "") if k)
+    # 逐条锚定证据包中的 kp 名（防编造）；证据包本身无 kp（平稳班级）时不强求，
+    # 否则「证据不足」的诚实回答永远过不了校验、只能回落模板
+    if known_kps and not all(any(kp in it for kp in known_kps) for it in items):
+        return False
     for it in items:
         if len(it) > 100:
-            return False
-        if not any(kp in it for kp in known_kps):
             return False
     joined = md
     if _RANK_PAT.search(joined):
