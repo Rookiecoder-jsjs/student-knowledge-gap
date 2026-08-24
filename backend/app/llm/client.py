@@ -20,6 +20,8 @@ import re
 import httpx
 from dotenv import load_dotenv
 
+from app.llm.audit import wrap_client
+
 load_dotenv()  # .env：SC_LLM_PROVIDER / SC_LLM_API_KEY / SC_LLM_MODEL / SC_LLM_BASE_URL
 
 TIMEOUT = 120.0
@@ -191,10 +193,11 @@ def get_client(capability: str = "text") -> BaseClient:
     """capability: "vision"（拍照解析）| "text"（报告叙述）。
 
     视觉与文本任务可分别指定模型（SC_LLM_VISION_MODEL / SC_LLM_TEXT_MODEL），
-    缺省回落到 SC_LLM_MODEL。
+    缺省回落到 SC_LLM_MODEL。返回客户端经 AuditedClient 包装（LLM 调用全程
+    审计；isinstance 判定等场景用 audit.unwrap 还原）。
     """
     if _override is not None:
-        return _override
+        return wrap_client(_override, capability)
     provider = os.environ.get("SC_LLM_PROVIDER", "mock").lower()
     api_key = os.environ.get("SC_LLM_API_KEY") or os.environ.get("qwen_api_key", "")
     default_model = os.environ.get("SC_LLM_MODEL", "")
@@ -205,8 +208,8 @@ def get_client(capability: str = "text") -> BaseClient:
             "未配置 LLM：请在 .env 设置 SC_LLM_PROVIDER=openai|anthropic 与密钥"
         )
     if provider == "anthropic":
-        return AnthropicClient(api_key, model or "claude-sonnet-4-20250514")
+        return wrap_client(AnthropicClient(api_key, model or "claude-sonnet-4-20250514"), capability)
     base_url = os.environ.get("SC_LLM_BASE_URL") or os.environ.get(
         "base_url", "https://api.openai.com/v1"
     )
-    return OpenAICompatClient(api_key, model or "gpt-4o", base_url)
+    return wrap_client(OpenAICompatClient(api_key, model or "gpt-4o", base_url), capability)

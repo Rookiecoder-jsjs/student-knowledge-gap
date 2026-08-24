@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from app.llm.audit import audit_context, record_circuit_open
 from app.llm.circuit import CircuitBreaker, CircuitOpenError
 from app.llm.client import get_client
 from app.llm.prompts import (
@@ -48,13 +49,15 @@ def narrate(report_markdown: str, report_type: str) -> str:
     try:
         _text_breaker.before_call()
         client = get_client("text")
-        payload = client.parse_json(
-            NARRATIVE_SYSTEM,
-            narrative_user_prompt(report_markdown, report_type),
-            None,
-        )
+        with audit_context("narrative", NARRATIVE_PROMPT_VERSION):
+            payload = client.parse_json(
+                NARRATIVE_SYSTEM,
+                narrative_user_prompt(report_markdown, report_type),
+                None,
+            )
         _text_breaker.record_success()
-    except CircuitOpenError:
+    except CircuitOpenError as e:
+        record_circuit_open("text", str(e))
         return ""
     except Exception:  # noqa: BLE001 —— 不变量③：LLMError/httpx 网络/超时/5xx/JSON 解析等一律降级
         _text_breaker.record_failure()

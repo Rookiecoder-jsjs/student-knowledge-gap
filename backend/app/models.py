@@ -14,6 +14,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     Float,
@@ -416,6 +417,32 @@ class CorrectionLog(Base):
     new: Mapped[str | None] = mapped_column(Text, nullable=True)
     corrected_by: Mapped[str] = mapped_column(String(50))
     at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LlmCallLog(Base):
+    """LLM 调用审计（rollout 思想：append-only，只增不改，可回放取证）。
+
+    每次真实触达模型的调用记一行；熔断快速拒绝记 status='circuit_open'。
+    默认不存提示词/响应原文（学生 PII 最小化），SC_LLM_AUDIT_PAYLOAD=1 才存。
+    写入经 app/llm/audit.py 有界队列异步落库，绝不阻塞主流程。
+    """
+
+    __tablename__ = "llm_call_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    capability: Mapped[str] = mapped_column(String(20))   # vision | text
+    task: Mapped[str] = mapped_column(String(40))         # narrative|tagger|batch_parse|template_parse|response_parse
+    provider: Mapped[str] = mapped_column(String(30), default="")
+    model: Mapped[str] = mapped_column(String(100), default="")
+    prompt_version: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(20))       # success|error|circuit_open
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_sha256: Mapped[str] = mapped_column(String(64), default="")  # (system,user,image) 内容哈希，幂等键同源
+    input_chars: Mapped[int] = mapped_column(Integer, default=0)
+    has_image: Mapped[bool] = mapped_column(Boolean, default=False)
+    response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 仅 AUDIT_PAYLOAD 开启时
 
 
 class Report(Base):

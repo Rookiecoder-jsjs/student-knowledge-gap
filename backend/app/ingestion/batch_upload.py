@@ -19,6 +19,7 @@ import tempfile
 from PIL import Image
 
 from app.config import settings
+from app.llm.audit import unwrap
 from app.llm.client import LLMError, MockLLMClient, get_client
 
 MAX_FILES = 50
@@ -41,7 +42,7 @@ def effective_sync(sync: bool) -> bool:
     if os.environ.get("SC_LLM_PROVIDER", "mock").lower() == "mock":
         return True
     try:
-        if isinstance(get_client("vision"), MockLLMClient):
+        if isinstance(unwrap(get_client("vision")), MockLLMClient):
             return True
     except LLMError:
         pass

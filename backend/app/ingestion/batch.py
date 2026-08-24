@@ -30,9 +30,11 @@ from sqlalchemy.exc import IntegrityError
 from app.config import BATCH_STALE_MINUTES, BATCH_TEMPFILE_MAX_AGE_HOURS, settings
 from app.db import utcnow
 from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
+from app.llm.audit import audit_context, record_circuit_open
 from app.llm.circuit import CircuitOpenError, get_vision_breaker
 from app.llm.client import LLMError, MockLLMClient, get_client
 from app.llm.prompts import (
+    RESPONSE_BATCH_PROMPT_VERSION,
     RESPONSE_BATCH_SYSTEM,
     response_batch_user_prompt,
 )
@@ -470,14 +472,17 @@ def _call_llm_with_retry(questions_desc: str, image_bytes: bytes):
             breaker.before_call()  # G5：open 态直接抛 CircuitOpenError，不触达 provider
         except CircuitOpenError as e:
             _log.warning("LLM 熔断 fast-fail", extra={"attempt": attempt, "error": str(e)})
+            record_circuit_open("vision", str(e))
             return None, [f"LLM 调用失败：{e}"]
         t0 = time.monotonic()
         try:
-            payload = client.parse_json(
-                RESPONSE_BATCH_SYSTEM,
-                response_batch_user_prompt(questions_desc),
-                image_bytes,
-            )
+            # 每次尝试经 audit_context 独立成行（审计在 AuditedClient 内自动记录）
+            with audit_context("batch_parse", RESPONSE_BATCH_PROMPT_VERSION):
+                payload = client.parse_json(
+                    RESPONSE_BATCH_SYSTEM,
+                    response_batch_user_prompt(questions_desc),
+                    image_bytes,
+                )
             breaker.record_success()
             _log.info(
                 "LLM 调用成功",
