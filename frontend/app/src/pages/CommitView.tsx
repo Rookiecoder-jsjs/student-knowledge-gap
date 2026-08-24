@@ -59,8 +59,8 @@ export default function CommitView() {
         <p className="max-w-[48ch] text-xs text-ink-faint">
           作答与标注已锁定，如需更正请以补录考试处理。
         </p>
-        <Link to={`/c/${cid}/exams/${eid}/report`}>
-          <Button>查看班级质量分析</Button>
+        <Link to={`/c/${cid}/exams?tab=diagnosis`}>
+          <Button>查看班级诊断单</Button>
         </Link>
       </Card>
     );
@@ -94,7 +94,7 @@ export default function CommitView() {
           </p>
           {result.quality_report && (
             <p className="text-xs text-ink-soft">
-              已自动生成班级质量报告 + {result.diagnoses ?? 0} 份学生诊断，一次生成、随时查看。
+              已自动生成班级质量报告、班级改进意见 + {result.diagnoses ?? 0} 份学生诊断单，一次生成、随时查看。
             </p>
           )}
           {result.skipped.length > 0 && (
@@ -103,11 +103,11 @@ export default function CommitView() {
             </p>
           )}
           <div className="mt-1 flex gap-2">
-            <Link to={`/c/${cid}/exams/${eid}/report`}>
-              <Button>查看班级质量分析</Button>
+            <Link to={`/c/${cid}/exams?tab=diagnosis`}>
+              <Button>查看班级诊断单</Button>
             </Link>
-            <Link to={`/c/${cid}/exams`}>
-              <Button variant="secondary">返回考试列表</Button>
+            <Link to={`/c/${cid}/exams/${eid}/report`}>
+              <Button variant="secondary">本场概况</Button>
             </Link>
           </div>
         </Card>

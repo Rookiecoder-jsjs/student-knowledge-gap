@@ -13,6 +13,7 @@ import Kb from "./pages/Kb";
 import Mastery from "./pages/Mastery";
 import Overview from "./pages/Overview";
 import Quality from "./pages/Quality";
+import ExamBrief from "./pages/ExamBrief";
 import Review from "./pages/Review";
 import Students from "./pages/Students";
 import TemplateView from "./pages/TemplateView";
@@ -65,7 +66,7 @@ export default function App() {
         <Route path="/c/:classId/exams/:examId/review" element={<ExamStage stage={2}><Review /></ExamStage>} />
         <Route path="/c/:classId/exams/:examId/collect" element={<ExamStage stage={3}><Collect /></ExamStage>} />
         <Route path="/c/:classId/exams/:examId/commit" element={<ExamStage stage={4}><CommitView /></ExamStage>} />
-        <Route path="/c/:classId/exams/:examId/report" element={<ExamStage stage={5}><Quality /></ExamStage>} />
+        <Route path="/c/:classId/exams/:examId/report" element={<ExamStage stage={5}><ExamBrief /></ExamStage>} />
 
         {/* 质量分析直达入口（不在工作区内，自带考试选择器） */}
         <Route path="/c/:classId/quality" element={<Shell><Animated><Quality /></Animated></Shell>} />

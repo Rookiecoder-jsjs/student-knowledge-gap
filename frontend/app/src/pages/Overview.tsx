@@ -136,6 +136,24 @@ export default function Overview() {
               )}
             </Card>
           </div>
+
+          {/* 班级诊断单入口卡（diagnosis-sheet-redesign F5）：工作台不再渲染行动列表，
+              全量行动只在班级诊断单一处出现。 */}
+          <div>
+            <SectionTitle>班级状态</SectionTitle>
+            <Link to={`/c/${cid}/exams?tab=diagnosis`} className="block">
+              <Card interactive className="flex items-center gap-3 p-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">查看班级诊断单</p>
+                  <p className="mt-0.5 text-xs text-ink-faint">
+                    班级现状 · 改进意见 · 往期报告存档
+                  </p>
+                </div>
+                <ArrowRight size={15} className="text-ink-faint" />
+              </Card>
+            </Link>
+          </div>
+
           <div>
             <SectionTitle>教学进度</SectionTitle>
             <TeachingProgressCard classId={cid} />

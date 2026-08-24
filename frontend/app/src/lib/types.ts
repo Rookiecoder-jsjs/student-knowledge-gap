@@ -272,3 +272,64 @@ export interface KpRelationView {
   type: string;
   weight: number;
 }
+
+// ---------------------------------------------------------------------------
+// 班级诊断单 / 考试概况（diagnosis-sheet-redesign F1/F3/F8）
+// ---------------------------------------------------------------------------
+
+export interface QualityReportSnapshot {
+  class: string;
+  exam: string;
+  exam_date: string;
+  committed: number;
+  pending: number;
+  stats: { mean: number | null; max: number | null; min: number | null };
+  question_rates: {
+    idx: number;
+    q_type: string;
+    full_score: number;
+    rate: number | null;
+    kps: string;
+    low: boolean;
+  }[];
+  common_weak: {
+    code: string;
+    name: string;
+    class_avg: number;
+    weak_share: number;
+    n: number;
+  }[];
+}
+
+export interface DiagnosisSheetStatus {
+  student_count: number;
+  exam_count: number;
+  data_as_of: string | null;
+  weak_kp_total: number;
+  common_weak: { kp: string; weak_share_pct: number; class_avg_mastery_pct: number }[];
+  trend: { prev_exam: string | null; entered: string[]; exited: string[] };
+}
+
+export interface ImprovementAdvice {
+  report_id: number;
+  markdown: string;
+  generated_at: string | null;
+  writer: { model: string; prompt_version: string } | null;
+  exam_id: number | null;
+}
+
+export interface PastExamEntry {
+  exam_id: number;
+  name: string;
+  exam_date: string;
+  type: string;
+}
+
+export interface ClassDiagnosisSheet {
+  class_id: number;
+  status: DiagnosisSheetStatus;
+  improvement_advice: ImprovementAdvice | null;
+  actions: { pending_confirm: number; rows: unknown[] };
+  intervention_summary: null;
+  past_exams: PastExamEntry[];
+}

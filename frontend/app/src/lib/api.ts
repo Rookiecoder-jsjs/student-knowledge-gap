@@ -4,6 +4,7 @@ import type {
   AttributionView,
   BatchJob,
   BatchJobSummary,
+  ClassDiagnosisSheet,
   ClassOverview,
   ClassSummary,
   ExamDetail,
@@ -13,6 +14,7 @@ import type {
   KpVersion,
   MasteryItem,
   ProgressEntry,
+  QualityReportSnapshot,
   QuestionCreate,
   ReportSummary,
   ResponsesMatrix,
@@ -437,9 +439,13 @@ export const overrideAttribution = (attributionId: number, note: string) =>
 // ---- 报告 ------------------------------------------------------------------
 
 export const qualityReport = (classId: number, examId: number, narrative: boolean) =>
-  request<{ report_id: number; markdown: string }>(
+  request<{ report_id: number; markdown: string; snapshot: QualityReportSnapshot | null }>(
     `/classes/${classId}/quality-report?exam_id=${examId}&narrative=${narrative}`
   );
+
+/** 班级诊断单聚合（diagnosis-sheet-redesign B1/F8）：滚动现状 + 最新改进意见。 */
+export const classDiagnosisSheet = (classId: number) =>
+  request<ClassDiagnosisSheet>(`/classes/${classId}/diagnosis-sheet`);
 
 export const diagnosisReport = (
   studentId: number,

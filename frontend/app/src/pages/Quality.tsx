@@ -1,7 +1,5 @@
-import { FileText } from "@phosphor-icons/react";
-import { useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { Button, Card, EmptyState, ErrorState, Page, SectionTitle, Skeleton } from "../components/ui";
+import { Card, EmptyState, ErrorState, Page, SectionTitle, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { ReportMarkdown, ReportTOC } from "../components/Markdown";
 import { listExams, qualityReport } from "../lib/api";
@@ -9,8 +7,10 @@ import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 
 /**
- * 班级质量分析（考试流水线第 5 阶，亦作 /c/:cid/quality 直达入口）。
- * 路由带 :examId 时为工作区阶段 5（预设本场，无选择器）；否则直达入口显示考试选择器。
+ * 单场考试报告（存档查看器，diagnosis-sheet-redesign §1.4/F4）。
+ * 语义从「班级质量分析与行动方向」降级为「单场考试报告」：
+ * 行动面板与摘要条移入班级诊断单；本页只保留 考试选择器 + markdown + TOC + 打印。
+ * 报告本身在提交时已自动生成（get-or-generate：无则补算），无需手动触发生成。
  */
 export default function Quality() {
   const { classId, examId: routeExamId } = useParams();
@@ -19,51 +19,32 @@ export default function Quality() {
   const [params] = useSearchParams();
 
   const exams = useAsync(() => listExams(cid), [cid]);
-  const [examId, setExamId] = useState<number | null>(
-    presetExamId ?? (params.get("exam") ? Number(params.get("exam")) : null)
+  // 工作区入口带 exam 参数时预设本场；直达入口默认最近一场
+  const initialExam =
+    presetExamId ??
+    (params.get("exam") ? Number(params.get("exam")) : null);
+  const effectiveExamId = initialExam ?? exams.data?.exams[0]?.exam_id ?? null;
+
+  // get-or-generate：有已存报告直接返回（提交时已生成），无则现算——不提供手动开关
+  const report = useAsync(
+    () => (effectiveExamId ? qualityReport(cid, effectiveExamId, false) : Promise.resolve(null)),
+    [cid, effectiveExamId]
   );
-  // 默认生成 AI 解读；教师仍可主动关闭，以保留确定性模板报告。
-  const [narrative, setNarrative] = useState(true);
-  const [report, setReport] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const generate = async () => {
-    if (examId === null) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await qualityReport(cid, examId, narrative);
-      setReport(r.markdown);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const selectedExam = exams.data?.exams.find((e) => e.exam_id === examId);
+  const selectedExam = exams.data?.exams.find((e) => e.exam_id === effectiveExamId);
 
   return (
     <Page accent={ACCENTS.exam}>
-      <SectionTitle>{presetExamId ? "班级质量分析" : "班级质量分析（选择考试）"}</SectionTitle>
+      <SectionTitle>单场考试报告{selectedExam ? ` · ${selectedExam.name}` : ""}</SectionTitle>
 
-      <Card className="mb-5 flex flex-wrap items-end gap-4 p-4">
-        {presetExamId ? (
-          <div className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-ink-faint">本场考试</span>
-            <span className="min-w-[220px] text-sm font-semibold text-ink">
-              {selectedExam?.name ?? "…"}
-            </span>
-          </div>
-        ) : (
+      {!presetExamId && (
+        <Card className="mb-5 flex flex-wrap items-end gap-4 p-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-ink-faint">选择考试</span>
             <select
-              value={examId ?? ""}
+              value={effectiveExamId ?? ""}
               onChange={(e) => {
-                setExamId(Number(e.target.value));
-                setReport(null);
+                window.location.href = `/c/${cid}/quality?exam=${e.target.value}`;
               }}
               className="min-w-[220px] rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
             >
@@ -77,49 +58,41 @@ export default function Quality() {
               ))}
             </select>
           </label>
-        )}
-        <Button
-          variant={narrative ? "primary" : "secondary"}
-          aria-pressed={narrative}
-          onClick={() => {
-            setNarrative((n) => !n);
-            setReport(null);
-          }}
-        >
-          {narrative ? "已附加 AI 解读" : "附加 AI 解读"}
-        </Button>
-        <Button onClick={generate} disabled={loading || examId === null} className="ml-auto">
-          <FileText size={15} />
-          {loading
-            ? narrative
-              ? "解读生成中…"
-              : "生成中…"
-            : report
-              ? "查看报告"
-              : "生成报告"}
-        </Button>
-      </Card>
-
-      {loading && <Skeleton rows={8} />}
-      {error && <ErrorState message={error} onRetry={generate} />}
-      {!loading && !report && !error && (
-        <Card>
-          <EmptyState
-            title="选择考试并生成报告"
-            hint="报告包含班级共性待加强点、各题得分率与讲评建议；开启 AI 解读会追加一段模型生成的文字说明（导出前请预览确认）。"
-          />
+          <p className="ml-auto max-w-sm text-xs text-ink-faint">
+            报告随考试提交自动生成并存档。班级的最新状态与改进意见请见
+            <a href={`/c/${cid}/exams?tab=diagnosis`} className="ml-1 font-medium text-accent underline underline-offset-2">
+              班级诊断单
+            </a>
+            。
+          </p>
         </Card>
       )}
-      {report && !loading && (
+
+      {report.loading && <Skeleton rows={8} />}
+      {report.error && <ErrorState message={report.error} onRetry={report.reload} />}
+
+      {report.data === null && !report.loading && !report.error && !presetExamId && (
+        <Card>
+          <EmptyState title="选择一场考试" hint="选择后显示该场考试的完整质量报告。" />
+        </Card>
+      )}
+
+      {report.data && !report.loading && (
         <Reveal>
           <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
             <aside className="hidden lg:block">
               <div className="sticky top-4 rounded-lg border border-line bg-surface p-4 shadow-soft">
-                <ReportTOC content={report} />
+                <ReportTOC content={report.data.markdown} />
+                <button
+                  onClick={() => window.print()}
+                  className="mt-3 w-full rounded-md border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:border-accent hover:text-accent"
+                >
+                  打印 / 导出 PDF
+                </button>
               </div>
             </aside>
             <Card className="p-6">
-              <ReportMarkdown content={report} />
+              <ReportMarkdown content={report.data.markdown} />
             </Card>
           </div>
         </Reveal>

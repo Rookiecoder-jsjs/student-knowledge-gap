@@ -41,8 +41,8 @@ export default function Diagnosis() {
 
   const [attributions, setAttributions] = useState<AttributionView[] | null>(null);
   const [attrError, setAttrError] = useState<string | null>(null);
-  // 默认生成 AI 解读；教师仍可主动关闭，以保留确定性模板报告。
-  const [narrative, setNarrative] = useState(true);
+  // diagnosis-sheet-redesign F6：正文已由生成层（LLM/模板保底）落库，AI 解读 toggle 删除。
+  // 后端 narrative 参数保留兼容，前端不再暴露。
   const [report, setReport] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export default function Diagnosis() {
     setReportLoading(true);
     setReportError(null);
     try {
-      const r = await diagnosisReport(sid, narrative, asOf || undefined);
+      const r = await diagnosisReport(sid, false, asOf || undefined);
       setReport(r.markdown);
       setReportAsOf(r.as_of ?? null);
     } catch (e) {
@@ -72,7 +72,7 @@ export default function Diagnosis() {
   useEffect(() => {
     generate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sid, narrative, asOf]);
+  }, [sid, asOf]);
 
   return (
     <Page accent={ACCENTS.student}>
@@ -80,23 +80,14 @@ export default function Diagnosis() {
         title={student ? `${student.name_or_alias} 的诊断单` : "学生诊断单"}
         desc="先看进步，再看待加强项；每条结论可展开依据"
         actions={
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-ink-soft">
-              截至
-              <Input
-                type="date"
-                value={asOf}
-                onChange={(e) => setAsOf(e.target.value)}
-              />
-            </label>
-            <Button
-              variant={narrative ? "primary" : "secondary"}
-              aria-pressed={narrative}
-              onClick={() => setNarrative((n) => !n)}
-            >
-              {narrative ? "已附加 AI 解读" : "附加 AI 解读"}
-            </Button>
-          </div>
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
+            截至
+            <Input
+              type="date"
+              value={asOf}
+              onChange={(e) => setAsOf(e.target.value)}
+            />
+          </label>
         }
       />
 

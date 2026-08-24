@@ -5,13 +5,13 @@ import { listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 
-/** 考试流水线 5 阶。to 相对于 /c/:cid/exams/:eid。 */
+/** 考试流水线 5 阶。to 相对于 /c/:cid/exams/:eid。第 5 阶=概况（diagnosis-sheet-redesign F2）。 */
 const STAGES = [
   { n: 1, label: "建卷", to: "" },
   { n: 2, label: "审核", to: "/review" },
   { n: 3, label: "采集", to: "/collect" },
   { n: 4, label: "提交", to: "/commit" },
-  { n: 5, label: "报告", to: "/report" },
+  { n: 5, label: "概况", to: "/report" },
 ] as const;
 
 /**
