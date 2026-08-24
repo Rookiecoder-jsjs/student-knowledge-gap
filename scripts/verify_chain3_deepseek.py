@@ -40,13 +40,23 @@ REAL_TOOL_OUTPUT = json.dumps({
 
 
 def post(path: str, payload: dict, key: str) -> dict:
+    # 本机链路存在自签 CA（公司/代理 MITM）：truststore 桥接系统钥匙串信任，
+    # 与 curl 行为一致；无此环境时 truststore 注入为无害操作。
+    try:
+        import ssl
+        import truststore
+        ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        import ssl
+        ctx = ssl.create_default_context()
+    data = json.dumps(payload, ensure_ascii=False).encode()
     req = urllib.request.Request(
         f"{BASE}{path}",
-        data=json.dumps(payload, ensure_ascii=False).encode(),
+        data=data,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=120, context=ctx) as resp:
         return json.loads(resp.read())
 
 

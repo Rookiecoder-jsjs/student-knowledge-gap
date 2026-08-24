@@ -85,6 +85,20 @@ sc MCP Server 的落地：FastMCP `@mcp.tool(annotations={"readOnlyHint": True})
 DeepSeek 官方提供了现成 `models.json`（见 F3），Phase 1 接入时直接采用，
 顺带消除该 warning 并获得正确的 context_window 等参数。
 
+## F7 · DeepSeek 原生 Responses 实测通过（验链③，2026-08-25）
+
+`scripts/verify_chain3_deepseek.py` 直连 `https://api.deepseek.com/responses`
+（model=`deepseek-v4-flash`）两步往返实测：
+1. 带 sc 工具定义提问 → 返回合法 `function_call`（arguments 合法 JSON、call_id 正常）；
+2. 回喂真实班级数据 → 回答只引用工具数字，且**数据不含被问班级时明确说
+   "我不知道"而非编造**（人格 prompt 铁律①在真实国产模型上天然成立）。
+token 用量在 `usage.input_tokens/output_tokens` 正常返回。
+
+环境注记：本机链路有自签 CA（代理 MITM），脚本经 truststore 桥接系统钥匙串解决；
+校内部署为直连出站，无此问题。key 已入 `backend/.env` 的 DEEPSEEK_API_KEY。
+
+**三项验链全部通过 → Phase 0 出口判据达成，两周止损线解除。**
+
 ---
 
 ## 验链状态板
@@ -93,5 +107,5 @@ DeepSeek 官方提供了现成 `models.json`（见 F3），Phase 1 接入时直�
 |---|---|---|---|
 | ① | MCP 链路（壳⇄MCP⇄sc 真实数据） | ✅ 通过 | `scripts/verify_chain1.py`，rollout 含真实班级数据 |
 | ② | 单进程双教师并发 | ✅ 通过 | `--concurrent`，并发比 1.96 |
-| ③ | 国产模型工具调用保真度 | ⏳ 待 key | 脚本就绪 `scripts/verify_chain3_deepseek.py`；文档情报见 F3 |
+| ③ | 国产模型工具调用保真度 | ✅ 通过 | `scripts/verify_chain3_deepseek.py`，deepseek-v4-flash 实测（F7） |
 | 附 | 网关雏形（WS⇄stdio 翻译） | ✅ 通过 | `scripts/verify_gateway.py` |
