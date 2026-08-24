@@ -24,6 +24,20 @@ from app.models import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stop_llm_audit_threads():
+    """测试间停掉审计写线程（TestClient lifespan 会启动它）。
+
+    线程跨测试存活会拿旧工厂/新全局 SessionLocal 写库，握住引擎句柄——
+    Windows 下文件被锁导致临时库删除失败（WinError 32）。
+    """
+    from app.llm import audit
+
+    audit._reset_for_tests()
+    yield
+    audit._reset_for_tests()
+
+
 @pytest.fixture()
 def session():
     engine = create_engine("sqlite:///:memory:")

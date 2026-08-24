@@ -211,13 +211,17 @@ def _reset_for_tests() -> None:
 
 
 def _write_row(session_factory, row: LlmCallLog) -> bool:
-    """独立短事务写一行。失败仅记日志（审计尽力而为）。"""
-    try:
-        factory = session_factory
-        if factory is None:
-            from app.db import SessionLocal  # 延迟导入避免循环依赖
+    """独立短事务写一行。失败仅记日志（审计尽力而为）。
 
-            factory = SessionLocal
+    默认工厂用独立引擎（按 settings.database_url 构建），不取全局
+    ``SessionLocal``——后者可能被运行中环境替换（测试换库），审计线程
+    跟随会握住外部引擎的连接池句柄（Windows 下锁文件导致删除失败）。
+    """
+    try:
+        if session_factory is not None:
+            factory = session_factory
+        else:
+            factory = _default_session_factory()
         session = factory()
     except Exception as e:  # noqa: BLE001 —— 工厂本身故障同样不影响主流程
         _log.warning("LLM 审计会话创建失败", extra={"error": str(e)})
@@ -232,6 +236,31 @@ def _write_row(session_factory, row: LlmCallLog) -> bool:
         return False
     finally:
         session.close()
+
+
+_default_factory_lock = threading.Lock()
+_default_factory = None
+
+
+def _default_session_factory():
+    """惰性单例：独立引擎 + sessionmaker（进程生命周期内复用连接池）。"""
+    global _default_factory
+    if _default_factory is None:
+        with _default_factory_lock:
+            if _default_factory is None:
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+
+                from app.config import settings
+
+                eng = create_engine(
+                    settings.database_url,
+                    connect_args={"check_same_thread": False}
+                    if settings.database_url.startswith("sqlite")
+                    else {},
+                )
+                _default_factory = sessionmaker(bind=eng, expire_on_commit=False)
+    return _default_factory
 
 
 class AuditedClient:
