@@ -1,0 +1,6 @@
+{
+  "_comment": "gateway 账号文件（§5.5 一期）。生成方式见 scripts/gateway_account.py；真实 accounts.json 不入库（.gitignore）。salt/password_hash 均为 hex。",
+  "accounts": [
+    {"username": "teacher_demo", "teacher_id": 1, "salt": "00", "password_hash": "00"}
+  ]
+}

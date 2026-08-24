@@ -39,3 +39,6 @@ design-system/
 
 # Claude Code 个人本地配置（不入库）
 .claude/settings.local.json
+
+# gateway 真实账号文件（口令哈希也不入库）
+gateway/accounts.json
