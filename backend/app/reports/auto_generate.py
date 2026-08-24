@@ -29,12 +29,13 @@ from app.models import (
 from app.pipeline.attribution import materialize_attribution_verdicts
 from app.pipeline.mastery import get_events_batch
 from app.pipeline.weakness import assess_student_kps
+from app.reports.class_improvement import generate_class_improvement_advice
 from app.reports.quality_analysis import generate_quality_analysis
 from app.reports.student_diagnosis import generate_student_diagnosis
 
 logger = logging.getLogger(__name__)
 
-_REPORT_TYPES = ("quality_analysis", "student_diagnosis")
+_REPORT_TYPES = ("quality_analysis", "student_diagnosis", "class_improvement_advice")
 
 
 @dataclass
@@ -103,6 +104,17 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
 
     generate_quality_analysis(
         session, graph, class_id, exam_id, narrative=False, events_by_sk=events_by_sk
+    )
+    # 班级改进意见（diagnosis-sheet-redesign §2.4）：每场提交一份，班级诊断单取最新。
+    # forbidden_names 兜底防 LLM 泄漏学生姓名（模板路径本就不含名单）。
+    generate_class_improvement_advice(
+        session,
+        graph,
+        class_id,
+        exam_id,
+        as_of=as_of,
+        events_by_sk=events_by_sk,
+        forbidden_names=[s.name_or_alias for s in students],
     )
     for s in students:
         # 候选1：评估一次，诊断（derive-on-read）与物化（尾步）共享，省掉重复计算。

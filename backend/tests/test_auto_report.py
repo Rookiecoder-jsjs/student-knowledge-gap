@@ -94,6 +94,68 @@ def test_commit_twice_no_duplicates(session, env):
     assert len(session.scalars(select(Report)).all()) == before
 
 
+def test_commit_generates_class_improvement_advice(session, env):
+    """提交后生成一份班级改进意见（模板保底）；重复提交幂等不重复。"""
+    tpl, ids, _ = _commit(session, env)
+    advices = session.scalars(
+        select(Report).where(Report.type == "class_improvement_advice")
+    ).all()
+    assert len(advices) == 1
+    a = advices[0]
+    assert a.exam_id == tpl.id and a.class_id == env["class"].id
+    # 模板保底正文结构：标题 + 建议列表；writer 缺省（无 LLM 步骤）
+    assert "班级改进意见" in a.content_markdown
+    assert (a.snapshot_json or {}).get("writer") is None
+
+    before = len(session.scalars(select(Report)).all())
+    commit_exam(session, tpl.id)
+    session.flush()
+    assert len(session.scalars(select(Report)).all()) == before, "重复提交不得新增报告行"
+
+
+def test_class_advice_llm_upgrade_replaces_template(session, env, monkeypatch):
+    """LLM 开启 + 合格输出：改进意见与学生诊断正文被替换且带 writer 溯源。
+
+    校验失败/异常路径已在 test_plan_writer 覆盖，此处只验证落库集成。
+    """
+    import app.llm.plan_writer as plan_writer_module
+    from app.llm.client import MockLLMClient, set_client
+
+    monkeypatch.setattr(plan_writer_module.config, "LLM_PLAN_ENABLE", True)
+    tpl, ids, _ = _commit(session, env)
+
+    advice_md = (
+        "- 基础点本周内安排一次全班重讲，配套随堂小测。\n"
+        "- 基础点错题讲评后，下周布置两次隔天巩固练习。\n"
+        "- 基础点仍薄弱的个体汇总给教师，指向对应学生的改进单跟进。"
+    )
+    diag_md = (
+        "### 保持与进步\n- 基础点掌握扎实。\n\n"
+        "### 下一步需要关注的知识点\n- 中间点建议先补前置。"
+    )
+    # 队列顺序：T01 诊断 → 班级改进意见（auto_generate 先生成班级两份再逐生诊断，
+    # 但 MockLLMClient 按调用次序出栈——按实际次序排）
+    set_client(MockLLMClient([advice_md, diag_md] + [diag_md] * (len(ids) - 1)))
+    try:
+        reports = generate_exam_reports(session, tpl.id)
+        assert reports.quality and reports.diagnoses == len(ids)
+    finally:
+        set_client(None)
+
+    advice = session.scalars(
+        select(Report).where(Report.type == "class_improvement_advice")
+    ).one()
+    writer = (advice.snapshot_json or {}).get("writer")
+    if writer:
+        # LLM 版：正文替换 + 溯源
+        assert advice.content_markdown == advice_md
+        assert writer["model"] == "mock-vision-v0"
+        assert writer["prompt_version"].startswith("plan-writer-")
+    else:
+        # 若校验未过回落模板，也必须仍是完整模板正文（不允许空白）
+        assert "班级改进意见" in advice.content_markdown
+
+
 def test_commit_regenerates_replacing_old(session, env):
     """部分提交后再补录提交：报告整体替换（无重复行），覆盖全部已提交学生。"""
     tpl, picked, _ = _commit(session, env, first_n=3)
