@@ -17,6 +17,9 @@ from app.labels_source import (
     ATTR_LABEL,
     BAND_LABEL,
     CRITERION_LABEL,
+    EFFECT_LABEL,
+    INTERVENTION_STATUS_LABEL,
+    KIND_LABEL,
     TRAJ_LABEL,
     VERSION_STATUS_LABEL,
 )
@@ -42,6 +45,9 @@ export const trajLabel = (t: string | null | undefined) => translate(TRAJ_LABEL,
 export const criterionLabel = (c: string | null | undefined) => translate(CRITERION_LABEL, c);
 export const bandLabel = (b: string | null | undefined) => translate(BAND_LABEL, b);
 export const versionStatusLabel = (s: string | null | undefined) => translate(VERSION_STATUS_LABEL, s);
+export const kindLabel = (k: string) => translate(KIND_LABEL, k);
+export const interventionStatusLabel = (s: string) => translate(INTERVENTION_STATUS_LABEL, s);
+export const effectLabel = (e: string) => translate(EFFECT_LABEL, e);
 """
 
 
@@ -59,6 +65,9 @@ def build_labels_ts() -> str:
     parts.append(_ts_map("CRITERION_LABEL", CRITERION_LABEL))
     parts.append(_ts_map("BAND_LABEL", BAND_LABEL))
     parts.append(_ts_map("VERSION_STATUS_LABEL", VERSION_STATUS_LABEL))
+    parts.append(_ts_map("KIND_LABEL", KIND_LABEL))
+    parts.append(_ts_map("INTERVENTION_STATUS_LABEL", INTERVENTION_STATUS_LABEL))
+    parts.append(_ts_map("EFFECT_LABEL", EFFECT_LABEL))
     return "\n\n".join(parts) + FOOTER
 
 

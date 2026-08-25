@@ -40,3 +40,27 @@ VERSION_STATUS_LABEL: dict[str, str] = {
     "reviewed": "已审核",
     "active": "正式",
 }
+
+# 干预闭环 kind（intervention-loop-design.md §1 策略映射；封闭集合，
+# app/intervention.py KIND_* 常量与前端 labels.ts 共用此真源）
+KIND_LABEL: dict[str, str] = {
+    "reteach": "全班重讲",
+    "prereq_backfill": "回补基础点",
+    "spaced_review": "间隔复习",
+    "contrast_practice": "概念辨析",
+    "evidence_boost": "补证据练习",
+    "tier_drill": "层级补强",
+}
+
+INTERVENTION_STATUS_LABEL: dict[str, str] = {
+    "suggested": "建议中",
+    "done": "已执行",
+    "skipped": "已跳过",
+}
+
+EFFECT_LABEL: dict[str, str] = {
+    "awaiting_retest": "等待复测",
+    "improved": "有提升",
+    "flat": "暂无明显变化",
+    "declined": "有所回落",
+}

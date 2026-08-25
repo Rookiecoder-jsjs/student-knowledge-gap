@@ -36,6 +36,28 @@ const VERSION_STATUS_LABEL: Record<string, string> = {
   "reviewed": "已审核",
   "active": "正式",
 };
+
+const KIND_LABEL: Record<string, string> = {
+  "reteach": "全班重讲",
+  "prereq_backfill": "回补基础点",
+  "spaced_review": "间隔复习",
+  "contrast_practice": "概念辨析",
+  "evidence_boost": "补证据练习",
+  "tier_drill": "层级补强",
+};
+
+const INTERVENTION_STATUS_LABEL: Record<string, string> = {
+  "suggested": "建议中",
+  "done": "已执行",
+  "skipped": "已跳过",
+};
+
+const EFFECT_LABEL: Record<string, string> = {
+  "awaiting_retest": "等待复测",
+  "improved": "有提升",
+  "flat": "暂无明显变化",
+  "declined": "有所回落",
+};
 /** 未知值原样返回，便于后续新增枚举不致报错。 */
 function translate(map: Record<string, string>, value: string | null | undefined): string {
   if (!value) return value ?? "";
@@ -47,3 +69,6 @@ export const trajLabel = (t: string | null | undefined) => translate(TRAJ_LABEL,
 export const criterionLabel = (c: string | null | undefined) => translate(CRITERION_LABEL, c);
 export const bandLabel = (b: string | null | undefined) => translate(BAND_LABEL, b);
 export const versionStatusLabel = (s: string | null | undefined) => translate(VERSION_STATUS_LABEL, s);
+export const kindLabel = (k: string) => translate(KIND_LABEL, k);
+export const interventionStatusLabel = (s: string) => translate(INTERVENTION_STATUS_LABEL, s);
+export const effectLabel = (e: string) => translate(EFFECT_LABEL, e);

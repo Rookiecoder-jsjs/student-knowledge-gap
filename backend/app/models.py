@@ -312,48 +312,48 @@ class Attribution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class InterventionPlan(Base):
-    __tablename__ = "intervention_plan"
+class Intervention(Base):
+    """干预记录（intervention-loop-design.md §3）：最少字段的执行事实。
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
-    status: Mapped[str] = mapped_column(String(20), default="草稿")  # 草稿|已批准|执行中|已完成
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    approved_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    一行一个 (对象, 知识点)：小组拆成每成员一行共享 group_ref，班级行 student_id 为空。
+    干预行是事实不是派生状态（与 Attribution 裁决记录同性质，可存储）；掌握度与
+    效果仍全部 derive-on-read（不变量②）——baseline_as_of 是输入事实（建议所依据
+    的评估时点），效果计算时用它调 mastery_at 现算干预前值，不存任何掌握度快照。
+    """
 
-    items: Mapped[list[PlanItem]] = relationship(
-        back_populates="plan", cascade="all, delete-orphan"
+    __tablename__ = "intervention"
+    __table_args__ = (
+        Index("ix_intervention_class_status", "class_id", "status"),
+        Index("ix_intervention_student", "student_id"),
+        Index("ix_intervention_exam", "exam_id"),
     )
 
-
-class PlanItem(Base):
-    __tablename__ = "plan_item"
-
     id: Mapped[int] = mapped_column(primary_key=True)
-    plan_id: Mapped[int] = mapped_column(ForeignKey("intervention_plan.id"))
+    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    # NULL = 全班干预（reteach）；非 NULL = 个体/小组成员
+    student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("student.id"), nullable=True
+    )
     kp_id: Mapped[int] = mapped_column(ForeignKey("knowledge_point.id"))
-    action: Mapped[str] = mapped_column(String(20))   # 诊断|补学|练习|复测
-    bank_question_id: Mapped[int | None] = mapped_column(
-        ForeignKey("bank_question.id"), nullable=True
+    exam_id: Mapped[int] = mapped_column(ForeignKey("exam_template.id"))
+    # 建议来源归因（前置缺陷等假设行）；reteach 无归因来源
+    attribution_id: Mapped[int | None] = mapped_column(
+        ForeignKey("attribution.id"), nullable=True
     )
-    due: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="已布置")
-    # 已布置|已完成|已逾期|已复测
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-    plan: Mapped[InterventionPlan] = relationship(back_populates="items")
-
-
-class RetestOutcome(Base):
-    """复测前后掌握度对比 → 北极星指标（干预提升率）的数据源。"""
-
-    __tablename__ = "retest_outcome"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    plan_item_id: Mapped[int] = mapped_column(ForeignKey("plan_item.id"))
-    mastery_before: Mapped[float] = mapped_column(Float)
-    mastery_after: Mapped[float] = mapped_column(Float)
-    improved: Mapped[bool] = mapped_column(default=False)
+    source_report_id: Mapped[int | None] = mapped_column(
+        ForeignKey("report.id"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(24))   # 封闭集合，labels_source 真源
+    scope: Mapped[str] = mapped_column(String(12))  # class | group | student
+    # 同组共享（如 "r{report_id}:{root_kp_id}"）；班级行为 NULL
+    group_ref: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # 建议所依据的评估时点（报告 as_of）——效果对比的「干预前」基准
+    baseline_as_of: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(12), default="suggested")
+    # suggested | done | skipped（done/skipped 是历史，跨重跑保留）
+    suggested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 可选备注（一键确认不强制）
 
 
 # ---------------------------------------------------------------------------

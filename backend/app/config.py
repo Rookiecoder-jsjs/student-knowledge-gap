@@ -146,6 +146,15 @@ LLM_CB_COOLDOWN_SECONDS = max(1, int(os.environ.get("SC_LLM_CB_COOLDOWN_SECONDS"
 # 默认开会让任何触发报告生成的测试/演示都真调 LLM 消耗额度；部署方显式置 1 开启。
 LLM_PLAN_ENABLE = os.environ.get("SC_LLM_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
 
+# 干预闭环（intervention-loop-design.md §8）：建议生成与效果验证参数。
+# ACTION_PLAN_ENABLE 默认开——纯计算层零 LLM、零外部调用，关闭仅用于试点回退
+# （关闭时提交不生成干预建议；改进单仍随诊断单走 SC_LLM_PLAN_ENABLE 路径）。
+# 效果判定阈值首期不断言标准（试点无先验）：先度量、后校准，与有效性验证纪律一致。
+ACTION_PLAN_ENABLE = os.environ.get("SC_ACTION_PLAN_ENABLE", "1").lower() in ("1", "true", "yes")
+INTERVENTION_MIN_DELTA = float(os.environ.get("SC_INTERVENTION_MIN_DELTA", "0.10"))    # improved 判定阈值（基线调整后增量）
+INTERVENTION_FLAT_FLOOR = float(os.environ.get("SC_INTERVENTION_FLAT_FLOOR", "-0.05")) # flat/declined 分界
+ACTION_GROUP_MIN = int(os.environ.get("SC_ACTION_GROUP_MIN", "3"))                     # 同根源成组最低人数
+
 
 @dataclass(frozen=True)
 class Settings:

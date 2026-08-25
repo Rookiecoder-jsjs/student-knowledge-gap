@@ -102,6 +102,7 @@ def _legacy_alter_bootstrap() -> None:
     单点隔离：走 alembic 的库不跑 ALTER；走 create_all 的库跑幂等补列。
     """
     from scripts.migrate_kb_archived import add_archived_column
+    from scripts.migrate_drop_legacy_plans import drop_legacy_plan_tables
     from scripts.migrate_llm_tokens import add_token_columns
     from scripts.migrate_parse_batch_started_at import add_started_at_column
     from scripts.migrate_report_status import add_status_columns
@@ -110,6 +111,7 @@ def _legacy_alter_bootstrap() -> None:
     add_started_at_column()
     add_status_columns()
     add_token_columns()
+    drop_legacy_plan_tables()
 
 
 def _alembic_upgrade_head() -> None:
