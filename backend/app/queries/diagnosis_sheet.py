@@ -5,7 +5,8 @@
 - 全班待加强 K 点数 / 班级共性 M 点：以截至时点 derive-on-read 现算；
 - 近两场提升/回落计数：最近两场已提交考试各自共性薄弱点集合的进出。
 
-纯查询+推导，不落库；行动明细/闭环条属 intervention-loop 范畴，本期返回空结构占位。
+纯查询+推导，不落库；行动明细/闭环条由 intervention-loop 计算层提供
+（app/intervention.py，derive-on-read 同纪律）。
 """
 
 from __future__ import annotations
@@ -203,13 +204,23 @@ def class_diagnosis_sheet(
             "exam_id": latest_advice.exam_id,
         }
 
+    # ---- 行动明细 + 闭环条（intervention-loop-design 落地接入，替换原空占位） ----
+    from app.intervention import action_plan_view, intervention_summary
+
+    plan = action_plan_view(session, graph, class_id)
+    summary = intervention_summary(session, graph, class_id)
+
     return {
         "class_id": class_id,
         "status": status,
         "improvement_advice": advice_payload,
-        # 行动明细 / 闭环摘要：intervention-loop-design 落地后接入（§10.0 D11 压后）
-        "actions": {"pending_confirm": 0, "rows": []},
-        "intervention_summary": None,
+        # 行动明细：pending_confirm 计数 + 三层全量行（唯一全量版面，§1.2）
+        "actions": {
+            "pending_confirm": plan["pending_confirm"],
+            "rows": plan["rows"],
+        },
+        # 闭环摘要：采纳率 / 干预提升率 / 待复测分布
+        "intervention_summary": summary,
         "past_exams": [
             {
                 "exam_id": e.id,

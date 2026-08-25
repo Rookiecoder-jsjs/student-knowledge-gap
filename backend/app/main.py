@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import admin, analysis, ingestion, kb, org, reports
+from app.api.routers import admin, analysis, ingestion, intervention, kb, org, reports
 from app.db import init_db
 from app.observability import setup_logging
 
@@ -108,5 +108,6 @@ app.include_router(org.router)
 app.include_router(kb.router)
 app.include_router(ingestion.router)
 app.include_router(analysis.router)
+app.include_router(intervention.router)
 app.include_router(reports.router)
 app.include_router(admin.router)
