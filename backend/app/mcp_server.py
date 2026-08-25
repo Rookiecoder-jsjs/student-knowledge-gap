@@ -40,17 +40,22 @@ from pydantic import Field  # noqa: E402
 
 from app.mcp_tools import (  # noqa: E402
     ToolInputError,
+    create_report_draft as _create_report_draft,
     get_exam_summary as _get_exam_summary,
     get_kp_detail as _get_kp_detail,
     get_kp_mastery as _get_kp_mastery,
     get_teaching_progress as _get_teaching_progress,
     list_students as _list_students,
+    record_intervention as _record_intervention,
     resolve_graph,
     run_attribution as _run_attribution,
 )
 from app.queries.classes import progress_list  # noqa: E402
 
 _READONLY = {"readOnlyHint": True, "destructiveHint": False}
+# 写操作刻意**不带** readOnlyHint（FINDINGS F2：该注解决定壳的免审批放行）；
+# 产出本身是 draft/suggested 态，教师签发/确认才是终审（§5.3）。
+_WRITES = {"readOnlyHint": False, "destructiveHint": False}
 
 mcp = FastMCP("sc")
 
@@ -305,6 +310,95 @@ def list_students(
         return _list_students(session, class_id, offset, limit)
 
     return _run(op, "GET /classes/{id}/students", {"class_id": class_id, "offset": offset})
+
+
+# ---------------------------------------------------------------------------
+# 写操作工具（Phase 3 批次B）：产出 draft/suggested 态，过审批门
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=_WRITES)
+def create_report_draft_tool(
+    report_type: Annotated[
+        str, Field(description="报告类型：student_diagnosis（学生诊断单）或 class_improvement_advice（班级改进意见）")
+    ],
+    markdown: Annotated[str, Field(description="报告正文 markdown；数字必须来自工具返回，禁止编造")],
+    class_id: Annotated[int | None, Field(ge=1, description="班级 id（班级级报告必填）")] = None,
+    student_id: Annotated[int | None, Field(ge=1, description="学生 id（学生级报告用，与班级二选一）")] = None,
+    exam_id: Annotated[int | None, Field(ge=1, description="关联考试 id（可选）")] = None,
+) -> dict:
+    """起草一份报告草稿，送入教师审批收件箱（不会直接发布）。
+
+    适用场景：你完成了调查分析、需要把结论沉淀为正式文档时。正文要求：
+    只引用工具取回的数字与名称、成长框架措辞、不排名不贴标签。草稿落库后
+    由教师在收件箱中签发或打回——你没有签发权限，也无需等待签发结果。
+    """
+    def op(session):
+        graph = resolve_graph(session)
+        if student_id is not None:
+            from app.models import Student
+
+            stu = session.get(Student, student_id)
+            if stu is None:
+                raise ToolInputError(f"学生 {student_id} 不存在")
+            _guard_class(session, stu.class_id)
+        elif class_id is not None:
+            _guard_class(session, class_id)
+        return _create_report_draft(
+            session, graph,
+            report_type=report_type,
+            class_id=class_id,
+            student_id=student_id,
+            exam_id=exam_id,
+            markdown=markdown,
+        )
+
+    return _run(
+        op, "POST /reports (draft)",
+        {"report_type": report_type, "class_id": class_id,
+         "student_id": student_id, "exam_id": exam_id},
+    )
+
+
+@mcp.tool(annotations=_WRITES)
+def record_intervention_tool(
+    student_id: Annotated[int, Field(ge=1, description="学生 id")],
+    kp_code: Annotated[str, Field(description="知识点编码（如 M7A-102）")],
+    kind: Annotated[
+        str,
+        Field(description=(
+            "干预类型封闭枚举：reteach（重讲）/ prereq_backfill（回补基础点）/ "
+            "spaced_review（间隔复习）/ contrast_practice（概念辨析）/ "
+            "evidence_boost（补证据练习）/ tier_drill（层级补强）"
+        )),
+    ],
+    exam_id: Annotated[int, Field(ge=1, description="关联考试 id（干预归属到触发它的那场考试）")],
+    note: Annotated[str | None, Field(description="一句话说明建议理由（可选）")] = None,
+) -> dict:
+    """登记一条干预建议（状态=建议中，需教师在行动明细里确认后生效）。
+
+    适用场景：调查中发现某个学生的薄弱点有明确的干预方向，值得列为正式行动项。
+    知识点必须已列入该班教学进度。建议登记后由教师确认执行，复测后系统自动
+    推导效果——不要向教师承诺效果。
+    """
+    def op(session):
+        from app.models import Student
+
+        stu = session.get(Student, student_id)
+        if stu is None:
+            raise ToolInputError(f"学生 {student_id} 不存在")
+        _guard_class(session, stu.class_id)
+        graph = resolve_graph(session)
+        return _record_intervention(
+            session, graph,
+            student_id=student_id, kp_code=kp_code, kind=kind,
+            exam_id=exam_id, note=note,
+        )
+
+    return _run(
+        op, "POST /interventions (suggested)",
+        {"student_id": student_id, "kp_code": kp_code, "kind": kind, "exam_id": exam_id},
+    )
 
 
 if __name__ == "__main__":

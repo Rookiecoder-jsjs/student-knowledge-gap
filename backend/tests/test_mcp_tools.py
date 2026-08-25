@@ -228,7 +228,7 @@ def test_list_students_pagination(graph, session):
 # ---------------------------------------------------------------------------
 
 
-def test_server_registers_seven_tools():
+def test_server_registers_nine_tools():
     import asyncio
 
     from app.mcp_server import mcp
@@ -243,10 +243,22 @@ def test_server_registers_seven_tools():
         "get_kp_detail",
         "get_teaching_progress",
         "list_students",
+        # Phase 3 批次B 写工具（过审批门）
+        "create_report_draft_tool",
+        "record_intervention_tool",
     }
+    readonly = {"get_class_overview", "get_exam_summary", "get_kp_mastery",
+                "run_attribution", "get_kp_detail", "get_teaching_progress",
+                "list_students"}
+    writes = {"create_report_draft_tool", "record_intervention_tool"}
     for t in tools:
         ann = t.annotations or {}
-        assert getattr(ann, "readOnlyHint", None) is True
+        if t.name in writes:
+            # 写工具必须显式非只读——壳的免审批放行以 readOnlyHint 为据（F2）
+            assert getattr(ann, "readOnlyHint", None) is False
+            assert t.name not in readonly
+        else:
+            assert getattr(ann, "readOnlyHint", None) is True
 
 
 def test_run_wrapper_translates_lookup_error():

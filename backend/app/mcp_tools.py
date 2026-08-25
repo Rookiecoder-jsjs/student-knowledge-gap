@@ -359,3 +359,155 @@ def list_students(session: Session, class_id: int, offset: int = 0, limit: int =
         "students": students,
         "has_more": (offset + len(students)) < (total or 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# 7-8. 写操作工具（Phase 3 批次B，过审批门 §5.3）
+# 两把写工具都只产「待确认」状态：报告=draft 入收件箱、干预=suggested 等确认。
+# Agent 永远不直接落终态——签发/确认动作由教师在 UI 完成（人在环上，
+# 且签发本身不消耗 Agent 循环）。
+# ---------------------------------------------------------------------------
+
+WRITE_REPORT_TYPES = ("student_diagnosis", "class_improvement_advice")
+
+
+def create_report_draft(
+    session: Session,
+    graph: KpGraph,
+    *,
+    report_type: str,
+    class_id: int | None = None,
+    student_id: int | None = None,
+    exam_id: int | None = None,
+    markdown: str,
+) -> dict:
+    """Agent 起草报告 → draft 入收件箱（§5.3 审批门）。
+
+    正文必须由模型基于工具取回的确定性数据撰写；系统只做结构护栏：
+    类型封闭枚举、目标班级/学生归属校验、正文非空且长度上限。落库后
+    教师在收件箱签发或打回，Agent 无权签发自己的产出。
+    """
+    from app.models import Report
+
+    if report_type not in WRITE_REPORT_TYPES:
+        raise ToolInputError(
+            f"report_type 必须是 {'/'.join(WRITE_REPORT_TYPES)}，收到 {report_type!r}"
+        )
+    md = (markdown or "").strip()
+    if not md:
+        raise ToolInputError("markdown 正文为空")
+    if len(md) > 20_000:
+        raise ToolInputError(f"markdown 过长（{len(md)} 字符 > 20000 上限），请精简")
+
+    clazz = _require_class(session, class_id) if class_id is not None else None
+    stu = None
+    if student_id is not None:
+        stu = session.get(Student, student_id)
+        if stu is None:
+            raise LookupError(f"学生 {student_id} 不存在")
+        if clazz is not None and stu.class_id != clazz.id:
+            raise ToolInputError(f"学生 {student_id} 不属于班级 {clazz.id}")
+        clazz = session.get(Class, stu.class_id)
+    if clazz is None:
+        raise ToolInputError("必须提供 class_id 或 student_id 之一")
+    if exam_id is not None:
+        tpl = session.get(ExamTemplate, exam_id)
+        if tpl is None or tpl.class_id != clazz.id:
+            raise ToolInputError(f"考试 {exam_id} 不属于班级 {clazz.id}")
+
+    report = Report(
+        type=report_type,
+        class_id=clazz.id,
+        student_id=stu.id if stu else None,
+        exam_id=exam_id,
+        content_markdown=md,
+        snapshot_json={
+            "writer": {"model": "agent-draft", "prompt_version": "agent-draft-v0"},
+            "origin": "mcp_tool",
+        },
+        status="draft",
+        status_note="Agent 起草，待教师签发",
+    )
+    session.add(report)
+    session.flush()
+    return {
+        "report_id": report.id,
+        "status": report.status,
+        "type": report.type,
+        "class_id": clazz.id,
+        "student_alias": stu.name_or_alias if stu else None,
+        "chars": len(md),
+        "next": "草稿已入收件箱，等待教师在收件箱中签发或打回",
+    }
+
+
+def record_intervention(
+    session: Session,
+    graph: KpGraph,
+    *,
+    student_id: int,
+    kp_code: str,
+    kind: str,
+    exam_id: int,
+    note: str | None = None,
+) -> dict:
+    """登记干预记录 → suggested 行（干预闭环状态机的入口，等教师确认）。
+
+    kind 封闭枚举（labels_source 真源）；知识点必须已教（未教过的点不存在
+    证据，写了也无法验证效果）。行落在 suggested 态，教师一键确认后才算
+    「已执行」——Agent 的建议与它自己的报告一样要过审批门。exam_id 必填：
+    干预行归属到触发它的那场考试（幂等清除按场操作需要它）。
+    """
+    from app.db import utcnow
+    from app.labels_source import KIND_LABEL
+    from app.models import ExamTemplate, Intervention, TeachingProgress
+
+    if kind not in KIND_LABEL:
+        raise ToolInputError(
+            f"kind 必须是 {'/'.join(KIND_LABEL)}，收到 {kind!r}"
+        )
+    stu = session.get(Student, student_id)
+    if stu is None:
+        raise LookupError(f"学生 {student_id} 不存在")
+    tpl = session.get(ExamTemplate, exam_id)
+    if tpl is None or tpl.class_id != stu.class_id:
+        raise ToolInputError(f"考试 {exam_id} 不属于学生所在班级 {stu.class_id}")
+    try:
+        kp_id = graph.code(kp_code.strip())
+    except KeyError as e:
+        raise ToolInputError(f"知识点编码不存在: {kp_code}") from e
+
+    taught = session.scalar(
+        select(TeachingProgress.id).where(
+            TeachingProgress.class_id == stu.class_id,
+            TeachingProgress.kp_id == kp_id,
+        )
+    )
+    if taught is None:
+        raise ToolInputError(
+            f"知识点 {kp_code} 未列入该班教学进度，不能产生干预建议"
+        )
+
+    row = Intervention(
+        class_id=stu.class_id,
+        student_id=stu.id,
+        kp_id=kp_id,
+        exam_id=tpl.id,
+        kind=kind,
+        scope="student",
+        baseline_as_of=utcnow(),
+        status="suggested",
+        suggested_at=utcnow(),
+        note=(note or "").strip() or None,
+    )
+    session.add(row)
+    session.flush()
+    return {
+        "intervention_id": row.id,
+        "status": row.status,
+        "kind": kind,
+        "kind_label": KIND_LABEL[kind],
+        "student_alias": stu.name_or_alias,
+        "kp_name": graph.kp(kp_id).name,
+        "next": "干预建议已登记，等待教师在行动明细中确认执行；复测后可查效果",
+    }
