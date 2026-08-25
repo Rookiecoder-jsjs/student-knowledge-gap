@@ -405,6 +405,8 @@ SQ/EQ 协议、CodexThread/Session/Task/Turn 循环、rollout recorder 与压缩
 | **3 · 写与权** ✅ 2026-08-25 | 写工具 + 审批门硬化；G11 端点级鉴权收尾；钉钉通知；预算护栏。**前置：干预闭环已落地**（§10.0）。**落地注记**：鉴权本体在 sc 后端 `app/auth.py`（PBKDF2+HMAC token+双模式：无凭据教师=开放模式存量兼容）；裁决单点 `assert_class_access` HTTP/MCP 共用；身份传播走兜底路线（网关按教师进程注入 SC_MCP_TEACHER_ID 零核改）；写工具 2 把产 draft/suggested 过审批门（实现层身份裁决——出口判据测试抓出包装层裸奔漏洞后下沉）；护栏三道闸在网关 `gateway/budget.py`（轮数12/token200K/月度软限额钩子）；钉钉出站卡片 `gateway/dingtalk.py`（未配置静默跳过） | 教师甲看不到教师乙的班；干预记录经签发落库；钉钉收到卡片 |
 | **4 · 产品加固** | 心跳上报、watchtower 升级链、保留期限策略、评测集（历史考试构造标准问答对，回归验证 Agent 结论与确定性管线一致）、第二所试点校 | 两校并行运行一周无人工干预 |
 
+> **Phase 4 代码项落地注记（2026-08-25，批次A~D）**：评测集=`backend/app/evalset.py`（已知真值场景 + 8 标准问答对覆盖七只读工具、24 对账断言；回归门禁 `tests/test_evalset.py` + 验收演示 `scripts/run_agent_evalset.py`）；心跳=`gateway/heartbeat.py`（每日出站 POST 版本//ready/磁盘水位到 SC_HEARTBEAT_URL，未配置静默空转，载荷零业务数据）；保留期=`gateway/retention.py`（rollout 清理默认 0=永不删——保护一班一线程记忆）+ `backup_loop.sh` 旧份 gzip 归档（SC_BACKUP_COMPRESS_DAYS 默认关）；升级链=`deploy/watchtower-compose.yml`（独立文件默认不并入主 compose，试点手动装机不启用，label 圈定只管 sc 容器）。**未落地**：第二所试点校（运营事务）、心跳/watchtower 的真实环境验收（需镜像仓库与多校部署后）。出口判据「两校并行一周」待运营达成。
+
 评测集说明（Phase 4）：这是有效性验证计划（effectiveness-validation-plan.md）思想在 Agent 层的延伸——Agent 的每句结论必须能与确定性管线的输出对账，不一致即缺陷。
 
 **止损线（Phase 0 附带约定）**：前期投入全部可携带——即使 Rust 路线最终放弃（合法结局，非失败），Phase 0/1 产出的 MCP Server 包装、七个工具定义、网关、prompt 资产在纯 Python 迷你循环方案里原样复用，壳只是四组件之一。但为防沉没成本拖行：若两周内三项验链未全通、且症结深埋壳内部难以绕开，暂停魔改、回到纯 Python 循环方案重估。试点校物色从现在开始并行推进（prompt 人格与动线都需要真实教师反馈校调），不等产品成型。
