@@ -73,12 +73,17 @@
 sc/
 ├── backend/                  # Python 后端（FastAPI，五层管线，56 端点）
 │   ├── app/
-│   │   ├── api/routers/      #   路由（org / ingestion / kb / analysis / reports）+ deps（依赖注入）
+│   │   ├── api/routers/      #   路由（org / auth / ingestion / kb / analysis / intervention / reports / admin）+ deps（依赖注入）
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
 │   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph / resolver（active 版本）/ edit / versioning / compatibility
 │   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪、归因读视图）
 │   │   ├── queries/          #   只读聚合查询（classes_overview / diagnosis_sheet 等）
 │   │   ├── intervention.py   #   干预闭环纯计算层：策略映射 / 幂等再生成 / 效果推导（derive-on-read）
+│   │   ├── auth.py           #   G11 鉴权：PBKDF2 + HMAC token + 教师↔班级归属断言（HTTP/MCP 共用）
+│   │   ├── mcp_server.py     #   MCP Server 入口：9 工具薄包装（7 只读 + 2 写过审批门）
+│   │   ├── mcp_tools.py      #   Agent 工具纯函数层：与 HTTP 路由共用聚合；写工具实现层身份裁决
+│   │   ├── triggers.py       #   触发器/通知出口：考后分析任务 + 钉钉卡片（fire-and-forget）
+│   │   ├── inbox.py          #   收件箱状态机：draft → issued/archived（审批门 §5.3）
 │   │   ├── reports/          #   compute/render 分层：quality_model|quality_render / diagnosis_model|diagnosis_render / student_action_plan / auto_generate / narrative（LLM 解读）/ labels
 │   │   ├── llm/              #   provider 无关客户端 + prompts + gateway（文本闸门）+ circuit（熔断器）
 │   │   ├── labels_source.py  #   枚举标签单一真源（codegen 出前端 labels.ts，防两处漂移）
@@ -86,10 +91,13 @@ sc/
 │   ├── kb/math/grade7/kb.yaml #   知识库（人教版七上，待教研审核）
 │   ├── tests/                #   单元测试（含有效性修复、归因抑制、证伪闭环、P25 误报、健康探针）
 │   ├── simulator/            #   合成模拟器 + 金标端到端断言 + 压力金标 + 大规模随机模拟
-│   ├── scripts/              #   run_demo / effectiveness_multiround / effectiveness_largescale / audit_kb_edges / backup_db / backup_loop.sh
+│   ├── scripts/              #   run_demo / effectiveness_* / audit_kb_edges / backup_db / backup_loop.sh / create_teacher（G11 bootstrap）
 │   ├── output/               #   demo 产出（质量分析、个人诊断单）
 │   ├── Dockerfile            #   后端镜像（单 uvicorn 进程，架构不变量；见 DEPLOY.md「单进程原理」）
 │   └── .env                  #   LLM 与质量开关配置（勿入库）
+├── gateway/                  # 会话网关（Python/FastAPI）：鉴权 RPC+SSE、预算护栏三道闸、钉钉出站、触发器内部接口
+├── runtime/                  # codex 壳（Rust，锚定 rust-v0.149.1；handbook/ 五件套随码走）
+├── handbook/                 # fork 工程文档：ARCHITECTURE / CRATES / DELTA / BUILD / AGENTS-FORK / FINDINGS
 ├── frontend/
 │   ├── app/                  #   教师端 Web（Vite + React + TS + Tailwind，案头 Workbench 风格）
 │   │   ├── src/{pages,components,lib}/   # components/ActionPlan.tsx = 行动明细/效果chip/闭环条共享组件
@@ -111,7 +119,7 @@ sc/
 
 ```bash
 cd backend
-python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（295 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（317 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
 python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
@@ -167,13 +175,15 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 这三个参数是系统"诊断准不准"的核心旋钮 🎛️。默认值不是拍脑袋定的——是用 150 人 × 12 场考试 × 6 个随机种子的模拟跑出来的（见下文「验证体系」）：`MIN=2` 让系统不用熬到期末才出诊断，`strict` 把"全班都挺好却硬挑出 25% 薄弱"的误报砍掉 11%，召回和根源命中率不掉。想退回最保守的基线，设 `SC_MIN_EVIDENCE_COUNT=3 SC_WEAKNESS_MODE=standard` 即可。
 
+**鉴权与网关联动**（见上「鉴权与权限」）：`SC_AUTH_SECRET`（安全模式下务必显式配置）/ `SC_AUTH_REQUIRED` / `SC_GATEWAY_URL` / `SC_TRIGGER_KEY`。预算护栏在网关 env 配置（`SC_BUDGET_MAX_TURNS` 等），钉钉经 `SC_DINGTALK_ENABLED` 开启——均见 `deploy/docker-compose.yml`。
+
 **部署相关变量**（`SC_CORS_ORIGINS` / `SC_BACKUP_*` / `SC_DATABASE_URL` 容器化语义等）见 [DEPLOY.md](DEPLOY.md) 与 `backend/.env.example`。
 
 ---
 
 ## 📡 核心功能与端点
 
-共 **63 个路径 / 72 个操作**（启动后可在 Swagger 交互文档查看）。运维探针：`GET /health`（liveness，进程存活）与 `GET /ready`（readiness——DB 可达即 200；LLM 熔断仅标 `degraded:true`，DB 不可达 503，供编排器自愈）。
+共 **67 个路径 / 76 个操作**（启动后可在 Swagger 交互文档查看）。运维探针：`GET /health`（liveness，进程存活）与 `GET /ready`（readiness——DB 可达即 200；LLM 熔断仅标 `degraded:true`，DB 不可达 503，供编排器自愈）。
 
 **📚 知识库**
 - 导入与版本：`POST /kb/import`、`GET|POST /kb/versions`、`PATCH /kb/versions/{id}`、`GET /kb/versions/{id}/compatibility`
@@ -208,13 +218,28 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - 北极星指标：`GET /interventions/summary?class_id=`（采纳率 + **干预提升率** = improved / 可评估子集——README 开篇承诺的北极星在此兑现）
 - 配置：`SC_ACTION_PLAN_ENABLE=0` 可整体关闭建议生成（默认开）；效果阈值 `SC_INTERVENTION_MIN_DELTA`（默认 0.10）、成组人数 `SC_ACTION_GROUP_MIN`(默认 3)
 
+**🔐 鉴权与权限（G11，Phase 3）**
+- 双模式：库内无带凭据教师=**开放模式**（存量行为零变化）；建首个教师账号（`python -m scripts.create_teacher --name 李老师 --username li --password s3cret --school 1 [--admin] [--grant 3,5]` 或 admin 调 `POST /auth/teachers`）即自动进入**安全模式**——全部业务端点要求 `Authorization: Bearer <token>`
+- 登录：`POST /auth/login`（口令换 token，PBKDF2 落库）；身份回查 `GET /auth/me`；授权管理 `POST /auth/teachers/{id}/classes`（admin）
+- 归属裁决单点：教师↔班级多对多授权表，HTTP 路由与 MCP 工具层共用同一断言——**教师甲看不到教师乙的班**（含收件箱草稿、干预记录、报告列表）
+- Agent 身份传播：网关按教师为 app-server 进程注入 `SC_MCP_TEACHER_ID`，MCP 工具层同一裁决（兜底路线零核改）
+
+**✍️ Agent 写工具（Phase 3，过审批门 §5.3）**
+- `create_report_draft`：Agent 起草学生诊断单/班级改进意见 → **draft 入收件箱**，教师在「待签发」签发或打回；类型封闭枚举、归属校验、20K 字上限
+- `record_intervention`：登记干预建议 → **suggested 行**，教师在行动明细一键确认后才算执行事实；kind 封闭枚举、必填关联考试、未教点拒绝
+- 审批门语义：Agent 永不直接落终态——签发/确认由教师完成且不消耗 Agent 循环
+
+**🛡️ 预算护栏与钉钉触达（Phase 3，§5.7/D4）**
+- 三道闸（网关侧）：单任务轮数上限 12 / 单任务 token 预算 200K（超限优雅收尾+自动 interrupt）/ 月度软限额 80% 提醒（仅提醒不断供）
+- 钉钉卡片：新草稿待签发、干预建议待确认、月度用量提醒——出站 WebSocket/webhook 适配校内无公网；未配置静默跳过
+
 **🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时选日期回看任意时点（报告与弱项面板同一时间基准）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
 
 ---
 
 ## ✅ 验证体系
 
-**测试**：295 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
+**测试**：317 项后端 + 19 项网关（`backend/tests|simulator` + `gateway/test_*.py`）🧪。
 
 ```bash
 cd backend && python -m pytest tests simulator

@@ -71,6 +71,22 @@ def _require_class(session: Session, class_id: int) -> Class:
     return clazz
 
 
+def _mcp_guard(session: Session, class_id: int) -> None:
+    """写工具的身份裁决下沉到实现层（批次E 修正）。
+
+    读工具的过滤在 server 包装层即可（泄漏面=多余数据），写工具必须在
+    纯函数层拒绝——否则任何绕过包装的调用（脚本/测试/未来入口）都不设防。
+    裁决复用 app.auth.assert_class_access（SC_MCP_TEACHER_ID 兜底路线）。
+    """
+    from app import auth as _auth
+
+    ctx = _auth.mcp_context_from_env(session)
+    try:
+        _auth.assert_class_access(session, ctx, class_id)
+    except _auth.PermissionError_ as e:
+        raise ToolInputError(f"无权访问该班级：{e}") from e
+
+
 # ---------------------------------------------------------------------------
 # 1. get_exam_summary —— 单场考试事实（质量 snapshot_json）
 # ---------------------------------------------------------------------------
@@ -410,6 +426,7 @@ def create_report_draft(
         clazz = session.get(Class, stu.class_id)
     if clazz is None:
         raise ToolInputError("必须提供 class_id 或 student_id 之一")
+    _mcp_guard(session, clazz.id)  # 写工具：实现层身份裁决（批次E）
     if exam_id is not None:
         tpl = session.get(ExamTemplate, exam_id)
         if tpl is None or tpl.class_id != clazz.id:
@@ -476,6 +493,7 @@ def record_intervention(
     stu = session.get(Student, student_id)
     if stu is None:
         raise LookupError(f"学生 {student_id} 不存在")
+    _mcp_guard(session, stu.class_id)  # 写工具：实现层身份裁决（批次E）
     tpl = session.get(ExamTemplate, exam_id)
     if tpl is None or tpl.class_id != stu.class_id:
         raise ToolInputError(f"考试 {exam_id} 不属于学生所在班级 {stu.class_id}")
