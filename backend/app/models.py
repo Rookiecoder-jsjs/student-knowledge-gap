@@ -443,6 +443,9 @@ class LlmCallLog(Base):
     input_chars: Mapped[int] = mapped_column(Integer, default=0)
     has_image: Mapped[bool] = mapped_column(Boolean, default=False)
     response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 仅 AUDIT_PAYLOAD 开启时
+    # 用量台账 v1（§5.9）：provider 返回的 token 计数；mock/熔断/error 记 None
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Report(Base):

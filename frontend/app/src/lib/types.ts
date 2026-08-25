@@ -386,3 +386,26 @@ export interface ReportTransition {
   status_note: string | null;
   type_label: string;
 }
+
+// ---------------------------------------------------------------------------
+// 用量台账（agent-product-design §5.9）
+// ---------------------------------------------------------------------------
+
+export interface UsageTaskStat {
+  calls: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface UsageDay {
+  date: string;
+  by_task: Record<string, UsageTaskStat>;
+  totals: UsageTaskStat;
+}
+
+export interface UsageLedger {
+  month: string;
+  days: UsageDay[];
+  by_task: Record<string, UsageTaskStat>;
+  total: UsageTaskStat;
+}

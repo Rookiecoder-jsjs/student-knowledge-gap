@@ -19,6 +19,7 @@ import ExamBrief from "./pages/ExamBrief";
 import Review from "./pages/Review";
 import Students from "./pages/Students";
 import TemplateView from "./pages/TemplateView";
+import Usage from "./pages/Usage";
 import Wizard from "./pages/Wizard";
 
 /** 利落减速曲线（案头 ease-out）。 */
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
         <Route path="/assistant" element={<Shell><Animated><Assistant /></Animated></Shell>} />
         <Route path="/inbox" element={<Shell><Animated><Inbox /></Animated></Shell>} />
+        <Route path="/usage" element={<Shell><Animated><Usage /></Animated></Shell>} />
         <Route path="/c/:classId/exams" element={<Shell><Animated><Exams /></Animated></Shell>} />
         <Route path="/c/:classId/exams/new" element={<Shell><Animated><ExamNew /></Animated></Shell>} />
 

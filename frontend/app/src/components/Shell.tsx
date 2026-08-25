@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  ChartBar,
   ChatCircleDots,
   Exam,
   House,
@@ -130,6 +131,13 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               <ChatCircleDots size={15} />
               AI 教研员
+            </Link>
+            <Link
+              to="/usage"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <ChartBar size={15} />
+              用量
             </Link>
             <Link
               to="/kb"

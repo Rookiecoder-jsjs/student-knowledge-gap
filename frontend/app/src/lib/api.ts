@@ -24,6 +24,7 @@ import type {
   ResponsesMatrix,
   ReviewQueue,
   StudentInfo,
+  UsageLedger,
   Weaknesses,
 } from "./types";
 
@@ -495,3 +496,7 @@ export const rejectReport = (reportId: number, note: string) =>
     method: "POST",
     body: JSON.stringify({ note }),
   });
+
+// 用量台账（§5.9）
+export const adminUsage = (month: string) =>
+  request<UsageLedger>(`/admin/usage?month=${encodeURIComponent(month)}`);

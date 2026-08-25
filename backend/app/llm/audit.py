@@ -101,8 +101,12 @@ def record_call(
     model: str = "",
     error: str | None = None,
     response_json: dict | None = None,
+    usage: dict | None = None,
 ) -> None:
-    """构造审计行入队。永不抛错——审计失败不能影响业务。"""
+    """构造审计行入队。永不抛错——审计失败不能影响业务。
+
+    ``usage`` 为 provider 返回的 token 计数（§5.9）；None=无计量（mock/熔断）。
+    """
     if not audit_enabled():
         return
     digest, chars, has_image = input_digest(system, user, image_bytes)
@@ -120,6 +124,8 @@ def record_call(
         input_chars=chars,
         has_image=has_image,
         response_json=response_json if audit_payload_enabled() else None,
+        prompt_tokens=(usage or {}).get("prompt_tokens"),
+        completion_tokens=(usage or {}).get("completion_tokens"),
     )
     try:
         _queue.put_nowait(row)
@@ -300,6 +306,7 @@ class AuditedClient:
             response_json=response_summary(payload)
             if isinstance(payload, dict)
             else {"payload": payload},
+            usage=getattr(self._inner, "last_usage", None),
         )
         return payload
 

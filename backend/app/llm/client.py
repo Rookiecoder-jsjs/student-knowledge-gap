@@ -57,10 +57,27 @@ class LLMError(RuntimeError):
 
 class BaseClient:
     model_version: str = "unknown"
+    # 最近一次调用的 token 用量（§5.9 用量台账；审计包装层读取后落账）。
+    # None=该调用无计量（mock / 熔断前失败）；由各真实客户端在响应后写入。
+    last_usage: dict | None = None
 
     def parse_json(self, system: str, user: str, image_bytes: bytes | None) -> dict:
         """发送 prompt（可带图片），返回解析后的 JSON 对象。"""
         raise NotImplementedError
+
+    @staticmethod
+    def _extract_usage(resp_json: dict) -> dict | None:
+        """从 provider 响应提取 usage 计数（OpenAI 与 Anthropic 键名兼容）。"""
+        u = resp_json.get("usage") or {}
+        out = {
+            "prompt_tokens": u.get("prompt_tokens") or u.get("input_tokens"),
+            "completion_tokens": (
+                u.get("completion_tokens") or u.get("output_tokens")
+            ),
+        }
+        if out["prompt_tokens"] is None and out["completion_tokens"] is None:
+            return None
+        return {k: (int(v) if v is not None else None) for k, v in out.items()}
 
     @staticmethod
     def _extract_json(text: str) -> dict:
@@ -114,7 +131,9 @@ class OpenAICompatClient(BaseClient):
             timeout=TIMEOUT,
         )
         resp.raise_for_status()
-        text = resp.json()["choices"][0]["message"]["content"]
+        body = resp.json()
+        self.last_usage = self._extract_usage(body)
+        text = body["choices"][0]["message"]["content"]
         return self._extract_json(text)
 
 
@@ -157,7 +176,9 @@ class AnthropicClient(BaseClient):
             timeout=TIMEOUT,
         )
         resp.raise_for_status()
-        text = "".join(b["text"] for b in resp.json()["content"] if b["type"] == "text")
+        body = resp.json()
+        self.last_usage = self._extract_usage(body)
+        text = "".join(b["text"] for b in body["content"] if b["type"] == "text")
         return self._extract_json(text)
 
 
