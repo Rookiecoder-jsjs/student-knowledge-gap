@@ -50,5 +50,5 @@ def test_commit_then_explicit_generate_reports(session, env):
 
     assert result.committed_responses == 1
     assert reports.quality is True and reports.diagnoses == 1
-    # 质量报告 + 班级改进意见 + 1 份诊断（诊断单重构新增第三报告类型）
-    assert len(session.scalars(select(Report)).all()) == 3
+    # 质量报告 + 班级改进意见 + 学生诊断单 + 学生改进单（干预闭环新增第四类型）
+    assert len(session.scalars(select(Report)).all()) == 4

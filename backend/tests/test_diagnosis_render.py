@@ -52,7 +52,9 @@ def test_render_order_and_attribution_section(session):
     assert "可能根源：基础点（P1）" in md
     assert "依据：P1 掌握程度 0.3" in md
     assert "验证方式：如果是基础没打牢" in md
-    assert "建议：建议先回到根源知识补学" in md
+    # 策略模板句（intervention-loop §1 升级）：含根源点名与节奏槽位
+    assert "建议：建议先补「基础点」再回到本点" in md
+    assert "本周内完成首轮" in md
     # 前向影响预警：P2 的直接后继 P3（应用点）
     assert "应用点" in md and "影响预警" in md
 

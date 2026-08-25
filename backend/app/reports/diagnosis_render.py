@@ -12,10 +12,12 @@ from app.reports.diagnosis_model import DiagnosisReportModel
 from app.reports.labels import attr_label, criterion_label, traj_label
 
 _SUGGESTION = {
-    "前置缺陷": "建议先回到根源知识补学，再回到当前内容（顺序比刷题量更重要）。",
-    "遗忘衰减": "建议安排 2~3 次间隔复习（今天 / 三天后 / 一周后），用少量题目唤醒即可。",
-    "数据不足": "建议布置 3~5 道针对性练习或课堂小测，补足依据后再评估。",
-    "易混淆": "建议先用 2~3 道对比题确认是否概念混淆；若确认，用辨析练习区分两个概念的异同。",
+    # 策略模板句（intervention-loop-design §1 升级）：含节奏与做法方向，
+    # 替代旧的一句话固定文案；根源点名由下方 root_kp 槽位单独呈现。
+    "前置缺陷": "建议先补「{root}」再回到本点（顺序比刷题量更重要），安排在课后/自习进行，不阻塞新课，本周内完成首轮。",
+    "遗忘衰减": "建议今天 / 3 天后 / 7 天后各安排一次少量唤醒练习（每次 2~3 题即可）。",
+    "数据不足": "建议本周内布置 3~5 道针对性练习或课堂小测，补足依据后再评估。",
+    "易混淆": "建议本周内用对比题先确认是否概念混淆；若确认，做 2~3 组辨析练习区分两个概念的异同。",
 }
 
 
@@ -104,7 +106,13 @@ def render_diagnosis_markdown(graph: KpGraph, model: DiagnosisReportModel) -> st
                 if ev_s:
                     lines.append(f"  - 依据：{ev_s}")
             lines.append(f"  - 验证方式：{att.prediction}")
-            lines.append(f"  - 建议：{_SUGGESTION.get(att.type, '建议教师结合课堂观察研判。')}")
+            suggestion_tpl = _SUGGESTION.get(att.type)
+            if suggestion_tpl and "{root}" in suggestion_tpl and att.root_kp_id is not None:
+                lines.append(f"  - 建议：{suggestion_tpl.format(root=graph.kp(att.root_kp_id).name)}")
+            elif suggestion_tpl:
+                lines.append(f"  - 建议：{suggestion_tpl}")
+            else:
+                lines.append("  - 建议：教师结合课堂观察研判。")
         else:
             lines.append("- 可能的原因：暂未匹配到规则成因，建议教师结合课堂观察研判。")
         lines.append("")

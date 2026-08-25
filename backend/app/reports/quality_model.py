@@ -45,6 +45,9 @@ class QualityReportModel:
     question_rates: list[dict]
     kp_stats: dict[int, dict]
     common_weak: list[dict]
+    # 教学行动方向摘要（intervention-loop-design §5）：auto_generate 在干预建议
+    # 生成后回填（quality 报告先建、行动行后建，经 snapshot 注入而非模型计算）。
+    actions: list[dict] | None = None
 
 
 def compute_quality_model(
@@ -54,6 +57,7 @@ def compute_quality_model(
     exam_id: int,
     *,
     events_by_sk: dict[tuple[int, int], list[EvidenceEvent]] | None = None,
+    actions: list[dict] | None = None,
 ) -> QualityReportModel:
     """纯计算：从证据/作答算统计。无 markdown、无落库、无 LLM。
 
@@ -174,4 +178,5 @@ def compute_quality_model(
         question_rates=q_rates,
         kp_stats=kp_stats,
         common_weak=common_weak,
+        actions=actions,
     )

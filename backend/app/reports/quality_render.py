@@ -70,26 +70,57 @@ def render_quality_markdown(model: QualityReportModel) -> str:
         )
     lines.append("")
 
-    lines.append("## 四、班级共性待加强点与教学建议")
+    lines.append("## 四、班级共性待加强点")
     lines.append("")
     if model.common_weak:
         lines.append(
             "以下知识点待加强学生占比 ≥ "
             f"{CLASS_COMMON_WEAK_RATIO*100:.0f}%，属班里普遍问题，"
-            "建议优先通过集体教学解决（不单独归到学生身上）："
+            "应优先通过集体教学解决（不单独归到学生身上）："
         )
         lines.append("")
         for d in model.common_weak:
             lines.append(
                 f"- **{d['name']}**（{d['code']}）：班级平均掌握程度 {d['class_avg']:.2f}，"
                 f"待加强占比 {d['weak_share']*100:.0f}%（{d['n']} 人有依据）。"
-                "建议：安排重讲或变式训练，下次课用小测复核。"
             )
+        # 行动方向章节（§五）只在 auto_generate 注入 actions 时渲染；
+        # get-or-generate 等旧调用路径（actions=None）保持原四段结构。
+        if model.actions is not None:
+            lines.append("")
+            lines.append("对应的教学行动方向见下一节。")
     else:
         lines.append("未发现达到共性标准的班级待加强点。")
     lines.append("")
 
-    lines.append("## 五、注意事项")
+    # ---- 五、教学行动方向（intervention-loop-design §5；actions 由 auto_generate 注入） ----
+    if model.actions is not None:
+        lines.append("## 五、教学行动方向")
+        lines.append("")
+        if model.actions:
+            kind_label = {
+                "reteach": "全班重讲",
+                "prereq_backfill": "回补基础点（小组）",
+                "spaced_review": "间隔复习",
+                "contrast_practice": "概念辨析",
+                "evidence_boost": "补证据练习",
+                "tier_drill": "层级补强",
+            }
+            for act in model.actions[:8]:
+                label = kind_label.get(act["kind"], act["kind"])
+                scope_s = {"class": "全班", "group": f"小组（{act.get('group_size', '?')} 人）",
+                           "student": "个体"}.get(act["scope"], act["scope"])
+                note = f"，{act['note']}" if act.get("note") else ""
+                lines.append(
+                    f"- 【{scope_s}】{label}：「{act['kp_name']}」{note}。"
+                )
+            lines.append("")
+            lines.append("*完整行动清单与一键确认在班级诊断单的「行动明细」区块。*")
+        else:
+            lines.append("本场暂无可执行的干预建议（未匹配到足够依据的行动触发条件）。")
+        lines.append("")
+
+    lines.append("## 六、注意事项")
     lines.append("")
     if model.pending > 0:
         lines.append(f"- 仍有 {model.pending} 名学生的作答处于待审核状态，审核后重新生成本报告。")
@@ -105,7 +136,11 @@ def render_quality_markdown(model: QualityReportModel) -> str:
 
 
 def model_to_snapshot(model: QualityReportModel) -> dict:
-    """模型 → ``Report.snapshot_json``（前端契约：``stats/question_rates/common_weak``）。"""
+    """模型 → ``Report.snapshot_json``（前端契约：``stats/question_rates/common_weak``）。
+
+    ``actions`` 为教学行动方向摘要（intervention-loop-design §5，可空）：
+    前端角标「N 条待确认建议」的数据源；由 auto_generate 在干预建议生成后回填。
+    """
     return {
         "class": model.class_name,
         "exam": model.exam_name,
@@ -119,4 +154,5 @@ def model_to_snapshot(model: QualityReportModel) -> dict:
         },
         "question_rates": model.question_rates,
         "common_weak": model.common_weak,
+        "actions": model.actions or [],
     }

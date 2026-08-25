@@ -26,6 +26,7 @@ TYPE_LABELS = {
     "quality_analysis": "班级质量分析",
     "student_diagnosis": "学生诊断单",
     "class_improvement_advice": "班级改进意见",
+    "student_action_plan": "学生改进单",
 }
 
 VALID_STATUSES = ("draft", "issued", "archived")

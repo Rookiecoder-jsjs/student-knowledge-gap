@@ -24,8 +24,13 @@ def generate_quality_analysis(
     exam_id: int,
     narrative: bool = False,
     events_by_sk: dict[tuple[int, int], list[EvidenceEvent]] | None = None,
+    actions: list[dict] | None = None,
 ) -> Report:
-    model = compute_quality_model(session, graph, class_id, exam_id, events_by_sk=events_by_sk)
+    """生成质量分析报告。``actions`` 为教学行动方向摘要（intervention-loop-design
+    §5，auto_generate 在干预建议生成后传入；None = 不渲染 §五，兼容 get-or-generate）。"""
+    model = compute_quality_model(
+        session, graph, class_id, exam_id, events_by_sk=events_by_sk, actions=actions
+    )
     markdown = render_quality_markdown(model)
     if narrative:
         section = narrate(markdown, "quality_analysis")

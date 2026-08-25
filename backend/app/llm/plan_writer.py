@@ -22,8 +22,10 @@ from app.llm.client import get_client
 from app.llm.prompts import (
     CLASS_ADVICE_SYSTEM,
     PLAN_PROMPT_VERSION,
+    STUDENT_ACTION_PLAN_SYSTEM,
     STUDENT_DIAGNOSIS_SYSTEM,
     class_advice_user_prompt,
+    student_action_plan_user_prompt,
     student_diagnosis_user_prompt,
 )
 from app.reports.diagnosis_model import DiagnosisReportModel
@@ -62,6 +64,44 @@ def _validate_student_diagnosis(md: str) -> bool:
     if "保持与进步" not in md or "下一步" not in md:
         return False
     return _RANK_PAT.search(md) is None
+
+
+# 学生改进单禁词（intervention-loop-design §2 硬约束：不出现定性负面词）
+_STUDENT_PLAN_BANNED = re.compile(r"薄弱|差|落后|不及格|垫底|拖后腿")
+
+
+def _validate_student_action_plan(md: str) -> bool:
+    """改进单：三结构段齐全；改进项 ≤3；禁负面定性词与排名；无班级统计泄漏。
+
+    班级泄漏判据：出现「班级」+ 百分号/人数统计的组合（证据包里有班级字段，
+    学生版一律不得转述）。
+    """
+    if not md or len(md) > 1200:
+        return False
+    for seg in ("你已经在进步的", "你的下一步", "学习方法小建议"):
+        if seg not in md:
+            return False
+    # 「你的下一步」小节内的改进项 ≤3（认知负荷控制）。改进项的形态是
+    # 三级标题（### 点名）或其下的现状/怎么做/什么时候子弹——只数标题，
+    # 不数子弹；无标题的纯列表输出按顶层列表项计（每点一项）。
+    plan_seg = md.split("你的下一步", 1)[-1].split("学习方法小建议", 1)[0]
+    heads = [
+        ln for ln in plan_seg.splitlines()
+        if ln.strip().startswith("###") and ln.strip() != "###"
+    ]
+    if heads:
+        n_items = len(heads)
+    else:
+        n_items = len(_list_items(plan_seg))
+    if n_items > 3:
+        return False
+    if _STUDENT_PLAN_BANNED.search(md):
+        return False
+    if _RANK_PAT.search(md):
+        return False
+    if "全班" in md or re.search(r"班级.{0,8}\d+\s*(人|%)", md):
+        return False
+    return True
 
 
 # 列表项前缀：无序（- * +）与有序（1. 2.）都算——模型两种写法都会输出，
@@ -140,6 +180,20 @@ def write_student_diagnosis(
         STUDENT_DIAGNOSIS_SYSTEM,
         student_diagnosis_user_prompt(pack),
         _validate_student_diagnosis,
+    )
+
+
+def write_student_action_plan(
+    graph: KpGraph, model: DiagnosisReportModel
+) -> PlanDraft | None:
+    """学生改进单（行动卡）：同一证据包、学生版 prompt 与校验。"""
+    if not config.LLM_PLAN_ENABLE:
+        return None
+    pack = student_evidence_pack(graph, model, kind="student_action_plan")
+    return _write(
+        STUDENT_ACTION_PLAN_SYSTEM,
+        student_action_plan_user_prompt(pack),
+        _validate_student_action_plan,
     )
 
 

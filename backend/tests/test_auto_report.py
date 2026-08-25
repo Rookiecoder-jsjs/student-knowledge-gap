@@ -322,10 +322,10 @@ def test_diagnosis_latest_stored_default(client):
             )
         ).all()
         assert len(exam_linked) == 1 and exam_linked[0].exam_id == exam_id
-        # 该生仅这一份关联考试的诊断 → 默认展示的就是它（无额外新建行）
+        # 该生关联本场考试的产物：诊断单 + 改进单各一份 → 默认展示的诊断就是它
         assert len(s.scalars(
             select(Report).where(Report.student_id == student_ids[0])
-        ).all()) == 1
+        ).all()) == 2
 
 
 def test_diagnosis_exam_param_returns_stored(client):
@@ -378,9 +378,13 @@ def test_diagnosis_sheet_endpoint_shape(client):
     assert "writer" in advice  # 模板版为 None，LLM 版带 model/prompt_version
     assert advice["exam_id"] is not None
 
-    # intervention-loop 未落地：行动/闭环为空占位（前端据此隐藏区块）
-    assert r["actions"] == {"pending_confirm": 0, "rows": []}
-    assert r["intervention_summary"] is None
+    # intervention-loop 已落地：行动明细/闭环摘要为真实结构（该环境无建议行 → 零计数）
+    assert r["actions"]["pending_confirm"] >= 0
+    assert isinstance(r["actions"]["rows"], list)
+    summ = r["intervention_summary"]
+    assert isinstance(summ, dict) and "intervention_lift_rate" in summ
+    if not r["actions"]["rows"]:
+        assert summ["total"] == 0 and summ["adoption_rate"] is None
 
     # 存档网格：至少本场考试在列
     assert any(e["exam_id"] == advice["exam_id"] for e in r["past_exams"])

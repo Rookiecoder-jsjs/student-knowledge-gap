@@ -26,16 +26,23 @@ from app.models import (
     Report,
     Student,
 )
+from app.intervention import generate_interventions
 from app.pipeline.attribution import materialize_attribution_verdicts
 from app.pipeline.mastery import get_events_batch
 from app.pipeline.weakness import assess_student_kps
 from app.reports.class_improvement import generate_class_improvement_advice
 from app.reports.quality_analysis import generate_quality_analysis
+from app.reports.student_action_plan import generate_student_action_plan
 from app.reports.student_diagnosis import generate_student_diagnosis
 
 logger = logging.getLogger(__name__)
 
-_REPORT_TYPES = ("quality_analysis", "student_diagnosis", "class_improvement_advice")
+_REPORT_TYPES = (
+    "quality_analysis",
+    "student_diagnosis",
+    "class_improvement_advice",
+    "student_action_plan",
+)
 
 
 @dataclass
@@ -44,6 +51,8 @@ class ExamReportResult:
 
     quality: bool = False
     diagnoses: int = 0
+    action_plans: int = 0
+    interventions: int = 0
 
 
 def generate_exam_reports(session: Session, exam_id: int) -> ExamReportResult:
@@ -102,20 +111,7 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
         as_of,
     )
 
-    generate_quality_analysis(
-        session, graph, class_id, exam_id, narrative=False, events_by_sk=events_by_sk
-    )
-    # 班级改进意见（diagnosis-sheet-redesign §2.4）：每场提交一份，班级诊断单取最新。
-    # forbidden_names 兜底防 LLM 泄漏学生姓名（模板路径本就不含名单）。
-    generate_class_improvement_advice(
-        session,
-        graph,
-        class_id,
-        exam_id,
-        as_of=as_of,
-        events_by_sk=events_by_sk,
-        forbidden_names=[s.name_or_alias for s in students],
-    )
+    plans = 0
     for s in students:
         # 候选1：评估一次，诊断（derive-on-read）与物化（尾步）共享，省掉重复计算。
         # 诊断不再依赖「打底」；物化在生成成功后同步执行，供 override-by-id/闭合率统计。
@@ -132,11 +128,70 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
             events_by_sk=events_by_sk,
             exam_id=exam_id,
         )
+        # 学生改进单（intervention-loop-design §2）：与诊断单同评估、教师代发。
+        generate_student_action_plan(
+            session,
+            graph,
+            s.id,
+            as_of=as_of,
+            assessments=assessments,
+            events_by_sk=events_by_sk,
+            exam_id=exam_id,
+        )
         materialize_attribution_verdicts(
             session, graph, s.id, class_id, as_of, assessments=assessments
         )
+        plans += 1
+    # 干预建议生成（intervention-loop-design §3）：物化先于建议——ActionRow 的
+    # attribution_id 才能回填归因行 id；建议先于质量报告——§五「教学行动方向」
+    # 直接随报告渲染（actions 摘要同时进 snapshot，前端角标数据源）。
+    iv_stats = generate_interventions(
+        session, graph, class_id, exam_id, as_of, events_by_sk=events_by_sk
+    )
+    actions_head = _actions_head(session, graph, class_id, exam_id)
+
+    # 质量分析（§5 行动方向注入模型）→ 班级改进意见（diagnosis-sheet-redesign
+    # §2.4：每场一份，班级诊断单取最新；forbidden_names 兜底防姓名泄漏）。
+    generate_quality_analysis(
+        session, graph, class_id, exam_id,
+        narrative=False, events_by_sk=events_by_sk, actions=actions_head,
+    )
+    generate_class_improvement_advice(
+        session,
+        graph,
+        class_id,
+        exam_id,
+        as_of=as_of,
+        events_by_sk=events_by_sk,
+        forbidden_names=[s.name_or_alias for s in students],
+    )
     session.flush()
-    return ExamReportResult(quality=True, diagnoses=len(students))
+    return ExamReportResult(
+        quality=True,
+        diagnoses=len(students),
+        action_plans=plans,
+        interventions=iv_stats["suggested"],
+    )
+
+
+def _actions_head(
+    session: Session, graph: KpGraph, class_id: int, exam_id: int
+) -> list[dict]:
+    """行动方向头部摘要（杠杆序前 8 条）：质量报告 §五 与 snapshot.actions 共用。"""
+    from app.intervention import action_plan_view
+
+    view = action_plan_view(session, graph, class_id, exam_id=exam_id)
+    return [
+        {
+            "kind": r["kind"],
+            "scope": r["scope"],
+            "kp_name": r["kp_name"],
+            "note": r["note"],
+            "group_size": r.get("group_size"),
+            "status": r["status"],
+        }
+        for r in view["rows"][:8]
+    ]
 
 
 def _active_kb(session: Session) -> KbVersion | None:
