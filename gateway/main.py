@@ -61,6 +61,10 @@ async def _start_monthly_watch() -> None:
 
     monthly_usage.register_monthly_notify_hook(_usage_notify)
     asyncio.create_task(monthly_usage.monthly_watch_loop(_STOP))
+    # Phase 4 批次B：每日出站心跳（§8.3；SC_HEARTBEAT_URL 未配置=静默空转）
+    from gateway import heartbeat
+
+    asyncio.create_task(heartbeat.heartbeat_loop(_STOP))
 
 
 @app.on_event("shutdown")
@@ -352,13 +356,36 @@ async def thread_events(thread_id: str, sess: Session = Depends(require_auth)):
     )
 
 
-@app.get("/health")
-def health():
+BACKEND_URL = os.environ.get("SC_BACKEND_URL", "")
+
+
+def backend_ready(timeout: float = 3.0) -> bool:
+    """sc /ready 探针（心跳用）；不可达=False，绝不抛。"""
+    if not BACKEND_URL:
+        return False
+    try:
+        import httpx
+
+        r = httpx.get(f"{BACKEND_URL.rstrip('/')}/ready", timeout=timeout)
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def health_snapshot() -> dict:
+    """健康快照（/health 端点与每日心跳共用的单一来源）。"""
     return {
         "status": "ok",
         "bridges": {u: b.proc.poll() is None for u, b in _BRIDGES.items()},
         "budget_tasks": GUARD.snapshot(),
     }
+
+
+@app.get("/health")
+def health():
+    snap = health_snapshot()
+    snap["backend_ready"] = backend_ready()
+    return snap
 
 
 # ---------------------------------------------------------------------------

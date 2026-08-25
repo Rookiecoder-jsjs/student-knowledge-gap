@@ -73,6 +73,10 @@ services:
       SC_DINGTALK_ENABLED: "0"
       SC_DINGTALK_WEBHOOK: ""
       SC_DINGTALK_SECRET: ""
+      # Phase 4 批次B：每日出站心跳（§8.3；URL 未配置=静默空转，规模期开启）
+      SC_HEARTBEAT_URL: ${SC_HEARTBEAT_URL:-}
+      SC_BOX_ID: ${SC_BOX_ID:-}                   # 缺省取主机名
+      SC_BOX_VERSION: ${SC_BOX_VERSION:-}
       # MCP server 指向 compose 内的 backend（容器名解析）；DeepSeek key 由账号文件
       # 对应的 CODEX_HOME config.toml 注入（装机向导渲染 assets/deepseek 模板）
       SC_MCP_BACKEND_URL: http://backend:8000
