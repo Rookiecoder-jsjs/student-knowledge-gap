@@ -65,6 +65,10 @@ async def _start_monthly_watch() -> None:
     from gateway import heartbeat
 
     asyncio.create_task(heartbeat.heartbeat_loop(_STOP))
+    # Phase 4 批次C：rollout 保留期限清理（§9；SC_RETENTION_ROLLOUT_DAYS=0=永不删）
+    from gateway import retention
+
+    asyncio.create_task(retention.retention_loop(_STOP))
 
 
 @app.on_event("shutdown")

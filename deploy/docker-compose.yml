@@ -47,6 +47,8 @@ services:
     env_file: ../backend/.env
     environment:
       SC_DATABASE_URL: "sqlite:////data/sc.db"
+      # Phase 4 批次C：§9 保留期限的备份侧——旧份 gzip 归档（0=关）
+      SC_BACKUP_COMPRESS_DAYS: ${SC_BACKUP_COMPRESS_DAYS:-0}
     volumes:
       - sc-data:/data
       - sc-backups:/backups
@@ -77,6 +79,9 @@ services:
       SC_HEARTBEAT_URL: ${SC_HEARTBEAT_URL:-}
       SC_BOX_ID: ${SC_BOX_ID:-}                   # 缺省取主机名
       SC_BOX_VERSION: ${SC_BOX_VERSION:-}
+      # Phase 4 批次C：rollout 保留期限（§9；默认 0=永不删——一班一线程
+      # 持久记忆落在 rollout，清理=该班记忆重开，学校知情后配置）
+      SC_RETENTION_ROLLOUT_DAYS: ${SC_RETENTION_ROLLOUT_DAYS:-0}
       # MCP server 指向 compose 内的 backend（容器名解析）；DeepSeek key 由账号文件
       # 对应的 CODEX_HOME config.toml 注入（装机向导渲染 assets/deepseek 模板）
       SC_MCP_BACKEND_URL: http://backend:8000
