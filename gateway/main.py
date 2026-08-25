@@ -52,9 +52,14 @@ async def _start_monthly_watch() -> None:
 
     from gateway import monthly_usage
 
-    monthly_usage.register_monthly_notify_hook(
-        lambda p: print(f"[monthly-usage] {p['message']} ({p['used_tokens']}/{p['limit']})")
-    )
+    def _usage_notify(payload: dict) -> None:
+        print(f"[monthly-usage] {payload['message']} "
+              f"({payload['used_tokens']}/{payload['limit']})")
+        from gateway import dingtalk
+
+        dingtalk.notify_monthly_usage(payload["message"])
+
+    monthly_usage.register_monthly_notify_hook(_usage_notify)
     asyncio.create_task(monthly_usage.monthly_watch_loop(_STOP))
 
 
@@ -415,6 +420,41 @@ async def _trigger_bridge() -> Bridge:
         _BRIDGES[_SYSTEM_BRIDGE_USER] = br
     br.last_used = time.time()
     return br
+
+
+class NotifyReq(BaseModel):
+    kind: str                      # draft_ready | intervention_suggested
+    class_name: str | None = None
+    type_label: str | None = None
+    preview: str | None = None
+    alias: str | None = None
+    kp_name: str | None = None
+    kind_label: str | None = None
+    link: str | None = None
+
+
+@app.post("/internal/notify", dependencies=[Depends(_require_internal_key)])
+async def internal_notify(req: NotifyReq):
+    """业务触达出口（批次D）：sc 侧事件 → 网关 → 钉钉卡片。
+
+    与 trigger 同一鉴权与 fire-and-forget 纪律；钉钉未配置时静默 no-op
+    （返回 delivered:false 而非报错——调用方无需感知通道是否存在）。
+    """
+    from gateway import dingtalk
+
+    if req.kind == "draft_ready":
+        ok = dingtalk.notify_draft_ready(
+            req.class_name or "班级", req.type_label or "报告",
+            req.preview or "", workbench_url=req.link,
+        )
+    elif req.kind == "intervention_suggested":
+        ok = dingtalk.notify_intervention_suggested(
+            req.alias or "", req.kp_name or "", req.kind_label or "",
+            workbench_url=req.link,
+        )
+    else:
+        raise HTTPException(400, f"unknown notify kind {req.kind!r}")
+    return {"delivered": bool(ok)}
 
 
 @app.post("/internal/trigger", dependencies=[Depends(_require_internal_key)])

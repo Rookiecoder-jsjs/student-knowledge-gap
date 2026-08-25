@@ -122,3 +122,75 @@ def fire_post_exam_analysis(
         logger.warning("trigger rejected: HTTP %s %s", resp.status_code, resp.text[:200])
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# 业务触达出口（Phase 3 批次D）：sc 事件 → 网关 /internal/notify → 钉钉卡片
+# ---------------------------------------------------------------------------
+
+
+def fire_notify(
+    payload: dict,
+    *,
+    gateway_url: str | None = None,
+    internal_key: str | None = None,
+    client: httpx.Client | None = None,
+) -> bool:
+    """通用通知投递（kind=draft_ready/intervention_suggested）。
+
+    与 fire_post_exam_analysis 同纪律：网关/钉钉未配置或不可达一律 False +
+    日志，绝不阻塞调用方主流程。
+    """
+    base = gateway_url or os.environ.get("SC_GATEWAY_URL", "")
+    key = internal_key or os.environ.get("SC_TRIGGER_KEY", "")
+    if not base or not key:
+        logger.info("notify disabled: SC_GATEWAY_URL/SC_TRIGGER_KEY 未配置")
+        return False
+    try:
+        if client is not None:
+            resp = client.post(
+                f"{base.rstrip('/')}/internal/notify",
+                json=payload,
+                headers={"X-Internal-Key": key},
+            )
+        else:
+            with httpx.Client(timeout=_TRIGGER_TIMEOUT_S) as hc:
+                resp = hc.post(
+                    f"{base.rstrip('/')}/internal/notify",
+                    json=payload,
+                    headers={"X-Internal-Key": key},
+                )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("notify delivery failed: %s", e)
+        return False
+    if resp.status_code >= 300:
+        logger.warning("notify rejected: HTTP %s %s", resp.status_code, resp.text[:200])
+        return False
+    return True
+
+
+def notify_draft_ready(session: Session, report) -> bool:
+    """报告草稿入收件箱后的触达（Agent 写工具产出；确定性报告不打扰）。"""
+    from app.models import Class, Student
+
+    if report.class_id is not None:
+        clazz = session.get(Class, report.class_id)
+        class_name = clazz.name if clazz else f"班级{report.class_id}"
+    else:
+        class_name = "班级"
+    alias = None
+    if report.student_id is not None:
+        stu = session.get(Student, report.student_id)
+        alias = stu.name_or_alias if stu else None
+    type_label = {
+        "student_diagnosis": "学生诊断单",
+        "class_improvement_advice": "班级改进意见",
+    }.get(report.type, report.type)
+    subject = f"{alias}·{type_label}" if alias else class_name + "·" + type_label
+    preview = (report.content_markdown or "").strip().replace("\n", " ")
+    return fire_notify({
+        "kind": "draft_ready",
+        "class_name": class_name,
+        "type_label": subject,
+        "preview": preview[:120],
+    })

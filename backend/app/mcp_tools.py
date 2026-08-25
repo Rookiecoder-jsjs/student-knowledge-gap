@@ -430,6 +430,13 @@ def create_report_draft(
     )
     session.add(report)
     session.flush()
+    # 批次D 触达：新草稿 → 网关 → 钉钉（fire-and-forget，未配置静默跳过）
+    try:
+        from app import triggers as _trg
+
+        _trg.notify_draft_ready(session, report)
+    except Exception:  # noqa: BLE001 —— 触达失败不影响工具结果
+        pass
     return {
         "report_id": report.id,
         "status": report.status,
@@ -502,6 +509,18 @@ def record_intervention(
     )
     session.add(row)
     session.flush()
+    # 批次D 触达：待确认建议 → 网关 → 钉钉（同上纪律）
+    try:
+        from app import triggers as _trg
+
+        _trg.fire_notify({
+            "kind": "intervention_suggested",
+            "alias": stu.name_or_alias,
+            "kp_name": graph.kp(kp_id).name,
+            "kind_label": KIND_LABEL[kind],
+        })
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "intervention_id": row.id,
         "status": row.status,
