@@ -401,7 +401,7 @@ SQ/EQ 协议、CodexThread/Session/Task/Turn 循环、rollout recorder 与压缩
 |---|---|---|
 | **0 · 验链（~1 周）** | 锚定最新 stable release 并记录 commit（D3 已定）；精读现有 codex/ 参考克隆产出 `handbook/ARCHITECTURE.md` v0（crate 地图 + 三条数据流）；**零源码改动**跑通：原版 codex（app-server 模式）⇄ 自建最小 MCP Server（包住 sc 的 1 个真实端点）⇄ 网关雏形转发一条消息（网关代码落位 `gateway/`）；结束时按 §2.1 收编 `runtime/`、删除 codex/ 参考（D10）、DELTA.md 开账登记锚点 | **三项验链全部通过**：① MCP 链路——终端里对壳提问「三班概况」，壳经 MCP 调 sc 返回真实数据；② 并发——单个 app-server 进程内两位教师各自的 Turn 真并发无串行阻塞（协议 v1 文档自述「一 Session 至多一 Task、并行需一进程一线程」，现代 ThreadManager 形态未实证；若证伪则网关后挂进程池缓解，但必须第一天知道）；③ 模型——学校候选国产模型（DeepSeek 等）走 Chat 兼容层的**工具调用保真度**实测通过（这一枪决定整个选型成立与否）。另：ARCHITECTURE.md 路径引用抽查成立 |
 | **1 · 瘦身与换脸** | §6.1 裁剪（CRATES.md 记账）；人格 prompt 替换；国产端点适配（§5.10 注记）；网关 v1（鉴权+SSE 转发，`gateway/` 内演进）；前端对话原型；`BUILD.md` / `AGENTS-FORK.md` 成文；compose 增补 runtime 与 gateway 服务 | 浏览器里与壳多轮对话，工具返回 sc 真实数据 |
-| **2 · 第一闭环** | 七个只读工具全接（§5.1）；收件箱与 draft 流；触发器 v1；用量台账 v1。**前置：诊断单重构已落地**（§10.0） | 按 §4.4 场景走查全程演示（签发为止）【闭环取舍见 D1】 |
+| **2 · 第一闭环** ✅ 2026-08-25 | 七个只读工具全接（§5.1）；收件箱与 draft 流；触发器 v1；用量台账 v1。**前置：诊断单重构已落地**（§10.0） | 按 §4.4 场景走查全程演示（签发为止）【闭环取舍见 D1】。**落地注记**：七工具在 `backend/app/mcp_tools.py`（纯函数层，与 HTTP 路由共用聚合）+ `mcp_server.py` 注册；收件箱=Report.status 状态机 + `/inbox` 端点族 + 前端「待签发」页；触发器=`app/triggers.py` fire-and-forget → 网关 `POST /internal/trigger`（共享密钥+班级持久线程映射+幂等 TTL）；台账=llm_call_log token 两列 + `/admin/usage` + 「本月消耗」页（壳侧 agent_turn 后续接入）。场景走查 13 步真实 HTTP 全过 |
 | **3 · 写与权** | 写工具 + 审批门硬化；G11 端点级鉴权收尾；钉钉通知；预算护栏。**前置：干预闭环已落地**（§10.0） | 教师甲看不到教师乙的班；干预记录经签发落库；钉钉收到卡片 |
 | **4 · 产品加固** | 心跳上报、watchtower 升级链、保留期限策略、评测集（历史考试构造标准问答对，回归验证 Agent 结论与确定性管线一致）、第二所试点校 | 两校并行运行一周无人工干预 |
 

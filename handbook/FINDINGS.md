@@ -145,3 +145,30 @@ token 用量在 `usage.input_tokens/output_tokens` 正常返回。
 | ③ | 国产模型工具调用保真度 | ✅ 通过 | `scripts/verify_chain3_deepseek.py`，deepseek-v4-flash 实测（F7） |
 | 附 | 网关雏形（WS⇄stdio 翻译） | ✅ 通过 | `scripts/verify_gateway.py` |
 | P1 | 真 shell + DeepSeek models.json + sc MCP 端到端 | ✅ 通过 | codex exec 实测调 get_class_overview 返回七(1)班 30 人（F8） |
+
+## F9 · Phase 2 第一闭环落地（2026-08-25）
+
+§10.1 Phase 2 四件套全部落地，§4.4 场景走查 13 步真实 HTTP 全过
+（脚本：临时走查库 + uvicorn 实测，非 TestClient 模拟）：
+
+| 组件 | 落点 | 要点 |
+|---|---|---|
+| 七个只读工具 | `backend/app/mcp_tools.py`（纯函数层）+ `mcp_server.py`（FastMCP 注册） | 与 HTTP 路由共用聚合实现（kb kp_detail 下沉）；name_or_alias + MAX_PAGE=50 分页；_provenance 统一包装 |
+| 收件箱 draft 流 | `app/inbox.py` + Report.status 三列 + `/inbox` 端点族 | 存量报告默认 issued——「待签发」语义只属 Agent draft；打回必附理由；终态锁定 |
+| 触发器 v1 | `app/triggers.py` → gateway `POST /internal/trigger` | fire-and-forget（网关不可达不阻塞 commit）；共享密钥鉴权；班级持久线程映射 threads.json；幂等 TTL 600s |
+| 用量台账 v1 | llm_call_log token 两列 + `/admin/usage` | 仅 status=success 计入；OpenAI/Anthropic 键名兼容提取；壳侧 agent_turn 后续接入 |
+
+走查中发现的产品事实（对后续阶段有用）：
+- **证据门槛**：MIN_EVIDENCE_COUNT=2 是生产默认——单 kp 单题的迷你卷全部
+  「数据不足」，场景演示需每 kp ≥2 题；
+- **教学进度时间感知**：taught_at 晚于 as_of 的知识点判「未学到」永不评薄弱
+  （DESIGN §6 护栏），造数时 taught_at 必须早于考试日；
+- 无标注题目不进分析（标注闸门前置），POST /exams 的 questions 必须带 kps。
+
+## Phase 2 验收状态板
+
+| 项 | 状态 | 证据 |
+|---|---|---|
+| §4.4 场景走查（上传→自动分析→签发为止） | ✅ 通过 | 13 步真实 HTTP 断言全过 |
+| 后端测试全绿 | ✅ | 258 passed（含批次A~D 新增 38 条） |
+| 前端类型与 lint | ✅ | tsc --noEmit + oxlint 绿 |
