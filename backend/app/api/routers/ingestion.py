@@ -130,6 +130,11 @@ def commit(exam_id: int, db: Session = Depends(get_db)):
         reports = generate_exam_reports(db, exam_id)
         result.quality_report = reports.quality
         result.diagnoses = reports.diagnoses
+        # §5.4 触发器 v1：fire-and-forget 通知网关拉起考后分析 Task；
+        # 失败只记日志（Agent 断供不阻塞采集主流程，§5.8 兜底）。
+        from app.triggers import fire_post_exam_analysis
+
+        fire_post_exam_analysis(db, exam_id)
     return {
         "committed_responses": result.committed_responses,
         "evidence_events": result.evidence_events,

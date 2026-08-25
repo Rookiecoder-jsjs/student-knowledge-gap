@@ -43,6 +43,10 @@ app = FastAPI(title="sc session-gateway (Phase 1)")
 APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex")
 APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "app-server").split()
 CODEX_HOME = os.environ.get("SC_GATEWAY_CODEX_HOME", "/tmp/sc-p1/codex-home")
+# §5.4 触发器 v1：sc backend → gateway 内网共享密钥（双方一致才放行 /internal/*）
+INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
+# 班级持久线程映射落盘（§5.6 一班一线程跨学期滚动；JSON {str(class_id): thread_id}）
+THREADS_FILE = Path(os.environ.get("SC_GATEWAY_THREADS_FILE", "/data/threads.json"))
 
 # ---------------------------------------------------------------------------
 # 账号与会话（§5.5 一期：管理员建账号 + 口令；二期钉钉 OAuth 替换此层）
@@ -269,6 +273,103 @@ def health():
         "status": "ok",
         "bridges": {u: b.proc.poll() is None for u, b in _BRIDGES.items()},
     }
+
+
+# ---------------------------------------------------------------------------
+# 触发器 v1 内部接口（§5.4）：sc backend → 本网关 → 持久线程发起任务
+# ---------------------------------------------------------------------------
+
+
+class TriggerReq(BaseModel):
+    kind: str                      # 目前仅 post_exam_analysis
+    exam_id: int
+    class_id: int
+    idempotency_key: str           # 同键 10 分钟内不重复发起（网关侧重试安全）
+    message: str                   # 版本化模板渲染好的用户消息
+    template_version: str
+
+
+def _require_internal_key(header_key: str = Header(default="", alias="X-Internal-Key")):
+    """内部接口鉴权：未配置密钥=功能关闭（403）；配置后必须精确匹配。"""
+    if not INTERNAL_KEY or header_key != INTERNAL_KEY:
+        raise HTTPException(403, "internal key invalid")
+
+
+def _load_thread_map() -> dict[str, str]:
+    try:
+        return json.loads(THREADS_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_thread_map(mapping: dict[str, str]) -> None:
+    THREADS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    THREADS_FILE.write_text(json.dumps(mapping, ensure_ascii=False, indent=1))
+
+
+_RECENT_TRIGGERS: dict[str, float] = {}  # idempotency_key -> monotonic time
+_TRIGGER_TTL_S = 600.0
+
+
+def _recently_fired(key: str) -> bool:
+    now = time.monotonic()
+    for k in [k for k, t in _RECENT_TRIGGERS.items() if now - t > _TRIGGER_TTL_S]:
+        _RECENT_TRIGGERS.pop(k, None)
+    if key in _RECENT_TRIGGERS:
+        return True
+    _RECENT_TRIGGERS[key] = now
+    return False
+
+
+# 触发式任务用的系统级会话（不占教师账号；与教师桥同款 app-server 进程）
+_SYSTEM_BRIDGE_USER = "__trigger__"
+
+
+async def _trigger_bridge() -> Bridge:
+    br = _BRIDGES.get(_SYSTEM_BRIDGE_USER)
+    if br is None or br.proc.poll() is not None:
+        if br is not None:
+            br.stop()
+        br = await Bridge.spawn()
+        _BRIDGES[_SYSTEM_BRIDGE_USER] = br
+    br.last_used = time.time()
+    return br
+
+
+@app.post("/internal/trigger", dependencies=[Depends(_require_internal_key)])
+async def internal_trigger(req: TriggerReq):
+    """在班级持久线程上发起触发式任务（§5.4）。
+
+    线程映射缺省时 thread/start 建持久线程并落盘（一班一线程，§5.6）；
+    turn/start 阻塞至该轮完成（与浏览器侧 RPC 同语义），超时 240s。
+    幂等：同一 idempotency_key 在 TTL 内重复请求直接返回已受理。
+    """
+    if req.kind != "post_exam_analysis":
+        raise HTTPException(400, f"unknown trigger kind {req.kind!r}")
+    if _recently_fired(req.idempotency_key):
+        return {"accepted": False, "reason": "duplicate within TTL"}
+
+    bridge = await _trigger_bridge()
+    mapping = _load_thread_map()
+    tid = mapping.get(str(req.class_id))
+    if not tid:
+        started = await bridge.request("thread/start", {
+            "cwd": "/tmp",
+            "approvalPolicy": "never",
+        })
+        tid = ((started.get("result") or {}).get("thread") or {}).get("id")
+        if not tid:
+            raise HTTPException(502, "thread/start returned no thread id")
+        mapping[str(req.class_id)] = tid
+        _save_thread_map(mapping)
+    try:
+        await bridge.request("turn/start", {
+            "threadId": tid,
+            "input": [{"type": "text", "text": req.message}],
+        }, timeout=240.0)
+    except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
+        raise HTTPException(502, f"turn/start failed: {e}") from e
+    return {"accepted": True, "thread_id": tid, "template_version": req.template_version}
 
 
 @app.on_event("startup")
