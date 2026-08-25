@@ -28,7 +28,8 @@
 2. 🧑‍🎓 **个人诊断单**（薄弱点 + 证据 + 建议）；
 3. 📊 **三张单信息架构**——考试页只看「这场考试的大体状况」（第 5 阶概况）；「这个班/这个学生接下来怎么变好」移到两张滚动更新的单上（班级诊断单 = 考试模块第二 tab；学生诊断单），见 `docs/diagnosis-sheet-redesign.md`；
 4. 💾 **提交即自动生成**——考试提交后，班级质量报告、班级改进意见、全班学生诊断自动落库并关联该场考试，一次生成、永久查看；
-5. ✍️ **LLM 生成层**（`SC_LLM_PLAN_ENABLE=1` 开启，默认关）——学生诊断单与班级改进意见正文由 LLM 基于确定性证据包研判落笔，模板渲染降为保底；校验失败/未配 key 自动回落模板，前端无感。
+5. 🔄 **干预闭环**（intervention-loop-design）——诊断之后怎么办：结构化行动方向（全班重讲/小组补学/个体建议三层）、学生改进单（教师代发）、一键确认执行、复测后效果验证（基线调整对冲均值回归），北极星「干预提升率」落地度量；
+6. ✍️ **LLM 生成层**（`SC_LLM_PLAN_ENABLE=1` 开启，默认关）——学生诊断单与班级改进意见正文由 LLM 基于确定性证据包研判落笔，模板渲染降为保底；校验失败/未配 key 自动回落模板，前端无感。
 
 ---
 
@@ -76,8 +77,9 @@ sc/
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
 │   │   ├── kb/               #   知识库：loader（YAML->DB）/ graph / resolver（active 版本）/ edit / versioning / compatibility
 │   │   ├── pipeline/         #   追踪与归因：evidence -> mastery -> weakness -> attribution（含诊断题证伪、归因读视图）
-│   │   ├── queries/          #   只读聚合查询（classes_overview 等）
-│   │   ├── reports/          #   compute/render 分层：quality_model|quality_render / diagnosis_model|diagnosis_render / auto_generate / narrative（LLM 解读）/ labels
+│   │   ├── queries/          #   只读聚合查询（classes_overview / diagnosis_sheet 等）
+│   │   ├── intervention.py   #   干预闭环纯计算层：策略映射 / 幂等再生成 / 效果推导（derive-on-read）
+│   │   ├── reports/          #   compute/render 分层：quality_model|quality_render / diagnosis_model|diagnosis_render / student_action_plan / auto_generate / narrative（LLM 解读）/ labels
 │   │   ├── llm/              #   provider 无关客户端 + prompts + gateway（文本闸门）+ circuit（熔断器）
 │   │   ├── labels_source.py  #   枚举标签单一真源（codegen 出前端 labels.ts，防两处漂移）
 │   │   ├── models.py schemas.py config.py db.py observability.py main.py（含 /health + /ready 探针）
@@ -90,7 +92,7 @@ sc/
 │   └── .env                  #   LLM 与质量开关配置（勿入库）
 ├── frontend/
 │   ├── app/                  #   教师端 Web（Vite + React + TS + Tailwind，案头 Workbench 风格）
-│   │   ├── src/{pages,components,lib}/
+│   │   ├── src/{pages,components,lib}/   # components/ActionPlan.tsx = 行动明细/效果chip/闭环条共享组件
 │   │   ├── Dockerfile        #   前端镜像（node 构建 -> nginx 托管 dist + /api 反代）
 │   │   └── nginx.conf        #   /api 前缀剥离反代 backend（与 Vite dev 代理等价）
 ├── deploy/
@@ -109,7 +111,7 @@ sc/
 
 ```bash
 cd backend
-python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（187 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（295 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
 python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
@@ -138,6 +140,15 @@ SC_LLM_MODEL=             # 默认模型
 
 `SC_LLM_PLAN_ENABLE=1` 开启诊断单 LLM 生成层（学生诊断单/班级改进意见正文由 LLM 研判落笔，模板保底；默认关——避免测试/演示意外消耗额度）。
 
+**干预闭环参数**（默认全开，试点回退用）：
+
+```
+SC_ACTION_PLAN_ENABLE=          # =0 关闭干预建议生成（提交不再产出行动方向/改进单建议行；默认开）
+SC_INTERVENTION_MIN_DELTA=0.10  # improved 判定阈值：基线调整后掌握度增量 ≥ 此值
+SC_INTERVENTION_FLAT_FLOOR=-0.05  # flat/declined 分界
+SC_ACTION_GROUP_MIN=3           # 同根源薄弱成组的最低人数
+```
+
 **质量与审核开关**（均默认关闭，保持既有工作流；试点/生产按需开启）：
 
 ```
@@ -162,7 +173,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 ## 📡 核心功能与端点
 
-共 **56 个端点**（启动后可在 Swagger 交互文档查看）。运维探针：`GET /health`（liveness，进程存活）与 `GET /ready`（readiness——DB 可达即 200；LLM 熔断仅标 `degraded:true`，DB 不可达 503，供编排器自愈）。
+共 **63 个路径 / 72 个操作**（启动后可在 Swagger 交互文档查看）。运维探针：`GET /health`（liveness，进程存活）与 `GET /ready`（readiness——DB 可达即 200；LLM 熔断仅标 `degraded:true`，DB 不可达 503，供编排器自愈）。
 
 **📚 知识库**
 - 导入与版本：`POST /kb/import`、`GET|POST /kb/versions`、`PATCH /kb/versions/{id}`、`GET /kb/versions/{id}/compatibility`
@@ -189,13 +200,21 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - 报告列表与详情：`GET /reports`（可按 `exam_id`/`class_id`/`student_id` 过滤）、`GET /reports/{id}`
 - 报告 AI 解读段首次 `?narrative=true` 查看时生成并缓存到库，之后永久可看（仅引用系统已算数字、标注模型与 prompt 版本、失败静默降级）
 
+**🔄 干预闭环（intervention-loop-design：建议 → 执行 → 复测 → 效果）**
+- 行动方向：`GET /classes/{id}/action-plan?exam_id=`（全班重讲 → 小组补学 → 个体建议三层杠杆排序，行 id 供一键确认）
+- 学生改进单：`GET /students/{id}/action-plan`（教师代发的行动卡，get-or-generate；前端诊断页 `?view=plan` 切换可打印）
+- 干预记录：`GET /interventions?class_id=&student_id=&status=`、`POST /interventions/{id}/confirm`、`POST /interventions/{id}/skip`
+- 效果验证：`GET /interventions/{id}/effect`（derive-on-read 前后对比，基线调整扣除班级同期变化对冲均值回归；无复测证据返回 awaiting_retest）
+- 北极星指标：`GET /interventions/summary?class_id=`（采纳率 + **干预提升率** = improved / 可评估子集——README 开篇承诺的北极星在此兑现）
+- 配置：`SC_ACTION_PLAN_ENABLE=0` 可整体关闭建议生成（默认开）；效果阈值 `SC_INTERVENTION_MIN_DELTA`（默认 0.10）、成组人数 `SC_ACTION_GROUP_MIN`(默认 3)
+
 **🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时选日期回看任意时点（报告与弱项面板同一时间基准）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
 
 ---
 
 ## ✅ 验证体系
 
-**测试**：187 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
+**测试**：295 项（`backend/tests/` 单元 + `backend/simulator/` 金标与压力断言）🧪。
 
 ```bash
 cd backend && python -m pytest tests simulator
@@ -234,7 +253,7 @@ cd backend && python -m pytest tests simulator
 
 ### 🧭 还差什么
 
-合成数据再像也不是真的。系统精度仍为合成基线，**200 题真实人工金标**（教师标注失分归属）是阻塞对外宣称精度的第一优先级，只能人工建。诊断题证伪闭环（`POST /attributions/{id}/verify`）是根本解，但需教师配合出题。北极星指标是**干预提升率**：被干预的薄弱点，复测后掌握度涨没涨 🌟。
+合成数据再像也不是真的。系统精度仍为合成基线，**200 题真实人工金标**（教师标注失分归属）是阻塞对外宣称精度的第一优先级，只能人工建。诊断题证伪闭环（`POST /attributions/{id}/verify`）是根本解，但需教师配合出题。北极星指标是**干预提升率**：被干预的薄弱点，复测后掌握度涨没涨 🌟——已由 `GET /interventions/summary` 落地度量（基线调整对冲均值回归，首期先度量后校准）。
 
 ---
 
