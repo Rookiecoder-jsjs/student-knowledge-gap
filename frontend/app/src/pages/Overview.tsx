@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { TeachingProgressCard } from "../components/TeachingProgress";
-import { listClasses, listClassesOverview, listExams } from "../lib/api";
+import { listClasses, listClassesOverview, classActionPlan, listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 import type { ExamSummary } from "../lib/types";
@@ -24,6 +24,11 @@ export default function Overview() {
   const classes = useAsync(() => listClasses(), []);
   const overview = useAsync(() => listClassesOverview(), []);
   const exams = useAsync(() => listExams(cid), [cid]);
+  // 行动方向待确认数（intervention-loop-design §6：工作台只有链接卡 + 计数）
+  const actions = useAsync(
+    () => classActionPlan(cid).catch(() => null),
+    [cid]
+  );
 
   const clazz = classes.data?.classes.find((c) => c.class_id === cid);
   const ov = overview.data?.classes.find((c) => c.class_id === cid);
@@ -138,7 +143,7 @@ export default function Overview() {
           </div>
 
           {/* 班级诊断单入口卡（diagnosis-sheet-redesign F5）：工作台不再渲染行动列表，
-              全量行动只在班级诊断单一处出现。 */}
+              全量行动只在班级诊断单一处出现；角标 = 待确认行动数。 */}
           <div>
             <SectionTitle>班级状态</SectionTitle>
             <Link to={`/c/${cid}/exams?tab=diagnosis`} className="block">
@@ -146,9 +151,14 @@ export default function Overview() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">查看班级诊断单</p>
                   <p className="mt-0.5 text-xs text-ink-faint">
-                    班级现状 · 改进意见 · 往期报告存档
+                    {(actions.data?.pending_confirm ?? 0) > 0
+                      ? `${actions.data?.pending_confirm} 条行动建议待确认 · 改进意见 · 存档`
+                      : "班级现状 · 行动明细 · 改进意见 · 往期报告存档"}
                   </p>
                 </div>
+                {(actions.data?.pending_confirm ?? 0) > 0 && (
+                  <Badge tone="warn">{actions.data?.pending_confirm}</Badge>
+                )}
                 <ArrowRight size={15} className="text-ink-faint" />
               </Card>
             </Link>

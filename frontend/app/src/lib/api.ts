@@ -1,6 +1,7 @@
 /** 后端 API 客户端：30 端点全覆盖，统一错误语义。 */
 
 import type {
+  ActionPlanView,
   AttributionView,
   BatchJob,
   BatchJobSummary,
@@ -11,6 +12,8 @@ import type {
   ExamSummary,
   InboxList,
   InboxSummary,
+  InterventionRow,
+  InterventionSummary,
   KpRelationEndpoint,
   KpRelationView,
   KpVersion,
@@ -23,6 +26,7 @@ import type {
   ReportTransition,
   ResponsesMatrix,
   ReviewQueue,
+  StudentActionPlan,
   StudentInfo,
   UsageLedger,
   Weaknesses,
@@ -359,6 +363,8 @@ export const commitExam = (examId: number) =>
     evidence_events: number;
     quality_report?: boolean;
     diagnoses?: number;
+    action_plans?: number;
+    interventions?: number;
     skipped: string[];
   }>(`/exams/${examId}/commit`, { method: "POST" });
 
@@ -500,3 +506,47 @@ export const rejectReport = (reportId: number, note: string) =>
 // 用量台账（§5.9）
 export const adminUsage = (month: string) =>
   request<UsageLedger>(`/admin/usage?month=${encodeURIComponent(month)}`);
+
+// ---------------------------------------------------------------------------
+// 干预闭环（intervention-loop-design §5 七端点）
+// ---------------------------------------------------------------------------
+
+export const classActionPlan = (classId: number, examId?: number) =>
+  request<ActionPlanView>(
+    `/classes/${classId}/action-plan${examId ? `?exam_id=${examId}` : ""}`
+  );
+
+export const studentActionPlan = (studentId: number) =>
+  request<StudentActionPlan>(`/students/${studentId}/action-plan`);
+
+export const listInterventions = (params: {
+  class_id?: number;
+  student_id?: number;
+  status?: string;
+}) => {
+  const q = new URLSearchParams();
+  if (params.class_id) q.set("class_id", String(params.class_id));
+  if (params.student_id) q.set("student_id", String(params.student_id));
+  if (params.status) q.set("status", params.status);
+  const qs = q.toString();
+  return request<{ total: number; items: InterventionRow[] }>(
+    `/interventions${qs ? `?${qs}` : ""}`
+  );
+};
+
+export const confirmIntervention = (id: number) =>
+  request<{ id: number; status: string; done_at: string }>(
+    `/interventions/${id}/confirm`,
+    { method: "POST", body: JSON.stringify({ note: null }) }
+  );
+
+export const skipIntervention = (id: number, note?: string) =>
+  request<{ id: number; status: string }>(`/interventions/${id}/skip`, {
+    method: "POST",
+    body: JSON.stringify({ note: note ?? null }),
+  });
+
+export const interventionSummaryOf = (classId: number) =>
+  request<InterventionSummary>(
+    `/interventions/summary?class_id=${classId}`
+  );

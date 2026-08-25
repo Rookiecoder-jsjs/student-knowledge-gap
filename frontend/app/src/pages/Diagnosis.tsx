@@ -1,15 +1,20 @@
-import { CaretDown, CaretRight, HandPalm } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, HandPalm, Printer } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import {
+  ActionPlanPanel,
+} from "../components/ActionPlan";
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import {
   diagnosisReport,
   getWeaknesses,
+  listInterventions,
   listStudents,
   overrideAttribution,
   runAttributions,
+  studentActionPlan,
 } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { attrLabel, criterionLabel, trajLabel } from "../lib/labels";
@@ -23,11 +28,14 @@ const ATTR_HINT: Record<string, string> = {
   数据不足: "依据不够，暂不判定，后续考试会继续观察",
 };
 
-/** 学生诊断单：报告正文 + 结构化薄弱卡片 + 归因假设（可否决）。 */
+/** 学生诊断单/改进单（intervention-loop §6）：?view=plan 切换；干预记录卡在右栏。 */
 export default function Diagnosis() {
   const { classId, studentId } = useParams();
   const cid = Number(classId);
   const sid = Number(studentId);
+  const [params, setParams] = useSearchParams();
+  // 诊断单 | 改进单 切换（与 Quality ?exam= 同约定：query 参数不加新路由）
+  const view = params.get("view") === "plan" ? "plan" : "diagnosis";
 
   const students = useAsync(() => listStudents(cid), [cid]);
   // 右侧弱项面板与报告同 as_of：默认跟随报告快照日期；显式选日期时按所选现算
@@ -38,6 +46,16 @@ export default function Diagnosis() {
     [sid, asOf, reportAsOf]
   );
   const student = students.data?.students.find((s) => s.student_id === sid);
+  // 该生的干预记录（个体视角唯一版面：状态 + 效果 chip，链接回班级诊断单）
+  const interventions = useAsync(
+    () => listInterventions({ student_id: sid }).catch(() => ({ total: 0, items: [] })),
+    [sid]
+  );
+  // 改进单视图数据
+  const plan = useAsync(
+    () => (view === "plan" ? studentActionPlan(sid) : Promise.resolve(null)),
+    [view, sid]
+  );
 
   const [attributions, setAttributions] = useState<AttributionView[] | null>(null);
   const [attrError, setAttrError] = useState<string | null>(null);
@@ -77,41 +95,96 @@ export default function Diagnosis() {
   return (
     <Page accent={ACCENTS.student}>
       <PageHeader
-        title={student ? `${student.name_or_alias} 的诊断单` : "学生诊断单"}
-        desc="先看进步，再看待加强项；每条结论可展开依据"
+        title={
+          student
+            ? `${student.name_or_alias} 的${view === "plan" ? "改进单" : "诊断单"}`
+            : view === "plan"
+              ? "学生改进单"
+              : "学生诊断单"
+        }
+        desc={view === "plan" ? "给学生本人的行动卡，可打印后转发" : "先看进步，再看待加强项；每条结论可展开依据"}
         actions={
-          <label className="flex items-center gap-2 text-sm text-ink-soft">
-            截至
-            <Input
-              type="date"
-              value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-            />
-          </label>
+          <span className="flex items-center gap-3">
+            {/* 诊断单 | 改进单 切换 */}
+            <span className="inline-flex rounded-full border border-line bg-surface p-0.5" role="tablist" aria-label="学生报告视图">
+              {(
+                [
+                  ["diagnosis", "诊断单"],
+                  ["plan", "改进单"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={view === key}
+                  onClick={() => setParams(key === "diagnosis" ? {} : { view: key })}
+                  className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                    view === key ? "bg-accent font-semibold text-white" : "text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </span>
+            <label className="flex items-center gap-2 text-sm text-ink-soft">
+              截至
+              <Input
+                type="date"
+                value={asOf}
+                onChange={(e) => setAsOf(e.target.value)}
+              />
+            </label>
+          </span>
         }
       />
 
       <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        {/* 左：诊断报告 */}
+        {/* 左：诊断单 / 改进单 正文 */}
         <section>
-          {reportLoading && <Skeleton rows={8} />}
-          {reportError && <ErrorState message={reportError} onRetry={generate} />}
-          {report && !reportLoading && (
+          {view === "plan" ? (
             <>
-              {reportAsOf && (
-                <p className="mb-2 text-xs text-ink-faint">
-                  诊断数据截至 {reportAsOf}
-                  {!asOf && "（最近一场考试）"}
-                </p>
+              {plan.loading && <Skeleton rows={8} />}
+              {plan.error && <ErrorState message={plan.error} onRetry={plan.reload} />}
+              {plan.data && (
+                <>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs text-ink-faint">
+                      {plan.data.as_of ? `评估截至 ${plan.data.as_of}` : null}
+                      {plan.data.writer ? " · AI 起草（教师可修改后转发）" : " · 模板版"}
+                    </p>
+                    <Button variant="secondary" onClick={() => window.print()} className="px-2.5 py-1.5 text-xs">
+                      <Printer size={13} />
+                      打印
+                    </Button>
+                  </div>
+                  <Card className="p-7">
+                    <ReportMarkdown content={plan.data.markdown} />
+                  </Card>
+                </>
               )}
-              <Card className="p-7">
-                <ReportMarkdown content={report} />
-              </Card>
+            </>
+          ) : (
+            <>
+              {reportLoading && <Skeleton rows={8} />}
+              {reportError && <ErrorState message={reportError} onRetry={generate} />}
+              {report && !reportLoading && (
+                <>
+                  {reportAsOf && (
+                    <p className="mb-2 text-xs text-ink-faint">
+                      诊断数据截至 {reportAsOf}
+                      {!asOf && "（最近一场考试）"}
+                    </p>
+                  )}
+                  <Card className="p-7">
+                    <ReportMarkdown content={report} />
+                  </Card>
+                </>
+              )}
             </>
           )}
         </section>
 
-        {/* 右：结构化薄弱点与归因 */}
+        {/* 右：结构化薄弱点与归因（诊断单视图） / 干预记录（两视图共用） */}
         <section className="space-y-6">
           <div>
             <SectionTitle count={weak.data?.weak.length ?? 0}>待加强知识点</SectionTitle>
@@ -180,6 +253,30 @@ export default function Diagnosis() {
                 ))}
               </StaggerList>
             )}
+          </div>
+
+          {/* 该生的干预记录卡（intervention-loop §6）：状态 + 效果，链接回班级诊断单 */}
+          <div>
+            <SectionTitle count={interventions.data?.items.length ?? 0}>该生的干预记录</SectionTitle>
+            {(interventions.data?.items.length ?? 0) === 0 ? (
+              <Card className="p-4">
+                <p className="text-sm text-ink-faint">
+                  暂无干预记录。行动建议由系统在每次考试提交后生成。
+                </p>
+              </Card>
+            ) : (
+              <ActionPlanPanel
+                rows={interventions.data!.items}
+                onChanged={interventions.reload}
+                emptyHint=""
+              />
+            )}
+            <p className="mt-2 text-xs text-ink-faint">
+              全班行动方向见{" "}
+              <a href={`/c/${cid}/exams?tab=diagnosis`} className="text-accent hover:text-accent-deep">
+                班级诊断单 →
+              </a>
+            </p>
           </div>
         </section>
       </div>

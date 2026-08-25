@@ -329,9 +329,61 @@ export interface ClassDiagnosisSheet {
   class_id: number;
   status: DiagnosisSheetStatus;
   improvement_advice: ImprovementAdvice | null;
-  actions: { pending_confirm: number; rows: unknown[] };
-  intervention_summary: null;
+  // 干预闭环（intervention-loop-design §5）：行动明细 + 闭环摘要
+  actions: { pending_confirm: number; rows: InterventionRow[] };
+  intervention_summary: InterventionSummary;
   past_exams: PastExamEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// 干预闭环（intervention-loop-design §5）
+// ---------------------------------------------------------------------------
+
+export interface InterventionRow {
+  id: number;
+  kind: string;
+  scope: "class" | "group" | "student";
+  status: "suggested" | "done" | "skipped";
+  kp_code: string;
+  kp_name: string;
+  note: string | null;
+  suggested_at: string | null;
+  done_at: string | null;
+  taught?: boolean;
+  group_size?: number;
+  student_id?: number;
+  alias?: string | null;
+}
+
+/** 闭环度量（北极星「干预提升率」；分母只算可评估子集）。 */
+export interface InterventionSummary {
+  total: number;
+  by_status: { suggested: number; done: number; skipped: number };
+  by_kind: Record<string, number>;
+  adoption_rate: number | null;
+  effects: {
+    awaiting_retest: number;
+    improved: number;
+    flat: number;
+    declined: number;
+  };
+  intervention_lift_rate: number | null;
+  evaluable_count: number;
+}
+
+export interface ActionPlanView {
+  class_id: number;
+  exam_id: number | null;
+  pending_confirm: number;
+  rows: InterventionRow[];
+  counts: { class: number; group: number; student: number };
+}
+
+export interface StudentActionPlan {
+  report_id: number;
+  markdown: string;
+  as_of: string | null;
+  writer: { model: string; prompt_version: string } | null;
 }
 
 // ---------------------------------------------------------------------------

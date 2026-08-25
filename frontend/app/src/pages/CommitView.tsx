@@ -94,7 +94,9 @@ export default function CommitView() {
           </p>
           {result.quality_report && (
             <p className="text-xs text-ink-soft">
-              已自动生成班级质量报告、班级改进意见 + {result.diagnoses ?? 0} 份学生诊断单，一次生成、随时查看。
+              已自动生成班级质量报告、班级改进意见 + {result.diagnoses ?? 0} 份学生诊断单与改进单
+              {result.interventions ? `，${result.interventions} 条行动建议待确认` : ""}
+              ，一次生成、随时查看。
             </p>
           )}
           {result.skipped.length > 0 && (

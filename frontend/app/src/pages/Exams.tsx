@@ -1,5 +1,9 @@
 import { ArrowRight, Plus } from "@phosphor-icons/react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  ActionPlanPanel,
+  InterventionSummaryStrip,
+} from "../components/ActionPlan";
 import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusDot } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
@@ -281,7 +285,23 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
         </Card>
       )}
 
-      {/* 区块三/四：行动明细 + 闭环条 —— intervention-loop-design 落地后接入（D11 压后） */}
+      {/* 区块三：行动明细（干预闭环唯一全量版面；行内一键确认/跳过） */}
+      <Card className="p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-sm font-semibold">行动明细</p>
+          <p className="text-xs text-ink-faint">
+            {s.actions.pending_confirm > 0
+              ? `${s.actions.pending_confirm} 条待确认`
+              : "暂无待确认建议"}
+          </p>
+        </div>
+        <div className="mt-3">
+          <ActionPlanPanel rows={s.actions.rows} onChanged={sheet.reload} />
+        </div>
+      </Card>
+
+      {/* 区块四：闭环条（采纳率 · 干预提升率 · 待复测） */}
+      <InterventionSummaryStrip summary={s.intervention_summary} />
 
       {/* 区块五：往期考试报告存档 */}
       {s.past_exams.length > 0 && (
