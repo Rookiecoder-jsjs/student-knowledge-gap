@@ -128,57 +128,17 @@ def list_kps(kb_version_id: int | None = None, db: Session = Depends(get_db)):
 
 @router.get("/kb/kps/{kp_id}")
 def kp_detail(kp_id: int, db: Session = Depends(get_db)):
-    """单知识点详情：属性 + 前置链 + 直接前置 + 后继 + contains 关系（kb-edit §4.1）。"""
-    kp = db.get(KnowledgePoint, kp_id)
-    if kp is None:
-        raise HTTPException(404, "知识点不存在")
-    kb = db.get(KbVersion, kp.kb_version_id)
-    graph = _graph(db, kb.id)
-    version_kp_ids = graph.kp_ids()  # 本版本 kp 集合，过滤关系端点（隐式版本隔离）
+    """单知识点详情：属性 + 前置链 + 直接前置 + 后继 + contains 关系（kb-edit §4.1）。
 
-    prereq_chain = [
-        {**_kp_node(graph, aid), "depth": d, "weight": w}
-        for aid, d, w in graph.prerequisite_chain(kp_id, 5)
-    ]
-    direct_prereq = [
-        {**_kp_node(graph, pid), "weight": w}
-        for pid, w in graph.direct_prerequisites(kp_id)
-    ]
-    successors: list[dict] = []
-    containers: list[dict] = []
-    contained: list[dict] = []
-    for rel in db.scalars(
-        select(KpRelation).where(
-            (KpRelation.from_kp_id == kp_id) | (KpRelation.to_kp_id == kp_id)
-        )
-    ):
-        other_id = rel.to_kp_id if rel.from_kp_id == kp_id else rel.from_kp_id
-        if other_id not in version_kp_ids:
-            continue
-        entry = {
-            **_kp_node(graph, other_id),
-            "relation_id": rel.id,
-            "type": rel.type,
-            "weight": rel.weight,
-        }
-        # from->to：from 是 to 的前置。本 kp 为 from -> other 是后继；本 kp 为 to -> other 是直接前置（已由 graph 给出，不重复）
-        if rel.type == "prerequisite":
-            if rel.from_kp_id == kp_id:
-                successors.append(entry)
-        elif rel.type == "contains":
-            if rel.to_kp_id == kp_id:
-                containers.append(entry)
-            else:
-                contained.append(entry)
-    return {
-        **_kp_brief(kp),
-        "kb_version_id": kp.kb_version_id,
-        "prerequisite_chain": prereq_chain,
-        "direct_prerequisites": direct_prereq,
-        "successors": successors,
-        "containers": containers,
-        "contained": contained,
-    }
+    聚合实现在 ``app.mcp_tools.get_kp_detail``（Agent 工具面共用一份，不复制）；
+    本端点只做 id 定位与 HTTP 异常翻译。
+    """
+    from app.mcp_tools import get_kp_detail as kp_detail_impl
+
+    try:
+        return kp_detail_impl(db, _graph(db, _active_kb(db).id), kp_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
 
 
 @router.get("/kb/relations")

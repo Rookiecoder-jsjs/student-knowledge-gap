@@ -1,14 +1,14 @@
-"""sc 领域能力的 MCP Server 入口（Agent 产品化 §5.1，Phase 0 最小实现）。
+"""sc 领域能力的 MCP Server 入口（Agent 产品化 §5.1）。
 
 独立进程，stdio 传输；壳（codex 运行时）作为 MCP client 经此调用 sc 的
 确定性管线。原则：**业务代码零改动**——本文件只做「领域能力 → MCP 工具」的
-薄包装，聚合逻辑一律复用 queries/ 层纯函数，不复制实现。
+薄包装，聚合逻辑在 ``app.mcp_tools``（与 HTTP 路由/pytest 共用），不复制实现。
 
 工具约束（§5.1）：
 - 只读（写操作工具属 Phase 3 且必须过审批门）；
 - 返回不含学生真名（name_or_alias 原则，§9 prompt 最小化）；
 - 每个响应携带 ``_provenance``（来源端点 + 参数），供前端「依据」链接回溯；
-- 大结果集分页是后续工具的硬约束，本工具天然单班粒度无需分页。
+- 大结果集分页是硬约束：get_kp_mastery 弱项优先截断、list_students 分页。
 
 用法（codex 配置示例，见仓库 handbook/ 或 DEPLOY 文档后续补充）：
     [mcp_servers.sc]
@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
+from typing import Annotated
 
 # --- 引导：允许以脚本路径直接启动（cwd 无关）-------------------------------
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -33,7 +34,23 @@ if str(_BACKEND_DIR) not in sys.path:
 
 os.environ.setdefault("SC_DATABASE_URL", f"sqlite:///{_BACKEND_DIR / 'sc.db'}")
 
+import mcp.server.fastmcp as _fastmcp  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from pydantic import Field  # noqa: E402
+
+from app.mcp_tools import (  # noqa: E402
+    ToolInputError,
+    get_exam_summary as _get_exam_summary,
+    get_kp_detail as _get_kp_detail,
+    get_kp_mastery as _get_kp_mastery,
+    get_teaching_progress as _get_teaching_progress,
+    list_students as _list_students,
+    resolve_graph,
+    run_attribution as _run_attribution,
+)
+from app.queries.classes import progress_list  # noqa: E402
+
+_READONLY = {"readOnlyHint": True, "destructiveHint": False}
 
 mcp = FastMCP("sc")
 
@@ -48,12 +65,58 @@ def _provenance(endpoint: str, params: dict | None = None) -> dict:
     }
 
 
-@mcp.tool(
-    annotations={
-        "readOnlyHint": True,  # 壳的免审批判据：mcp_tool_call.rs requires_mcp_tool_approval
-        "destructiveHint": False,
-    },
-)
+def _run(fn, endpoint: str, params: dict | None = None) -> dict:
+    """统一包装：开短会话 → 执行纯函数 → 追加 _provenance。
+
+    LookupError/ToolInputError 翻译为 ValueError——FastMCP 会把异常 message
+    回给模型（isError 载荷），模型可据此自行纠正参数。
+    """
+    from app.db import get_session
+
+    try:
+        with get_session() as session:
+            data = fn(session)
+    except (LookupError, ToolInputError) as e:
+        raise ValueError(str(e)) from e
+    data["_provenance"] = _provenance(endpoint, params)
+    return data
+
+
+def _opt_date(v: str | None) -> date | None:
+    if not v:
+        return None
+    try:
+        return date.fromisoformat(v)
+    except ValueError as e:
+        raise ValueError(f"日期格式应为 YYYY-MM-DD：{v!r}") from e
+
+
+def _check_class_students(session, class_id: int, student_ids: list[int]) -> None:
+    """越界校验（§5.1：school/class 越界一律拒绝）：学生必须都属于该班。"""
+    from sqlalchemy import select
+
+    from app.models import Student
+
+    if not student_ids:
+        return
+    owned = set(
+        session.scalars(
+            select(Student.id).where(
+                Student.class_id == class_id, Student.id.in_(student_ids)
+            )
+        )
+    )
+    bad = [sid for sid in student_ids if sid not in owned]
+    if bad:
+        raise ToolInputError(f"学生 {bad} 不属于班级 {class_id}")
+
+
+# ---------------------------------------------------------------------------
+# 工具注册（§5.1 一期清单七个只读工具）
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=_READONLY)
 def get_class_overview() -> dict:
     """获取所有班级的轻量概览。
 
@@ -61,10 +124,10 @@ def get_class_overview() -> dict:
     教学进度覆盖（已教知识点数 / 分析同分母总知识点数）。班级级统计，不含任何
     学生个人信息。适用于「现在各个班的情况怎么样」「哪个班有待办」类问题。
     """
+    from app.db import get_session
     from app.kb.graph import KpGraph
     from app.kb.resolver import KbNotActiveError, active_kb
     from app.queries.classes_overview import classes_overview
-    from app.db import get_session
 
     with get_session() as db:
         try:
@@ -76,6 +139,135 @@ def get_class_overview() -> dict:
 
     data["_provenance"] = _provenance("GET /classes/overview")
     return data
+
+
+@mcp.tool(annotations=_READONLY)
+def get_exam_summary(
+    class_id: Annotated[int, Field(ge=1, description="班级 id")],
+    exam_id: Annotated[
+        int | None, Field(ge=1, description="考试 id；缺省取该班最近一场")
+    ] = None,
+) -> dict:
+    """获取一场考试的班级质量事实：提交/待审人数、均分最高最低分、逐题得分率（低得分率题标出）、共性薄弱知识点（按全班弱项占比排序）。
+
+    回答「这场考试考得怎么样」「哪些题错得多」「这次考试暴露了什么薄弱点」的主要数据源。exam_id 缺省时自动取该班最近一场考试。
+    """
+    def op(session):
+        graph = resolve_graph(session)
+        return _get_exam_summary(session, graph, class_id, exam_id)
+
+    return _run(op, "GET /classes/{id}/quality-report", {"class_id": class_id, "exam_id": exam_id})
+
+
+@mcp.tool(annotations=_READONLY)
+def get_kp_mastery(
+    class_id: Annotated[int, Field(ge=1, description="班级 id")],
+    student_ids: Annotated[
+        list[int], Field(min_length=1, max_length=50, description="学生 id 列表（须属于该班）")
+    ],
+    kp_codes: Annotated[
+        list[str] | None,
+        Field(description="知识点编码列表（如 [\"P1\"]）；缺省=该班教过的全部知识点"),
+    ] = None,
+    as_of: Annotated[str | None, Field(description="截止日期 YYYY-MM-DD；缺省今天")] = None,
+) -> dict:
+    """查询学生对知识点的掌握度矩阵（薄弱优先）。
+
+    返回弱项全列（低于掌握度底线）+ 掌握点样本 + 截断标记。适用于「这几个孩子哪些点没掌握」「某某的掌握情况」类问题。大结果集自动截断：先看弱项，追问再缩小范围。
+    """
+    def op(session):
+        graph = resolve_graph(session)
+        _check_class_students(session, class_id, student_ids)
+        kp_ids: list[int] | None = None
+        if kp_codes:
+            kp_ids = []
+            for c in kp_codes:
+                try:
+                    kp_ids.append(graph.code(c))
+                except KeyError as e:
+                    raise ToolInputError(f"知识点编码不存在: {c}") from e
+        else:
+            taught = {r["kp_id"] for r in progress_list(session, class_id)}
+            kp_ids = sorted(taught)
+            if not kp_ids:
+                raise ToolInputError(f"班级 {class_id} 尚无教学进度记录，无法推导掌握度")
+        return _get_kp_mastery(session, graph, student_ids, kp_ids, _opt_date(as_of))
+
+    return _run(
+        op,
+        "GET /students/{id}/mastery",
+        {"class_id": class_id, "student_ids": student_ids, "kp_codes": kp_codes, "as_of": as_of},
+    )
+
+
+@mcp.tool(annotations=_READONLY)
+def run_attribution(
+    student_id: Annotated[int, Field(ge=1, description="学生 id")],
+    as_of: Annotated[str | None, Field(description="截止日期 YYYY-MM-DD；缺省今天")] = None,
+) -> dict:
+    """对一名学生运行归因引擎，给出薄弱点的成因假设：类型（前置缺陷/遗忘/易混）、根源知识点、置信度与证据。
+
+    只做实时推导，不写库不改任何数据。假设是「待确认」而非结论——呈现给教师时应保持这个措辞。适用于「他为什么这个点不会」类追问。
+    """
+    def op(session):
+        graph = resolve_graph(session)
+        return _run_attribution(session, graph, student_id, _opt_date(as_of))
+
+    return _run(op, "POST /students/{id}/attributions", {"student_id": student_id, "as_of": as_of})
+
+
+@mcp.tool(annotations=_READONLY)
+def get_kp_detail(
+    code_or_id: Annotated[
+        str, Field(description="知识点编码（如 P3）或数字 id")
+    ],
+) -> dict:
+    """查询单个知识点的结构事实：属性（章节/难度先验/掌握度底线）+ 前置链（深度5）+ 直接前置 + 后继 + 包含关系。
+
+    用于解释「为什么先学 A 才能学 B」「这个点属于哪一章」。当其他工具返回 kp_code 时可用本工具深挖结构背景。
+    """
+    raw = code_or_id.strip()
+    target: str | int
+    if raw.isdigit():
+        target = int(raw)
+    else:
+        target = raw
+
+    def op(session):
+        graph = resolve_graph(session)
+        return _get_kp_detail(session, graph, target)
+
+    return _run(op, "GET /kb/kps/{id}", {"code_or_id": code_or_id})
+
+
+@mcp.tool(annotations=_READONLY)
+def get_teaching_progress(
+    class_id: Annotated[int, Field(ge=1, description="班级 id")],
+) -> dict:
+    """查询班级教学进度：已教过哪些知识点、各自何时教的。
+
+    用于回答「这个点教过没有」「什么时候教的」，以及解释为什么某些知识点没有分析数据（没教过就没有证据门槛）。返回按教学时间排序。
+    """
+    def op(session):
+        return _get_teaching_progress(session, class_id)
+
+    return _run(op, "GET /classes/{id}/progress", {"class_id": class_id})
+
+
+@mcp.tool(annotations=_READONLY)
+def list_students(
+    class_id: Annotated[int, Field(ge=1, description="班级 id")],
+    offset: Annotated[int, Field(ge=0, description="分页偏移")] = 0,
+    limit: Annotated[int, Field(ge=1, le=50, description="每页人数上限（默认50）")] = 50,
+) -> dict:
+    """获取班级名册（分页）：学生 id 与别名列表现。
+
+    名册只含 name_or_alias 别名与外部编码，绝不含真名和分数。用于把教师口述的学生对应到 student_id 再追问掌握度/归因。
+    """
+    def op(session):
+        return _list_students(session, class_id, offset, limit)
+
+    return _run(op, "GET /classes/{id}/students", {"class_id": class_id, "offset": offset})
 
 
 if __name__ == "__main__":
