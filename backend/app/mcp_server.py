@@ -111,6 +111,32 @@ def _check_class_students(session, class_id: int, student_ids: list[int]) -> Non
         raise ToolInputError(f"学生 {bad} 不属于班级 {class_id}")
 
 
+def _guard_class(session, class_id: int) -> None:
+    """MCP 身份传播兜底路线（§5.5）：网关按教师注入 SC_MCP_TEACHER_ID。
+
+    裁决走 app.auth.assert_class_access（与 HTTP 同一实现）；拒绝翻译为
+    ToolInputError——模型可读、不重试同参。
+    """
+    from app import auth as _auth
+
+    ctx = _auth.mcp_context_from_env(session)
+    try:
+        _auth.assert_class_access(session, ctx, class_id)
+    except _auth.PermissionError_ as e:
+        raise ToolInputError(f"无权访问该班级：{e}") from e
+
+
+def _filter_classes_to_allowed(session, classes: list[dict]) -> list[dict]:
+    """get_class_overview 的授权过滤：教师身份在场且非 admin 时收敛列表。"""
+    from app import auth as _auth
+
+    allowed = _auth.allowed_class_ids(session, _auth.mcp_context_from_env(session))
+    if allowed is None:
+        return classes
+    want = set(allowed)
+    return [c for c in classes if c.get("class_id") in want]
+
+
 # ---------------------------------------------------------------------------
 # 工具注册（§5.1 一期清单七个只读工具）
 # ---------------------------------------------------------------------------
@@ -137,6 +163,7 @@ def get_class_overview() -> dict:
         grade7_set = set(KpGraph(db, kb.id).grade7_kp_ids()) if kb is not None else set()
         data = classes_overview(db, grade7_set)
 
+    data["classes"] = _filter_classes_to_allowed(db, data.get("classes", []))
     data["_provenance"] = _provenance("GET /classes/overview")
     return data
 
@@ -153,6 +180,7 @@ def get_exam_summary(
     回答「这场考试考得怎么样」「哪些题错得多」「这次考试暴露了什么薄弱点」的主要数据源。exam_id 缺省时自动取该班最近一场考试。
     """
     def op(session):
+        _guard_class(session, class_id)
         graph = resolve_graph(session)
         return _get_exam_summary(session, graph, class_id, exam_id)
 
@@ -176,6 +204,7 @@ def get_kp_mastery(
     返回弱项全列（低于掌握度底线）+ 掌握点样本 + 截断标记。适用于「这几个孩子哪些点没掌握」「某某的掌握情况」类问题。大结果集自动截断：先看弱项，追问再缩小范围。
     """
     def op(session):
+        _guard_class(session, class_id)
         graph = resolve_graph(session)
         _check_class_students(session, class_id, student_ids)
         kp_ids: list[int] | None = None
@@ -210,6 +239,12 @@ def run_attribution(
     只做实时推导，不写库不改任何数据。假设是「待确认」而非结论——呈现给教师时应保持这个措辞。适用于「他为什么这个点不会」类追问。
     """
     def op(session):
+        from app.models import Student
+
+        stu = session.get(Student, student_id)
+        if stu is None:
+            raise ToolInputError(f"学生 {student_id} 不存在")
+        _guard_class(session, stu.class_id)
         graph = resolve_graph(session)
         return _run_attribution(session, graph, student_id, _opt_date(as_of))
 
@@ -249,6 +284,7 @@ def get_teaching_progress(
     用于回答「这个点教过没有」「什么时候教的」，以及解释为什么某些知识点没有分析数据（没教过就没有证据门槛）。返回按教学时间排序。
     """
     def op(session):
+        _guard_class(session, class_id)
         return _get_teaching_progress(session, class_id)
 
     return _run(op, "GET /classes/{id}/progress", {"class_id": class_id})
@@ -265,6 +301,7 @@ def list_students(
     名册只含 name_or_alias 别名与外部编码，绝不含真名和分数。用于把教师口述的学生对应到 student_id 再追问掌握度/归因。
     """
     def op(session):
+        _guard_class(session, class_id)
         return _list_students(session, class_id, offset, limit)
 
     return _run(op, "GET /classes/{id}/students", {"class_id": class_id, "offset": offset})

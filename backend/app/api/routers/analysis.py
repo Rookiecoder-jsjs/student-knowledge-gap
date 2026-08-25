@@ -11,7 +11,16 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import _active_kb, _as_dt, _graph, get_db
+from app.api.deps import (
+    _active_kb,
+    _as_dt,
+    _graph,
+    get_db,
+    guard_class,
+    require_teacher,
+)
+from app.models import Class as ClassModel
+from app.models import ExamTemplate
 from app.kb.edit import log_correction
 from app.models import Attribution, Class, Student
 from app.pipeline.attribution import (
@@ -38,7 +47,13 @@ router = APIRouter()
 
 
 @router.get("/students/{student_id}/mastery")
-def student_mastery(student_id: int, as_of: date | None = None, db: Session = Depends(get_db)):
+def student_mastery(
+    student_id: int, as_of: date | None = None, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
+    stu = db.get(Student, student_id)
+    if stu is None:
+        raise HTTPException(404, "学生不存在")
+    guard_class(stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -52,10 +67,13 @@ def student_mastery(student_id: int, as_of: date | None = None, db: Session = De
 
 
 @router.get("/students/{student_id}/weaknesses")
-def student_weaknesses(student_id: int, as_of: date | None = None, db: Session = Depends(get_db)):
+def student_weaknesses(
+    student_id: int, as_of: date | None = None, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     stu = db.get(Student, student_id)
     if stu is None:
         raise HTTPException(404, "学生不存在")
+    guard_class(stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -85,10 +103,13 @@ def student_weaknesses(student_id: int, as_of: date | None = None, db: Session =
 
 
 @router.post("/students/{student_id}/attributions")
-def run_attributions(student_id: int, as_of: date | None = None, db: Session = Depends(get_db)):
+def run_attributions(
+    student_id: int, as_of: date | None = None, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     stu = db.get(Student, student_id)
     if stu is None:
         raise HTTPException(404, "学生不存在")
+    guard_class(stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -117,8 +138,18 @@ def run_attributions(student_id: int, as_of: date | None = None, db: Session = D
 
 @router.get("/classes/{class_id}/quality-report")
 def quality_report(
-    class_id: int, exam_id: int, narrative: bool = False, db: Session = Depends(get_db)
+    class_id: int,
+    exam_id: int,
+    narrative: bool = False,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
 ):
+    if db.get(ClassModel, class_id) is None:
+        raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
+    tpl = db.get(ExamTemplate, exam_id)
+    if tpl is not None:
+        guard_class(tpl.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     # get-or-generate 编排在领域层（候选2 diagnosis_orchestrator）：不感知 HTTP
@@ -135,14 +166,15 @@ def quality_report(
 
 
 @router.get("/classes/{class_id}/diagnosis-sheet")
-def class_diagnosis_sheet_endpoint(class_id: int, db: Session = Depends(get_db)):
+def class_diagnosis_sheet_endpoint(class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """班级诊断单聚合（diagnosis-sheet-redesign §1.2/B1）。
 
     滚动现状（跨考试 derive-on-read）+ 最新班级改进意见（LLM/模板）+
     行动与闭环摘要（intervention-loop 落地后接入，本期空占位）。
     """
-    if db.get(Class, class_id) is None:
+    if db.get(ClassModel, class_id) is None:
         raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     return class_diagnosis_sheet(db, graph, class_id)
@@ -154,11 +186,14 @@ def diagnosis(
     exam_id: int | None = None,
     as_of: date | None = None,
     narrative: bool = False,
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """诊断 get-or-generate 三分支编排在领域层（候选2），本端点只做翻译与形状。"""
-    if db.get(Student, student_id) is None:
+    stu = db.get(Student, student_id)
+    if stu is None:
         raise HTTPException(404, "学生不存在")
+    guard_class(stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     try:
@@ -181,10 +216,15 @@ def diagnosis(
 
 
 @router.post("/attributions/{attribution_id}/override")
-def override_attribution(attribution_id: int, req: AttributionOverride, db: Session = Depends(get_db)):
+def override_attribution(
+    attribution_id: int, req: AttributionOverride, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     att = db.get(Attribution, attribution_id)
     if att is None:
         raise HTTPException(404, "归因不存在")
+    _stu = db.get(Student, att.student_id)
+    if _stu is not None:
+        guard_class(_stu.class_id, db, ctx)
     if att.status != "active":
         raise HTTPException(400, f"归因状态为 {att.status}，无需否决")
     att.status = "overridden"
@@ -194,7 +234,9 @@ def override_attribution(attribution_id: int, req: AttributionOverride, db: Sess
 
 
 @router.post("/attributions/{attribution_id}/verify")
-def verify_attribution(attribution_id: int, as_of: date | None = None, db: Session = Depends(get_db)):
+def verify_attribution(
+    attribution_id: int, as_of: date | None = None, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     """诊断题证伪：用诊断证据验证前置缺陷归因预测（improvement-plan §1.4-A）。
 
     诊断题（type=诊断、单 kp）作答提交后派生单 kp 证据；本端点重查前置点掌握度：
@@ -203,6 +245,9 @@ def verify_attribution(attribution_id: int, as_of: date | None = None, db: Sessi
     att = db.get(Attribution, attribution_id)
     if att is None:
         raise HTTPException(404, "归因不存在")
+    _stu = db.get(Student, att.student_id)
+    if _stu is not None:
+        guard_class(_stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -218,7 +263,9 @@ def verify_attribution(attribution_id: int, as_of: date | None = None, db: Sessi
 
 
 @router.get("/attributions/closure")
-def attributions_closure(class_id: int | None = None, db: Session = Depends(get_db)):
+def attributions_closure(
+    class_id: int | None = None, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     """证伪闭环度量（effectiveness-validation-plan V3-度量）。
 
     归因按状态/证伪结论的分布、诊断验证率、教师否决率。
@@ -226,4 +273,8 @@ def attributions_closure(class_id: int | None = None, db: Session = Depends(get_
     端点函数名与导入的领域函数 attribution_closure 刻意不同名——同名会
     shadow 导入、自调用无限递归（活体冒烟实测发现；该端点此前无测试覆盖）。
     """
+    if class_id is not None:
+        if db.get(ClassModel, class_id) is None:
+            raise HTTPException(404, "班级不存在")
+        guard_class(class_id, db, ctx)
     return attribution_closure(db, class_id)

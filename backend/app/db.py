@@ -106,12 +106,14 @@ def _legacy_alter_bootstrap() -> None:
     from scripts.migrate_llm_tokens import add_token_columns
     from scripts.migrate_parse_batch_started_at import add_started_at_column
     from scripts.migrate_report_status import add_status_columns
+    from scripts.migrate_teacher_auth import add_teacher_auth
 
     add_archived_column()
     add_started_at_column()
     add_status_columns()
     add_token_columns()
     drop_legacy_plan_tables()
+    add_teacher_auth()
 
 
 def _alembic_upgrade_head() -> None:

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import _active_kb, _graph, get_db
+from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.intervention import (
     action_plan_view,
     intervention_effect,
@@ -44,11 +44,15 @@ def _student_or_404(db: Session, student_id: int) -> Student:
 
 @router.get("/classes/{class_id}/action-plan")
 def class_action_plan(
-    class_id: int, exam_id: int | None = None, db: Session = Depends(get_db)
+    class_id: int,
+    exam_id: int | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
 ):
     """教学行动方向：全班 → 小组 → 个体三层 + 一键确认用的行 id。"""
     if db.get(Class, class_id) is None:
         raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     return action_plan_view(db, graph, class_id, exam_id=exam_id)
@@ -59,10 +63,12 @@ def student_action_plan(
     student_id: int,
     exam_id: int | None = None,
     as_of: date | None = None,
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """改进单 get-or-generate（同诊断单模式：有已存直接返回，无则补生成）。"""
     stu = _student_or_404(db, student_id)
+    guard_class(stu.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
 
@@ -111,12 +117,31 @@ def list_interventions(
     status: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """干预记录列表（支持按状态过滤；工作台角标用 pending_confirm 计数）。"""
+    """干预记录列表（支持按状态过滤；工作台角标用 pending_confirm 计数）。
+
+    显式传 class_id 时做归属校验；未传时安全模式下收敛到授权班级集合。
+    """
+    from app.api.deps import _auth as auth_mod
+
+    if class_id is not None:
+        if db.get(Class, class_id) is None:
+            raise HTTPException(404, "班级不存在")
+        guard_class(class_id, db, ctx)
+    if student_id is not None:
+        stu = db.get(Student, student_id)
+        if stu is None:
+            raise HTTPException(404, "学生不存在")
+        guard_class(stu.class_id, db, ctx)
     stmt = select(Intervention).order_by(Intervention.id.desc())
     if class_id is not None:
         stmt = stmt.where(Intervention.class_id == class_id)
+    else:
+        allowed = auth_mod.allowed_class_ids(db, ctx)
+        if allowed is not None:
+            stmt = stmt.where(Intervention.class_id.in_(allowed or [-1]))
     if student_id is not None:
         stmt = stmt.where(Intervention.student_id == student_id)
     if status is not None:
@@ -158,12 +183,16 @@ def _row_view(db: Session, r: Intervention, graph=None) -> dict:
 
 @router.post("/interventions/{intervention_id}/confirm")
 def confirm_intervention(
-    intervention_id: int, req: InterventionActionRequest | None = None, db: Session = Depends(get_db)
+    intervention_id: int,
+    req: InterventionActionRequest | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
 ):
     """一键确认执行（body 可选 note；默认当前时间戳 done_at）。"""
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
+    guard_class(iv.class_id, db, ctx)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再确认")
     iv.status = "done"
@@ -177,12 +206,16 @@ def confirm_intervention(
 
 @router.post("/interventions/{intervention_id}/skip")
 def skip_intervention(
-    intervention_id: int, req: InterventionActionRequest | None = None, db: Session = Depends(get_db)
+    intervention_id: int,
+    req: InterventionActionRequest | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
 ):
     """跳过（可选 note；skip 也是信号，不强制理由）。"""
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
+    guard_class(iv.class_id, db, ctx)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再跳过")
     iv.status = "skipped"
@@ -199,8 +232,13 @@ def skip_intervention(
 
 
 @router.get("/interventions/{intervention_id}/effect")
-def single_effect(intervention_id: int, db: Session = Depends(get_db)):
+def single_effect(
+    intervention_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     """单条效果推导（derive-on-read；awaiting_retest 为试点期常态）。"""
+    iv = db.get(Intervention, intervention_id)
+    if iv is not None:
+        guard_class(iv.class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     try:
@@ -210,10 +248,13 @@ def single_effect(intervention_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/interventions/summary")
-def interventions_summary(class_id: int, db: Session = Depends(get_db)):
+def interventions_summary(
+    class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     """闭环度量：采纳率 + 干预提升率（北极星；分母只算可评估子集）。"""
     if db.get(Class, class_id) is None:
         raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
     return intervention_summary(db, graph, class_id)

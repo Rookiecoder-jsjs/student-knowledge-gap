@@ -56,6 +56,9 @@ class Class(Base):
     students: Mapped[list[Student]] = relationship(back_populates="clazz")
     exam_templates: Mapped[list[ExamTemplate]] = relationship(back_populates="clazz")
     progress: Mapped[list[TeachingProgress]] = relationship(back_populates="clazz")
+    teachers: Mapped[list["Teacher"]] = relationship(
+        secondary="teacher_class", back_populates="classes"
+    )
 
 
 class Student(Base):
@@ -71,11 +74,37 @@ class Student(Base):
 
 
 class Teacher(Base):
+    """教师账号（G11 鉴权本体；agent-product-design §5.5）。
+
+    password_hash/salt 为 PBKDF2 产物（与 gateway 账号文件同算法）；两者皆空
+    = 未启用登录（bootstrap 兼容：存量测试与演示环境零改动）。admin=True
+    可管理用量台账等校内管理面。教师↔班级授权在 teacher_class 多对多。
+    """
+
     __tablename__ = "teacher"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     school_id: Mapped[int] = mapped_column(ForeignKey("school.id"))
     name: Mapped[str] = mapped_column(String(100))
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    password_hash: Mapped[bytes | None] = mapped_column(nullable=True)
+    salt: Mapped[bytes | None] = mapped_column(nullable=True)
+    admin: Mapped[bool] = mapped_column(default=False)
+
+    classes: Mapped[list["Class"]] = relationship(
+        secondary="teacher_class", back_populates="teachers"
+    )
+
+
+class TeacherClass(Base):
+    """教师↔班级授权（多对多；权限粒度「校内教师↔自己班级」，D2）。"""
+
+    __tablename__ = "teacher_class"
+    __table_args__ = (UniqueConstraint("teacher_id", "class_id", name="uq_teacher_class"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"))
+    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
 
 
 # ---------------------------------------------------------------------------

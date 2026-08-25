@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.deps import _active_kb, _graph, get_db
+from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.db import utcnow
 # 批量模块经模块引用（batch_mod.X / batch_up.X）而非指名导入：测试会 monkeypatch
 # batch.submit_item 等模块属性（test_photo 的 test_batch_sync_guard），
@@ -54,6 +54,14 @@ from app.schemas import (
 
 router = APIRouter()
 
+
+def _guard_exam(db: Session, ctx, exam_id: int) -> None:
+    """考试归属校验（404 先行，再走班级裁决）。"""
+    tpl = db.get(ExamTemplate, exam_id)
+    if tpl is None:
+        raise HTTPException(404, "考试不存在")
+    guard_class(tpl.class_id, db, ctx)
+
 _BATCH_TERMINAL = {"matched", "unmatched", "failed", "duplicate", "discarded"}
 
 
@@ -77,7 +85,8 @@ def _batch_item_error(e: ValueError) -> HTTPException:
 
 
 @router.post("/exams")
-def create_exam(req: ExamCreate, db: Session = Depends(get_db)):
+def create_exam(req: ExamCreate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    guard_class(req.class_id, db, ctx)
     try:
         tpl = create_template(
             db,
@@ -94,9 +103,10 @@ def create_exam(req: ExamCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/exams/{exam_id}/import-excel")
-async def excel_import(exam_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if db.get(ExamTemplate, exam_id) is None:
-        raise HTTPException(404, "考试不存在")
+async def excel_import(
+    exam_id: int, file: UploadFile = File(...), ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
+    _guard_exam(db, ctx, exam_id)
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
@@ -112,7 +122,11 @@ async def excel_import(exam_id: int, file: UploadFile = File(...), db: Session =
 
 
 @router.post("/exams/{exam_id}/manual")
-def manual_entry(exam_id: int, req: ManualScores, db: Session = Depends(get_db)):
+def manual_entry(exam_id: int, req: ManualScores, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard_exam(db, ctx, exam_id)
+    stu = db.get(Student, req.student_id)
+    if stu is not None:
+        guard_class(stu.class_id, db, ctx)
     try:
         resp = add_manual_response(db, exam_id, req.student_id, req.scores)
     except ValueError as e:
@@ -121,9 +135,8 @@ def manual_entry(exam_id: int, req: ManualScores, db: Session = Depends(get_db))
 
 
 @router.post("/exams/{exam_id}/commit")
-def commit(exam_id: int, db: Session = Depends(get_db)):
-    if db.get(ExamTemplate, exam_id) is None:
-        raise HTTPException(404, "考试不存在")
+def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard_exam(db, ctx, exam_id)
     # 产品语义「提交即自动生成」：commit 只做状态机，报告生成在此显式组合（候选4）。
     result = commit_exam(db, exam_id)
     if result.committed_responses > 0:
@@ -156,9 +169,11 @@ async def photo_template(
     name: str = Form(...),
     exam_date: date = Form(...),
     type: str = Form("单元"),
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """阶段A：试卷照片 → 结构化模板 + 闭集知识点标注（source=LLM，待审核）。"""
+    guard_class(class_id, db, ctx)
     kb = _active_kb(db)
     image = await file.read()
     result = parse_template_from_photo(db, kb.id, class_id, name, exam_date, type, image)
@@ -178,9 +193,14 @@ async def photo_response(
     exam_id: int,
     student_id: int = Form(...),
     file: UploadFile = File(...),
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """阶段B：学生卷照片 → 每题得分/选项（source=photo，状态=待审核）。"""
+    _guard_exam(db, ctx, exam_id)
+    stu = db.get(Student, student_id)
+    if stu is not None:
+        guard_class(stu.class_id, db, ctx)
     image = await file.read()
     try:
         result = parse_student_response_from_photo(db, exam_id, student_id, image)
@@ -197,16 +217,20 @@ async def photo_response(
 
 
 @router.post("/exams/{exam_id}/approve-tags")
-def approve_tags(exam_id: int, reviewer: str = "teacher", db: Session = Depends(get_db)):
+def approve_tags(
+    exam_id: int, reviewer: str = "teacher", ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
     """批量确认 LLM 标注；抽样模式保留低置信/抽样题待逐题确认。"""
+    _guard_exam(db, ctx, exam_id)
     approved = approve_template_tags(db, exam_id, reviewer)
     pending = len({x["question_id"] for x in review_queue(db, exam_id)["unreviewed_tags"]})
     return {"approved": approved, "pending": pending}
 
 
 @router.get("/exams/{exam_id}/review-queue")
-def review_queue_endpoint(exam_id: int, db: Session = Depends(get_db)):
+def review_queue_endpoint(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """异常式审核：未审标注 + 低置信得分（<0.6 强制人工，0.6~0.9 高亮）。"""
+    _guard_exam(db, ctx, exam_id)
     return review_queue(db, exam_id)
 
 
@@ -221,11 +245,11 @@ async def photo_batch(
     exam_id: int,
     files: list[UploadFile] = File(...),
     sync: bool = Form(False),
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """批量上传学生卷 -> 后台解析 + 卷面姓名匹配名单（不阻塞）。"""
-    if db.get(ExamTemplate, exam_id) is None:
-        raise HTTPException(404, "考试不存在")
+    _guard_exam(db, ctx, exam_id)
     uploads = [(f.filename or f"file_{i}.jpg", await f.read()) for i, f in enumerate(files)]
     try:
         saved = batch_up.validate_and_persist(uploads)
@@ -277,7 +301,8 @@ async def photo_batch(
 
 
 @router.get("/exams/{exam_id}/batch-jobs")
-def list_batch_jobs(exam_id: int, db: Session = Depends(get_db)):
+def list_batch_jobs(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard_exam(db, ctx, exam_id)
     # G6：惰性触发运行期看门狗（parsing 卡死改判 failed），教师轮询即自愈
     batch_mod.reconcile_stale_runtime()
     db.expire_all()  # 看门狗可能改了 item 状态，让后续查询重读
@@ -311,10 +336,12 @@ def list_batch_jobs(exam_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/batch-jobs/{job_id}")
-def get_batch_job(job_id: int, db: Session = Depends(get_db)):
+def get_batch_job(job_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     job = db.get(ParseJob, job_id)
     if job is None:
         raise HTTPException(404, "批任务不存在")
+    if job.target.startswith("batch:"):
+        _guard_exam(db, ctx, int(job.target.split(":", 1)[1]))
     # G6：惰性触发运行期看门狗（parsing 超 BATCH_STALE_MINUTES 改判 failed）
     batch_mod.reconcile_stale_runtime()
     db.expire_all()  # 看门狗另开会话提交，重读 item 状态
@@ -370,8 +397,11 @@ def get_batch_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/batch-items/{item_id}/assign")
-def assign_batch_item(item_id: int, req: BatchAssignRequest, db: Session = Depends(get_db)):
+def assign_batch_item(item_id: int, req: BatchAssignRequest, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """未匹配项指派到具体学生：用 payload_json 落库，免重调 LLM。状态机在 batch.assign_item。"""
+    _item = db.get(ParseBatchItem, item_id)
+    if _item is not None and _item.exam_template_id:
+        _guard_exam(db, ctx, _item.exam_template_id)
     try:
         return batch_mod.assign_item(db, item_id, req.student_id)
     except ValueError as e:
@@ -379,8 +409,11 @@ def assign_batch_item(item_id: int, req: BatchAssignRequest, db: Session = Depen
 
 
 @router.post("/batch-items/{item_id}/retry")
-def retry_batch_item(item_id: int, sync: bool = False, db: Session = Depends(get_db)):
+def retry_batch_item(item_id: int, sync: bool = False, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """失败项重试：状态迁移在 batch.retry_item；同步/异步执行决策在调用方。"""
+    _item = db.get(ParseBatchItem, item_id)
+    if _item is not None and _item.exam_template_id:
+        _guard_exam(db, ctx, _item.exam_template_id)
     try:
         item = batch_mod.retry_item(db, item_id)
     except ValueError as e:
@@ -396,8 +429,11 @@ def retry_batch_item(item_id: int, sync: bool = False, db: Session = Depends(get
 
 
 @router.post("/batch-items/{item_id}/discard")
-def discard_batch_item(item_id: int, db: Session = Depends(get_db)):
+def discard_batch_item(item_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """教师主动放弃未匹配/失败项：置 discarded，清 detected_name，删 tempfile。"""
+    _item = db.get(ParseBatchItem, item_id)
+    if _item is not None and _item.exam_template_id:
+        _guard_exam(db, ctx, _item.exam_template_id)
     try:
         batch_mod.discard_item(db, item_id)
     except ValueError as e:
@@ -411,11 +447,12 @@ def discard_batch_item(item_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/template-questions/{question_id}/tags")
-def update_question_tags(question_id: int, req: QuestionTagsUpdate, db: Session = Depends(get_db)):
+def update_question_tags(question_id: int, req: QuestionTagsUpdate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """逐题改标：替换知识点标注，闭集校验，改后即视为教师已审核。"""
     q = db.get(TemplateQuestion, question_id)
     if q is None:
         raise HTTPException(404, "题目不存在")
+    _guard_exam(db, ctx, q.exam_template_id)
     committed = db.scalar(
         select(func.count(ExamResponse.id)).where(
             ExamResponse.exam_template_id == q.exam_template_id,
@@ -458,12 +495,15 @@ def update_question_tags(question_id: int, req: QuestionTagsUpdate, db: Session 
 
 
 @router.patch("/response-answers/{answer_id}")
-def update_answer(answer_id: int, req: AnswerUpdate, db: Session = Depends(get_db)):
+def update_answer(answer_id: int, req: AnswerUpdate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """低置信得分人工修正：仅限「待审核」作答；修正后置信度置 1。"""
     ans = db.get(ResponseAnswer, answer_id)
     if ans is None:
         raise HTTPException(404, "作答记录不存在")
     resp = db.get(ExamResponse, ans.exam_response_id)
+    tpl = db.get(ExamTemplate, resp.exam_template_id)
+    if tpl is not None:
+        guard_class(tpl.class_id, db, ctx)
     if resp.status != "待审核":
         raise HTTPException(400, f"作答已{resp.status}，不能再修改；如需更正请以补录处理")
     q = db.get(TemplateQuestion, ans.template_question_id)

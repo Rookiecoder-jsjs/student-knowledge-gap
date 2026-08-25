@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import admin, analysis, ingestion, intervention, kb, org, reports
+from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, kb, org, reports
 from app.db import init_db
 from app.observability import setup_logging
 
@@ -57,6 +57,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# G11 全局鉴权闸（agent-product-design §5.5）：安全模式下全部业务端点要求
+# Bearer token；白名单 = 探针（/health /ready）+ 登录本身。裁决逻辑在 app.auth，
+# 这里只做「要不要拦」的路径判定——开放模式（无凭据账号）整层透明。
+# 班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
+_EXEMPT_PREFIXES = ("/health", "/ready", "/auth/login")
+
+
+@app.middleware("http")
+async def _auth_gate(request, call_next):  # noqa: ANN001
+    path = request.url.path
+    if not any(path == p or path.startswith(p + "/") for p in _EXEMPT_PREFIXES):
+        from fastapi.responses import JSONResponse
+
+        from app import auth as _auth
+        from app.api.deps import SessionLocal as _SL
+
+        db = _SL()
+        try:
+            if _auth.security_mode_on(db):
+                try:
+                    teacher = _auth.current_teacher(
+                        db, request.headers.get("authorization", "")
+                    )
+                except _auth.AuthError as e:
+                    return JSONResponse({"detail": str(e)}, status_code=401)
+                if teacher is None:
+                    return JSONResponse({"detail": "需要登录"}, status_code=401)
+                request.state.teacher_id = teacher.id
+        finally:
+            db.close()
+    return await call_next(request)
+
 # 健康检查（与各域路由并列；候选2 拆分后独立于业务 router）
 # liveness 探针：只问进程存活（静态 ok），依赖可用性见下方 /ready。
 @app.get("/health")
@@ -104,6 +136,7 @@ def ready():
     return body
 
 
+app.include_router(auth_router.router)
 app.include_router(org.router)
 app.include_router(kb.router)
 app.include_router(ingestion.router)

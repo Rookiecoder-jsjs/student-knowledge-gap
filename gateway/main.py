@@ -61,7 +61,7 @@ def _hash_password(password: str, salt: bytes) -> bytes:
 
 @dataclass
 class Account:
-    """教师账号（gateway 自管，与 sc Teacher 表解耦；teacher_id 用于后续身份注入）。"""
+    """教师账号（gateway 自管；teacher_id 注入 MCP 连接做班级过滤，G11 §5.5）。"""
 
     username: str
     password_hash: bytes
@@ -73,7 +73,8 @@ class Account:
 class Session:
     token: str
     username: str
-    created_at: float
+    teacher_id: int = 0
+    created_at: float = 0.0
 
 
 _ACCOUNTS: dict[str, Account] = {}
@@ -109,8 +110,15 @@ def login(req: LoginReq):
     ):
         raise HTTPException(401, "用户名或密码错误")
     token = secrets.token_urlsafe(32)
-    _SESSIONS[token] = Session(token=token, username=req.username, created_at=time.time())
-    return {"token": token, "teacher": req.username}
+    _SESSIONS[token] = Session(
+        token=token, username=req.username, teacher_id=acc.teacher_id,
+        created_at=time.time(),
+    )
+    return {
+        "token": token,
+        "teacher": req.username,
+        "teacher_id": acc.teacher_id,
+    }
 
 
 def require_auth(authorization: str = Header(default="")) -> Session:
@@ -139,8 +147,12 @@ class Bridge:
     last_used: float = field(default_factory=time.time)
 
     @classmethod
-    async def spawn(cls) -> "Bridge":
+    async def spawn(cls, teacher_id: int = 0) -> "Bridge":
         env = {**os.environ, "CODEX_HOME": CODEX_HOME, "RUST_LOG": "error"}
+        # G11 身份传播兜底路线（§5.5）：MCP Server（sc 脑）从环境读取教师身份，
+        # 据此做班级级过滤——教师甲看不到教师乙的班。零核改（不改壳）。
+        if teacher_id:
+            env["SC_MCP_TEACHER_ID"] = str(teacher_id)
         proc = subprocess.Popen(
             [APP_SERVER_CMD, *APP_SERVER_ARGS],
             stdin=subprocess.PIPE,
@@ -150,6 +162,7 @@ class Bridge:
             text=True,
         )
         self = cls(proc=proc)
+        self.teacher_id = teacher_id
         self._reader = asyncio.create_task(self._read_loop())
         await self.request("initialize", {
             "clientInfo": {"name": "sc-gateway", "title": "sc session gateway", "version": "1.0"},
@@ -207,12 +220,12 @@ class Bridge:
 _BRIDGES: dict[str, Bridge] = {}  # username -> bridge
 
 
-async def get_bridge(username: str) -> Bridge:
+async def get_bridge(username: str, teacher_id: int = 0) -> Bridge:
     br = _BRIDGES.get(username)
     if br is None or br.proc.poll() is not None:
         if br is not None:
             br.stop()
-        br = await Bridge.spawn()
+        br = await Bridge.spawn(teacher_id=teacher_id)
         _BRIDGES[username] = br
     br.last_used = time.time()
     return br
@@ -232,7 +245,7 @@ class RpcReq(BaseModel):
 @app.post("/rpc")
 async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
     """浏览器侧 RPC：initialize/thread/start/turn/start/interrupt 等透传 app-server。"""
-    bridge = await get_bridge(sess.username)
+    bridge = await get_bridge(sess.username, sess.teacher_id)
     try:
         result = await bridge.request(req.method, req.params)
     except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
@@ -243,7 +256,7 @@ async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
 @app.get("/threads/{thread_id}/events")
 async def thread_events(thread_id: str, sess: Session = Depends(require_auth)):
     """SSE：该教师 app-server 的全部通知流（浏览器按 threadId 自行过滤）。"""
-    bridge = await get_bridge(sess.username)
+    bridge = await get_bridge(sess.username, sess.teacher_id)
     queue: asyncio.Queue = asyncio.Queue()
     bridge.subscribers.add(queue)
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import _active_kb, _graph, get_db
+from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.kb.resolver import KbNotActiveError, active_kb
 from app.models import Class, School, Student, TeachingProgress
 from app.queries import classes as query_classes
@@ -19,6 +19,13 @@ from app.queries.classes_overview import classes_overview as query_classes_overv
 from app.schemas import ClassCreate, ProgressPatchRequest, ProgressUpdate, SchoolCreate
 
 router = APIRouter()
+
+
+def _guard(db, ctx, class_id):
+    """404 先行（资源不存在不泄露存在性差异），再走归属裁决。"""
+    if db.get(Class, class_id) is None:
+        raise HTTPException(404, "班级不存在")
+    return guard_class(class_id, db, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +42,7 @@ def create_school(req: SchoolCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/schools/{school_id}/classes")
-def create_class(school_id: int, req: ClassCreate, db: Session = Depends(get_db)):
+def create_class(school_id: int, req: ClassCreate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     if db.get(School, school_id) is None:
         raise HTTPException(404, "学校不存在")
     clazz = Class(school_id=school_id, name=req.name, grade=req.grade, subject=req.subject)
@@ -49,11 +56,18 @@ def create_class(school_id: int, req: ClassCreate, db: Session = Depends(get_db)
         db.add(stu)
         db.flush()
         student_ids.append(stu.id)
+    # 建班者自动获得该班访问权（教师↔自己班级，D2）
+    if ctx.teacher is not None and not ctx.is_admin:
+        from app.models import TeacherClass
+
+        db.add(TeacherClass(teacher_id=ctx.teacher.id, class_id=clazz.id))
+        db.flush()
     return {"class_id": clazz.id, "student_ids": student_ids}
 
 
 @router.post("/classes/{class_id}/progress")
-def update_progress(class_id: int, req: ProgressUpdate, db: Session = Depends(get_db)):
+def update_progress(class_id: int, req: ProgressUpdate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard(db, ctx, class_id)
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
 
@@ -91,13 +105,17 @@ def list_classes(db: Session = Depends(get_db)):
 
 
 @router.get("/classes/overview")
-def classes_overview(db: Session = Depends(get_db)):
+def classes_overview(ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """所有班级的轻量概览（一级「班级概览」页用，一次返回避免前端 N+1）。
 
     每班汇总：待办考试数、最近一场考试状态、教学进度覆盖（与分析层同分母）。
     active kb 缺失时 progress 返回 {0,0}，不抛错——一级页面不能因未导入知识库整页 500。
     聚合逻辑在 ``queries/classes_overview``（候选2 深模块）；本端点只做 kb 解析与兜底。
+    安全模式下按授权班级过滤（教师甲看不到教师乙的班——出口判据①的列表面）。
     """
+    from app.api.deps import _auth as auth_mod
+
+    allowed = auth_mod.allowed_class_ids(db, ctx)
     # 领域层信号（kb.resolver，问题6）：active_kb 无版本返回 None、strict 无 active 抛
     # KbNotActiveError，均按「无知识库」兜底，不把 HTTP 异常当控制流。
     try:
@@ -105,13 +123,16 @@ def classes_overview(db: Session = Depends(get_db)):
     except KbNotActiveError:
         kb = None
     grade7_set = set(_graph(db, kb.id).grade7_kp_ids()) if kb is not None else set()
-    return query_classes_overview(db, grade7_set)
+    data = query_classes_overview(db, grade7_set)
+    if allowed is not None:
+        want = set(allowed)
+        data["classes"] = [c for c in data.get("classes", []) if c.get("class_id") in want]
+    return data
 
 
 @router.get("/classes/{class_id}/students")
-def list_students(class_id: int, db: Session = Depends(get_db)):
-    if db.get(Class, class_id) is None:
-        raise HTTPException(404, "班级不存在")
+def list_students(class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard(db, ctx, class_id)
     students = db.scalars(
         select(Student).where(Student.class_id == class_id).order_by(Student.id)
     )
@@ -130,15 +151,15 @@ def list_students(class_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/classes/{class_id}/progress")
-def get_progress(class_id: int, db: Session = Depends(get_db)):
-    if db.get(Class, class_id) is None:
-        raise HTTPException(404, "班级不存在")
+def get_progress(class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard(db, ctx, class_id)
     return {"class_id": class_id, "progress": query_classes.progress_list(db, class_id)}
 
 
 @router.delete("/classes/{class_id}/progress/{kp_id}")
-def delete_progress(class_id: int, kp_id: int, db: Session = Depends(get_db)):
+def delete_progress(class_id: int, kp_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """取消已教标记（kb-edit §4.2）。既有标记可删（含 archived kp 的残留）。"""
+    _guard(db, ctx, class_id)
     row = db.scalar(
         select(TeachingProgress).where(
             TeachingProgress.class_id == class_id, TeachingProgress.kp_id == kp_id
@@ -156,9 +177,11 @@ def patch_progress(
     class_id: int,
     kp_id: int,
     req: ProgressPatchRequest,
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
     """改 taught_at 日期（kb-edit §4.2）。"""
+    _guard(db, ctx, class_id)
     row = db.scalar(
         select(TeachingProgress).where(
             TeachingProgress.class_id == class_id, TeachingProgress.kp_id == kp_id
@@ -183,18 +206,24 @@ def list_exams(class_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.get("/exams/{exam_id}")
-def exam_detail(exam_id: int, db: Session = Depends(get_db)):
+def exam_detail(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """详情聚合在 queries.exams（逐题逐标签回查 → 一次 in_ 取）。"""
     data = query_exams.exam_detail(db, exam_id)
     if data is None:
         raise HTTPException(404, "考试不存在")
+    _guard(db, ctx, data["class_id"])
     return data
 
 
 @router.get("/exams/{exam_id}/responses")
-def exam_responses(exam_id: int, db: Session = Depends(get_db)):
+def exam_responses(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     """学生×作答状态矩阵（名单原序；低置信题计数一次聚合供审核台角标）。"""
     data = query_exams.exam_responses(db, exam_id)
     if data is None:
         raise HTTPException(404, "考试不存在")
+    from app.models import ExamTemplate
+
+    tpl = db.get(ExamTemplate, exam_id)
+    if tpl is not None:
+        _guard(db, ctx, tpl.class_id)
     return data
