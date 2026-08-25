@@ -1,0 +1,45 @@
+# watchtower 升级链（agent-product-design §8.3 规模期；Phase 4 批次D）。
+#
+# **刻意独立成文件、默认不并入主 docker-compose.yml**：试点期手动装机
+# 手动升级（教师上课时段不被自动更新打断）；规模期镜像分发后，学校盒子
+# 叠加本文件启用定时拉取升级。
+#
+# 启用方式：
+#   cd deploy && docker compose -f docker-compose.yml -f watchtower-compose.yml up -d watchtower
+#
+# 前置（镜像仓库就位后）：
+#   1. 主 compose 的 build 段换成 image: <registry>/sc-backend:<tag> 等
+#      （同版本号三组件打包发布，防漂移——§8.3）；
+#   2. 盒子已 docker login 到镜像仓库；
+#   3. 回滚 = 上一版 tag 一条命令退回（§8.3），DB 迁移走既有双轨机制。
+#
+# 行为要点：
+#   - 只监控带 sc- 前缀 label 的容器（sc.enable-watchtower=true），
+#     不碰宿主机上其他容器（一盒多用途场景安全）；
+#   - 每日凌晨 4:17 拉取（避开整点与教学时段；校内低峰）；
+#   - WATCHTOWER_NO_STARTUP_MESSAGE 减噪；通知走日志（钉钉心跳已有版本字段，
+#     升级成功与否由次日心跳的 version 变化间接可见）。
+
+services:
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: sc-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 私有仓库凭据（docker login 的 config.json）；无仓库时挂空目录即可
+      - ${HOME}/.docker/config.json:/config.json:ro
+    environment:
+      # 定时：每日 04:17（cron 表达式，秒 分 时 日 月 周）
+      WATCHTOWER_SCHEDULE: "0 17 4 * * *"
+      # 只更新打了 sc.enable-watchtower=true label 的容器
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"          # 更新后移除旧镜像（盒子磁盘有限）
+      WATCHTOWER_INCLUDE_RESTARTING: "false"
+      WATCHTOWER_NO_STARTUP_MESSAGE: "true"
+      TZ: Asia/Shanghai
+    restart: unless-stopped
+
+# 主 compose 三服务需打 label 才会被接管（叠加此 override 或装机时改主文件）：
+#   backend/frontend/gateway/backup 各加:
+#     labels:
+#       sc.enable-watchtower: "true"

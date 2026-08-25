@@ -95,7 +95,7 @@ sc/
 │   ├── output/               #   demo 产出（质量分析、个人诊断单）
 │   ├── Dockerfile            #   后端镜像（单 uvicorn 进程，架构不变量；见 DEPLOY.md「单进程原理」）
 │   └── .env                  #   LLM 与质量开关配置（勿入库）
-├── gateway/                  # 会话网关（Python/FastAPI）：鉴权 RPC+SSE、预算护栏三道闸、钉钉出站、触发器内部接口
+├── gateway/                  # 会话网关（Python/FastAPI）：鉴权 RPC+SSE、预算护栏三道闸、钉钉出站、触发器内部接口、每日心跳、rollout 保留期
 ├── runtime/                  # codex 壳（Rust，锚定 rust-v0.149.1；handbook/ 五件套随码走）
 ├── handbook/                 # fork 工程文档：ARCHITECTURE / CRATES / DELTA / BUILD / AGENTS-FORK / FINDINGS
 ├── frontend/
@@ -119,9 +119,10 @@ sc/
 
 ```bash
 cd backend
-python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（317 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（305 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
+python scripts/run_agent_evalset.py               # 🧪 Agent 评测集对账报告 -> output/agent-evalset-report.md
 python -m uvicorn app.main:app --reload           # ⚙️ 启动 API（Swagger 交互文档 /docs）
 ```
 
@@ -233,13 +234,22 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - 三道闸（网关侧）：单任务轮数上限 12 / 单任务 token 预算 200K（超限优雅收尾+自动 interrupt）/ 月度软限额 80% 提醒（仅提醒不断供）
 - 钉钉卡片：新草稿待签发、干预建议待确认、月度用量提醒——出站 WebSocket/webhook 适配校内无公网；未配置静默跳过
 
+**🧪 Agent 评测集（Phase 4，批次A）**
+- 已知真值场景（前置缺陷链/孤立点共性弱项）+ 8 个教师标准问答对覆盖全部只读工具，24 条对账断言——Agent 的每句结论必须与确定性管线一致，不一致即缺陷
+- 回归门禁随 `tests/test_evalset.py` 每次提交跑；装机验收演示 `python scripts/run_agent_evalset.py` 出对账报告
+
+**📡 运维三件套（Phase 4，批次B/C/D）**
+- **每日心跳**：网关出站 POST 版本//ready 结果/磁盘水位到 `SC_HEARTBEAT_URL`——「用户开口前知道谁挂了」；未配置静默空转，载荷零业务数据
+- **保留期限**：`SC_RETENTION_ROLLOUT_DAYS`（默认 0=永不删，保护一班一线程记忆）；备份旧份 gzip 归档 `SC_BACKUP_COMPRESS_DAYS`（默认关）
+- **watchtower 升级链**：规模期镜像分发后叠加 `deploy/watchtower-compose.yml` 启用定时拉取升级（试点期手动装机不启用）；回滚=上一版 tag 一条命令退回
+
 **🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时选日期回看任意时点（报告与弱项面板同一时间基准）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
 
 ---
 
 ## ✅ 验证体系
 
-**测试**：317 项后端 + 19 项网关（`backend/tests|simulator` + `gateway/test_*.py`）🧪。
+**测试**：305 项后端 + 28 项网关（`backend/tests|simulator` + `gateway/test_*.py`）🧪。
 
 ```bash
 cd backend && python -m pytest tests simulator
