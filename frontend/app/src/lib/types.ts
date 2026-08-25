@@ -333,3 +333,56 @@ export interface ClassDiagnosisSheet {
   intervention_summary: null;
   past_exams: PastExamEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// 收件箱与 draft 流（agent-product-design §5.3）
+// ---------------------------------------------------------------------------
+
+export interface InboxItem {
+  report_id: number;
+  type: string;
+  type_label: string;
+  class_id: number | null;
+  subject: string | null;
+  exam_id: number | null;
+  generated_at: string | null;
+  preview: string;
+  chars: number;
+  writer?: { model?: string; prompt_version?: string } | null;
+}
+
+export interface InboxList {
+  status: string;
+  total: number;
+  offset: number;
+  items: InboxItem[];
+  has_more: boolean;
+}
+
+export interface InboxSummary {
+  draft: number;
+  issued: number;
+  archived: number;
+}
+
+export interface ReportFull {
+  report_id: number;
+  type: string;
+  type_label: string;
+  class_id: number | null;
+  student_id: number | null;
+  exam_id: number | null;
+  generated_at: string | null;
+  status: string;
+  status_note: string | null;
+  markdown: string;
+  snapshot: Record<string, unknown> | null;
+}
+
+export interface ReportTransition {
+  report_id: number;
+  status: "draft" | "issued" | "archived";
+  status_changed_at: string;
+  status_note: string | null;
+  type_label: string;
+}

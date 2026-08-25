@@ -10,6 +10,7 @@ import CommitView from "./pages/CommitView";
 import Diagnosis from "./pages/Diagnosis";
 import ExamNew from "./pages/ExamNew";
 import Exams from "./pages/Exams";
+import Inbox from "./pages/Inbox";
 import Kb from "./pages/Kb";
 import Mastery from "./pages/Mastery";
 import Overview from "./pages/Overview";
@@ -60,6 +61,7 @@ export default function App() {
 
         <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
         <Route path="/assistant" element={<Shell><Animated><Assistant /></Animated></Shell>} />
+        <Route path="/inbox" element={<Shell><Animated><Inbox /></Animated></Shell>} />
         <Route path="/c/:classId/exams" element={<Shell><Animated><Exams /></Animated></Shell>} />
         <Route path="/c/:classId/exams/new" element={<Shell><Animated><ExamNew /></Animated></Shell>} />
 

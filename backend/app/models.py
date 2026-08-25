@@ -461,6 +461,12 @@ class Report(Base):
     exam_id: Mapped[int | None] = mapped_column(ForeignKey("exam_template.id"), nullable=True)
     # AI 解读段缓存：首次查看时生成；同 prompt 版本复用，版本升级时刷新
     narrative_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 签发状态机（agent-product-design §5.3 draft 流）：draft=待签发（收件箱可见），
+    # issued=已签发（默认——存量报告与自动生成的确定性报告均为已签发语义），
+    # archived=已打回/归档（保留原文但退出主视图）。写工具产出的报告以 draft 起步。
+    status: Mapped[str] = mapped_column(String(10), default="issued")
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 打回理由等
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,16 @@
-import { BookOpen, ChatCircleDots, Exam, House, Student, TreeStructure } from "@phosphor-icons/react";
+import {
+  BookOpen,
+  ChatCircleDots,
+  Exam,
+  House,
+  Student,
+  Tray,
+  TreeStructure,
+} from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "framer-motion";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { listClasses } from "../lib/api";
+import { inboxSummary, listClasses, type InboxSummary as InboxSummaryData } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 
@@ -25,6 +33,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const reduce = useReducedMotion();
   const classes = useAsync(() => listClasses(), []);
   const currentName = classes.data?.classes.find((c) => c.class_id === cid)?.name;
+
+  // 待签发角标：进入页面与路由切换时刷新（§4.3 收件箱入口）
+  const [draftCount, setDraftCount] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    inboxSummary()
+      .then((s: InboxSummaryData) => {
+        if (alive) setDraftCount(s.draft);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [location.pathname]);
 
   // 手动计算激活态：考试模块也涵盖 /quality 直达入口
   const path = location.pathname;
@@ -90,6 +112,18 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="flex shrink-0 items-center gap-3">
+            <Link
+              to="/inbox"
+              className="relative inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              <Tray size={15} />
+              待签发
+              {(draftCount ?? 0) > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
+                  {draftCount}
+                </span>
+              )}
+            </Link>
             <Link
               to="/assistant"
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"

@@ -9,6 +9,8 @@ import type {
   ClassSummary,
   ExamDetail,
   ExamSummary,
+  InboxList,
+  InboxSummary,
   KpRelationEndpoint,
   KpRelationView,
   KpVersion,
@@ -16,7 +18,9 @@ import type {
   ProgressEntry,
   QualityReportSnapshot,
   QuestionCreate,
+  ReportFull,
   ReportSummary,
+  ReportTransition,
   ResponsesMatrix,
   ReviewQueue,
   StudentInfo,
@@ -467,3 +471,27 @@ export const listReports = (classId?: number, studentId?: number) => {
 
 export const reportDetail = (reportId: number) =>
   request<{ report_id: number; markdown: string; type: string }>(`/reports/${reportId}`);
+
+// 收件箱与 draft 流（§5.3）
+export const inboxList = (status = "draft", classId?: number) => {
+  const q = new URLSearchParams({ status });
+  if (classId) q.set("class_id", String(classId));
+  return request<InboxList>(`/inbox?${q.toString()}`);
+};
+
+export const inboxSummary = () => request<InboxSummary>("/inbox/summary");
+
+export const reportFull = (reportId: number) =>
+  request<ReportFull>(`/reports/${reportId}/full`);
+
+export const issueReport = (reportId: number) =>
+  request<ReportTransition>(`/reports/${reportId}/issue`, {
+    method: "POST",
+    body: JSON.stringify({ note: null }),
+  });
+
+export const rejectReport = (reportId: number, note: string) =>
+  request<ReportTransition>(`/reports/${reportId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });

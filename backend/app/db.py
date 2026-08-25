@@ -103,9 +103,11 @@ def _legacy_alter_bootstrap() -> None:
     """
     from scripts.migrate_kb_archived import add_archived_column
     from scripts.migrate_parse_batch_started_at import add_started_at_column
+    from scripts.migrate_report_status import add_status_columns
 
     add_archived_column()
     add_started_at_column()
+    add_status_columns()
 
 
 def _alembic_upgrade_head() -> None:
