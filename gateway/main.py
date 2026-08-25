@@ -35,10 +35,32 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from gateway.budget import GUARD, BudgetExceeded
+
 app = FastAPI(title="sc session-gateway (Phase 1)")
+
+# §5.7 月度软限额巡查循环（lifespan 启停；钩子=钉钉/日志）
+_STOP: list = [False]
+
+
+@app.on_event("startup")
+async def _start_monthly_watch() -> None:
+    import asyncio
+
+    from gateway import monthly_usage
+
+    monthly_usage.register_monthly_notify_hook(
+        lambda p: print(f"[monthly-usage] {p['message']} ({p['used_tokens']}/{p['limit']})")
+    )
+    asyncio.create_task(monthly_usage.monthly_watch_loop(_STOP))
+
+
+@app.on_event("shutdown")
+async def _stop_monthly_watch() -> None:
+    _STOP[0] = True
 
 APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex")
 APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "app-server").split()
@@ -188,10 +210,41 @@ class Bridge:
                         fut.set_exception(RuntimeError(f"rpc error: {msg['error']}"))
                     else:
                         fut.set_result(msg.get("result"))
-            else:  # 通知 → 广播给所有 SSE 订阅者
+            else:  # 通知 → 护栏观察 → 广播给所有 SSE 订阅者
+                self._observe_budget(msg)
                 event = json.dumps({"type": "event", **msg}, ensure_ascii=False)
                 for q in list(self.subscribers):
                     q.put_nowait(event)
+
+    def _observe_budget(self, msg: dict) -> None:
+        """§5.7 token 闸：thread/tokenUsage/updated 累计，超预算自动收尾本轮。"""
+        try:
+            if msg.get("method") != "thread/tokenUsage/updated":
+                return
+            params = msg.get("params") or {}
+            tid = params.get("threadId") or (params.get("tokenUsage") or {}).get("threadId")
+            usage = params.get("tokenUsage") or {}
+            total = ((usage.get("total") or {}).get("totalTokens")) or 0
+            if not tid or not total:
+                return
+            verdict = GUARD.observe_token_usage(str(tid), int(total))
+            if verdict and verdict.get("action") == "interrupt":
+                # turn_id 从通知取（同载荷），尽力中断——失败只记日志
+                turn_id = params.get("turnId") or usage.get("turnId")
+                if turn_id:
+                    asyncio.get_running_loop().create_task(
+                        self._safe_interrupt(str(tid), str(turn_id), verdict["reason"])
+                    )
+        except Exception:  # noqa: BLE001 —— 护栏观察绝不能打断事件流
+            pass
+
+    async def _safe_interrupt(self, thread_id: str, turn_id: str, reason: str) -> None:
+        try:
+            await self.request("turn/interrupt", {
+                "threadId": thread_id, "turnId": turn_id,
+            }, timeout=10)
+        except Exception as e:  # noqa: BLE001
+            print(f"[budget] interrupt failed: {e}; reason={reason}")
 
     async def request(self, method: str, params: dict, timeout: float = 180.0):
         assert self.proc.stdin
@@ -244,8 +297,22 @@ class RpcReq(BaseModel):
 
 @app.post("/rpc")
 async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
-    """浏览器侧 RPC：initialize/thread/start/turn/start/interrupt 等透传 app-server。"""
+    """浏览器侧 RPC：initialize/thread/start/turn/start/interrupt 等透传 app-server。
+
+    §5.7 轮数/token 双闸挂在 turn/start 前——超限返回 402 与教师可读的
+    收尾说明（优雅降级：已完成调查照常呈现，不是报错）。
+    """
     bridge = await get_bridge(sess.username, sess.teacher_id)
+    if req.method == "turn/start":
+        thread_id = str((req.params or {}).get("threadId") or "")
+        if thread_id:
+            try:
+                GUARD.check_turn_start(thread_id)
+            except BudgetExceeded as e:
+                return JSONResponse(
+                    {"id": req.id, "error": {"message": e.reason, "usage": e.usage}},
+                    status_code=402,
+                )
     try:
         result = await bridge.request(req.method, req.params)
     except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
@@ -285,6 +352,7 @@ def health():
     return {
         "status": "ok",
         "bridges": {u: b.proc.poll() is None for u, b in _BRIDGES.items()},
+        "budget_tasks": GUARD.snapshot(),
     }
 
 
@@ -376,10 +444,14 @@ async def internal_trigger(req: TriggerReq):
         mapping[str(req.class_id)] = tid
         _save_thread_map(mapping)
     try:
+        GUARD.check_turn_start(str(tid))  # 触发式任务同样过 §5.7 双闸
         await bridge.request("turn/start", {
             "threadId": tid,
             "input": [{"type": "text", "text": req.message}],
         }, timeout=240.0)
+    except BudgetExceeded as e:
+        # 触发式任务超限：202 受理但标注未执行（sc 侧 fire-and-forget 不重试风暴）
+        return {"accepted": False, "reason": e.reason, "usage": e.usage}
     except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
         raise HTTPException(502, f"turn/start failed: {e}") from e
     return {"accepted": True, "thread_id": tid, "template_version": req.template_version}
