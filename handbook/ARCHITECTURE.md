@@ -19,7 +19,7 @@
 
 ## 1. Workspace 总览
 
-workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`（第 2–136 行），共 **133** 个成员（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate）。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
+workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`，锚点 133 个成员，Phase 1 裁剪后现为 **120** 个（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate；裁剪账本见 [CRATES.md](CRATES.md)）。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
 
 下面**按职能分组**（分组是我们为导航方便追加的，非上游定义；清单本身来自 members）：
 

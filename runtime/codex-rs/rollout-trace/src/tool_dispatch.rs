@@ -144,9 +144,6 @@ impl ToolDispatchTraceContext {
 
     /// Starts one dispatch-level lifecycle and returns the handle for its result.
     pub(crate) fn start(writer: Arc<TraceWriter>, invocation: ToolDispatchInvocation) -> Self {
-        if suppresses_tool_dispatch_trace(&invocation) {
-            return Self::disabled();
-        }
 
         let context = EnabledToolDispatchTraceContext {
             writer,
@@ -191,11 +188,6 @@ impl ToolDispatchTraceContext {
     }
 }
 
-fn suppresses_tool_dispatch_trace(invocation: &ToolDispatchInvocation) -> bool {
-    matches!(invocation.payload, ToolDispatchPayload::Custom { .. })
-        && invocation.tool_namespace.is_none()
-        && invocation.tool_name == codex_code_mode::PUBLIC_TOOL_NAME
-}
 
 fn record_started(context: &EnabledToolDispatchTraceContext, invocation: ToolDispatchInvocation) {
     let tool_name = invocation.tool_name;
@@ -391,39 +383,6 @@ fn append_with_context_best_effort(
 mod tests {
     use super::*;
 
-    #[test]
-    fn suppresses_only_noncanonical_dispatch_boundaries() {
-        assert!(suppresses_tool_dispatch_trace(&invocation(
-            codex_code_mode::PUBLIC_TOOL_NAME,
-            /*tool_namespace*/ None,
-            ToolDispatchRequester::Model {
-                model_visible_call_id: "call-exec".to_string(),
-            },
-            ToolDispatchPayload::Custom {
-                input: "1 + 1".to_string(),
-            },
-        )));
-        assert!(!suppresses_tool_dispatch_trace(&invocation(
-            "custom_tool",
-            /*tool_namespace*/ None,
-            ToolDispatchRequester::Model {
-                model_visible_call_id: "call-custom".to_string(),
-            },
-            ToolDispatchPayload::Custom {
-                input: "payload".to_string(),
-            },
-        )));
-        assert!(!suppresses_tool_dispatch_trace(&invocation(
-            codex_code_mode::PUBLIC_TOOL_NAME,
-            Some("mcp__server".to_string()),
-            ToolDispatchRequester::Model {
-                model_visible_call_id: "call-namespaced".to_string(),
-            },
-            ToolDispatchPayload::Custom {
-                input: "payload".to_string(),
-            },
-        )));
-    }
 
     #[test]
     fn classifies_interrupt_agent_as_close_agent() {
@@ -451,20 +410,4 @@ mod tests {
         );
     }
 
-    fn invocation(
-        tool_name: &str,
-        tool_namespace: Option<String>,
-        requester: ToolDispatchRequester,
-        payload: ToolDispatchPayload,
-    ) -> ToolDispatchInvocation {
-        ToolDispatchInvocation {
-            thread_id: "thread-1".to_string(),
-            codex_turn_id: "turn-1".to_string(),
-            tool_call_id: "tool-call-1".to_string(),
-            tool_name: tool_name.to_string(),
-            tool_namespace,
-            requester,
-            payload,
-        }
-    }
 }

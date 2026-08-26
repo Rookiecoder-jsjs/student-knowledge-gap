@@ -403,48 +403,6 @@
       },
       "type": "object"
     },
-    "AppBranding": {
-      "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
-      "properties": {
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isDiscoverableApp": {
-          "type": "boolean"
-        },
-        "privacyPolicy": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "termsOfService": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "website": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "isDiscoverableApp"
-      ],
-      "type": "object"
-    },
     "AppConfig": {
       "properties": {
         "approvals_reviewer": {
@@ -500,284 +458,6 @@
           ]
         }
       },
-      "type": "object"
-    },
-    "AppInfo": {
-      "description": "EXPERIMENTAL - app metadata returned by app-list APIs.",
-      "properties": {
-        "appMetadata": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppMetadata"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "branding": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppBranding"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "distributionChannel": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconAssets": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "iconDarkAssets": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isAccessible": {
-          "default": false,
-          "type": "boolean"
-        },
-        "isEnabled": {
-          "default": true,
-          "description": "Whether this app is enabled in config.toml. Example: ```toml [apps.bad_app] enabled = false ```",
-          "type": "boolean"
-        },
-        "labels": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "logoUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "logoUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "pluginDisplayNames": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
-      "type": "object"
-    },
-    "AppListUpdatedNotification": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - notification emitted when the app list changes.",
-      "properties": {
-        "data": {
-          "items": {
-            "$ref": "#/definitions/AppInfo"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "title": "AppListUpdatedNotification",
-      "type": "object"
-    },
-    "AppMetadata": {
-      "properties": {
-        "categories": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "developer": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "firstPartyRequiresInstall": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "review": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AppReview"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "screenshots": {
-          "items": {
-            "$ref": "#/definitions/AppScreenshot"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "seoDescription": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "showInComposerWhenUnlinked": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "subCategories": {
-          "items": {
-            "type": "string"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        },
-        "version": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "versionId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "versionNotes": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "AppReview": {
-      "properties": {
-        "status": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "status"
-      ],
-      "type": "object"
-    },
-    "AppScreenshot": {
-      "properties": {
-        "fileId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "url": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "userPrompt": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "userPrompt"
-      ],
-      "type": "object"
-    },
-    "AppSummary": {
-      "description": "EXPERIMENTAL - app metadata summary for plugin responses.",
-      "properties": {
-        "category": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "name"
-      ],
       "type": "object"
     },
     "AppTemplateSummary": {
@@ -879,42 +559,6 @@
       },
       "type": "object"
     },
-    "AppToolSummary": {
-      "description": "EXPERIMENTAL - metadata returned by app/read.",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "disabledReason": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "isEnabled": {
-          "default": true,
-          "type": "boolean"
-        },
-        "isReadOnly": {
-          "default": false,
-          "type": "boolean"
-        },
-        "name": {
-          "type": "string"
-        },
-        "title": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "description",
-        "name"
-      ],
-      "type": "object"
-    },
     "AppToolsConfig": {
       "type": "object"
     },
@@ -978,154 +622,6 @@
           "type": "boolean"
         }
       },
-      "type": "object"
-    },
-    "AppsInstalledParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "Read the committed installed connector runtime snapshot.",
-      "properties": {
-        "forceRefresh": {
-          "description": "When true and Apps are permitted, refresh and publish the hosted connector runtime tool snapshot first.",
-          "type": "boolean"
-        },
-        "threadId": {
-          "description": "Optional loaded thread id used to evaluate effective app configuration.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "AppsInstalledParams",
-      "type": "object"
-    },
-    "AppsInstalledResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "The installed connectors in one committed runtime snapshot.",
-      "properties": {
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/InstalledApp"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "apps"
-      ],
-      "title": "AppsInstalledResponse",
-      "type": "object"
-    },
-    "AppsListParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - list available apps/connectors.",
-      "properties": {
-        "cursor": {
-          "description": "Opaque pagination cursor returned by a previous call.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "forceRefetch": {
-          "description": "When true, bypass app caches and fetch the latest data from sources.",
-          "type": "boolean"
-        },
-        "limit": {
-          "description": "Optional page size; defaults to a reasonable server-side value.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "threadId": {
-          "description": "Optional thread id used to evaluate app feature gating from that thread's config.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "title": "AppsListParams",
-      "type": "object"
-    },
-    "AppsListResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - app list response.",
-      "properties": {
-        "data": {
-          "items": {
-            "$ref": "#/definitions/AppInfo"
-          },
-          "type": "array"
-        },
-        "nextCursor": {
-          "description": "Opaque cursor to pass to the next call to continue after the last item. If None, there are no more items to return.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "data"
-      ],
-      "title": "AppsListResponse",
-      "type": "object"
-    },
-    "AppsReadParams": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - read metadata for specific apps/connectors.",
-      "properties": {
-        "appIds": {
-          "description": "App ids to read. The server accepts at most 100 ids and deduplicates repeated ids while preserving their first-request order.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "includeTools": {
-          "description": "When true, include display-only public tool summaries in the returned metadata.",
-          "type": "boolean"
-        },
-        "threadId": {
-          "description": "Optional loaded thread id used to evaluate effective app configuration.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "appIds"
-      ],
-      "title": "AppsReadParams",
-      "type": "object"
-    },
-    "AppsReadResponse": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "description": "EXPERIMENTAL - app/read response.",
-      "properties": {
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/ConnectorMetadata"
-          },
-          "type": "array"
-        },
-        "missingAppIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "apps",
-        "missingAppIds"
-      ],
-      "title": "AppsReadResponse",
       "type": "object"
     },
     "AskForApproval": {
@@ -2392,78 +1888,6 @@
             "params"
           ],
           "title": "Plugin/share/deleteRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "app/read"
-              ],
-              "title": "App/readRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsReadParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/readRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "app/list"
-              ],
-              "title": "App/listRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsListParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/listRequest",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "id": {
-              "$ref": "#/definitions/RequestId"
-            },
-            "method": {
-              "enum": [
-                "app/installed"
-              ],
-              "title": "App/installedRequestMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppsInstalledParams"
-            }
-          },
-          "required": [
-            "id",
-            "method",
-            "params"
-          ],
-          "title": "App/installedRequest",
           "type": "object"
         },
         {
@@ -5433,68 +4857,6 @@
       },
       "required": [
         "hooks"
-      ],
-      "type": "object"
-    },
-    "ConnectorMetadata": {
-      "description": "EXPERIMENTAL - metadata returned by app/read.",
-      "properties": {
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "distributionChannel": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "iconUrlDark": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "installUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        },
-        "pluginDisplayNames": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "toolSummaries": {
-          "items": {
-            "$ref": "#/definitions/AppToolSummary"
-          },
-          "type": [
-            "array",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "id",
-        "name"
       ],
       "type": "object"
     },
@@ -8675,35 +8037,6 @@
         }
       ]
     },
-    "InstalledApp": {
-      "description": "Installed connector runtime state.",
-      "properties": {
-        "callable": {
-          "description": "Whether the connector is enabled and has a non-synthetic, model-visible tool allowed by effective MCP and app/tool policy in the committed runtime snapshot.",
-          "type": "boolean"
-        },
-        "enabled": {
-          "description": "Effective enabled state after applying global, workspace, local, and managed configuration at read time.",
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "runtimeName": {
-          "description": "Best-effort name carried by the runtime tool catalog. Canonical app metadata remains owned by `app/read`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "callable",
-        "enabled",
-        "id"
-      ],
-      "type": "object"
-    },
     "InternalChatMessageMetadataPassthrough": {
       "description": "Internal Responses API passthrough metadata copied into underlying chat messages.\n\nResponses API strongly types this payload. Do not modify it without first getting API approval and making the corresponding Responses API change.",
       "properties": {
@@ -10997,12 +10330,6 @@
           },
           "type": "array"
         },
-        "apps": {
-          "items": {
-            "$ref": "#/definitions/AppSummary"
-          },
-          "type": "array"
-        },
         "description": {
           "type": [
             "string",
@@ -11061,7 +10388,6 @@
       },
       "required": [
         "appTemplates",
-        "apps",
         "hooks",
         "marketplaceName",
         "mcpServers",
@@ -11148,18 +10474,11 @@
     "PluginInstallResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
-        "appsNeedingAuth": {
-          "items": {
-            "$ref": "#/definitions/AppSummary"
-          },
-          "type": "array"
-        },
         "authPolicy": {
           "$ref": "#/definitions/PluginAuthPolicy"
         }
       },
       "required": [
-        "appsNeedingAuth",
         "authPolicy"
       ],
       "title": "PluginInstallResponse",
@@ -15433,26 +14752,6 @@
             "params"
           ],
           "title": "Account/rateLimits/updatedNotification",
-          "type": "object"
-        },
-        {
-          "properties": {
-            "method": {
-              "enum": [
-                "app/list/updated"
-              ],
-              "title": "App/list/updatedNotificationMethod",
-              "type": "string"
-            },
-            "params": {
-              "$ref": "#/definitions/AppListUpdatedNotification"
-            }
-          },
-          "required": [
-            "method",
-            "params"
-          ],
-          "title": "App/list/updatedNotification",
           "type": "object"
         },
         {

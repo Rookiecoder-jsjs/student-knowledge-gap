@@ -26,9 +26,6 @@ use codex_analytics::build_track_events_context;
 use codex_api::HostedFileUploadContext;
 use codex_config::ConfigLayerSource;
 use codex_config::types::AppToolApproval;
-use codex_connectors::AppToolPolicy;
-use codex_connectors::AppToolPolicyEvaluator;
-use codex_connectors::AppToolPolicyInput;
 use codex_features::Feature;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_mcp::MCP_TOOL_CODEX_APPS_META_KEY;
@@ -36,8 +33,6 @@ use codex_mcp::McpPermissionPromptAutoApproveContext;
 use codex_mcp::PreparedMcpCall;
 use codex_mcp::SandboxState;
 use codex_mcp::ToolInfo;
-use codex_mcp::auth_elicitation_completed_result;
-use codex_mcp::build_auth_elicitation_plan;
 use codex_mcp::mcp_permission_prompt_is_auto_approved;
 use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::items::McpToolCallError;
@@ -164,56 +159,12 @@ pub(crate) async fn handle_mcp_tool_call(
     };
     let metadata = mcp_tool_metadata(&prepared_call);
     let item_metadata = McpToolCallItemMetadata::from_tool_metadata(&server, Some(&metadata));
-    let runtime_config = prepared_call.config();
-    let app_tool_policy = if server == CODEX_APPS_MCP_SERVER_NAME {
-        let annotations = metadata.annotations.as_ref();
-        AppToolPolicyEvaluator::new(&runtime_config.config_layer_stack).policy(AppToolPolicyInput {
-            connector_id: metadata.connector_id.as_deref(),
-            tool_name: &tool_name,
-            tool_title: metadata.tool_title.as_deref(),
-            destructive_hint: annotations.and_then(|annotations| annotations.destructive_hint),
-            open_world_hint: annotations.and_then(|annotations| annotations.open_world_hint),
-        })
-    } else {
-        AppToolPolicy::default()
-    };
-    let approval_mode = if server == CODEX_APPS_MCP_SERVER_NAME {
-        app_tool_policy.approval
-    } else {
-        prepared_call.tool_approval_mode()
-    };
+    // apps 审批策略随 connectors 裁剪移除：approval 恒走工具预设模式。
+    let approval_mode = prepared_call.tool_approval_mode();
 
     let connector_id = metadata.connector_id.clone();
     let connector_name = metadata.connector_name.clone();
 
-    if server == CODEX_APPS_MCP_SERVER_NAME && !app_tool_policy.enabled {
-        let result = notify_mcp_tool_call_skip(
-            sess.as_ref(),
-            turn_context.as_ref(),
-            &call_id,
-            invocation,
-            item_metadata.clone(),
-            "MCP tool call blocked by app configuration".to_string(),
-            /*already_started*/ false,
-        )
-        .await;
-        let status = if result.is_ok() { "ok" } else { "error" };
-        let outcome = McpCallMetricOutcome::from_status(status);
-        emit_mcp_call_metrics(
-            turn_context.as_ref(),
-            &outcome,
-            &server,
-            &tool_name,
-            connector_id.as_deref(),
-            connector_name.as_deref(),
-            /*duration*/ None,
-        );
-        return HandledMcpToolCall {
-            result: CallToolResult::from_result(result),
-            tool_input: arguments_value
-                .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
-        };
-    }
     sess.register_mcp_tool_approval_metadata(turn_context, &call_id, &invocation, metadata.clone())
         .await;
     notify_mcp_tool_call_started(
@@ -490,16 +441,7 @@ async fn handle_approved_mcp_tool_call(
                 &turn_context.model_info.input_modalities,
                 Ok(result),
             )?;
-            Ok(maybe_request_codex_apps_auth_elicitation(
-                sess,
-                turn_context,
-                prepared_call.config().approval_policy.value(),
-                call_id,
-                &invocation.server,
-                Some(&metadata),
-                result,
-            )
-            .await)
+            Ok(result)
         }
         .await;
         record_mcp_result_span_telemetry(&Span::current(), &result);
@@ -657,94 +599,7 @@ fn truncate_str_to_char_boundary(value: &str, max_chars: usize) -> &str {
     }
 }
 
-async fn maybe_request_codex_apps_auth_elicitation(
-    sess: &Arc<Session>,
-    turn_context: &TurnContext,
-    approval_policy: AskForApproval,
-    call_id: &str,
-    server: &str,
-    metadata: Option<&McpToolApprovalMetadata>,
-    result: CallToolResult,
-) -> CallToolResult {
-    if server != CODEX_APPS_MCP_SERVER_NAME {
-        return result;
-    }
 
-    if !turn_context
-        .config
-        .features
-        .enabled(Feature::AuthElicitation)
-    {
-        return result;
-    }
-
-    match approval_policy {
-        AskForApproval::Never => return result,
-        AskForApproval::Granular(granular_config) if !granular_config.allows_mcp_elicitations() => {
-            return result;
-        }
-        AskForApproval::OnRequest | AskForApproval::UnlessTrusted | AskForApproval::Granular(_) => {
-        }
-    }
-
-    let connector_id = metadata.and_then(|metadata| metadata.connector_id.as_deref());
-    let connector_name = metadata.and_then(|metadata| metadata.connector_name.as_deref());
-    let install_url = connector_id.map(|connector_id| {
-        codex_connectors::metadata::connector_install_url(
-            connector_name.unwrap_or(connector_id),
-            connector_id,
-        )
-    });
-    let Some(plan) =
-        build_auth_elicitation_plan(call_id, &result, connector_id, connector_name, install_url)
-    else {
-        return result;
-    };
-
-    let request_id = rmcp::model::RequestId::String(plan.elicitation.elicitation_id.clone().into());
-    let request = ElicitationRequest::Url {
-        meta: Some(plan.elicitation.meta),
-        message: plan.elicitation.message,
-        url: plan.elicitation.url,
-        elicitation_id: plan.elicitation.elicitation_id,
-    };
-    let response = sess
-        .request_mcp_server_elicitation(
-            turn_context,
-            CODEX_APPS_MCP_SERVER_NAME.to_string(),
-            request_id,
-            request,
-        )
-        .await
-        .response;
-    if !response
-        .as_ref()
-        .is_some_and(|response| response.action == ElicitationAction::Accept)
-    {
-        return result;
-    }
-
-    refresh_codex_apps_after_connector_auth(sess, turn_context).await;
-    auth_elicitation_completed_result(&plan.auth_failure, result.meta)
-}
-
-async fn refresh_codex_apps_after_connector_auth(sess: &Arc<Session>, turn_context: &TurnContext) {
-    let mcp_tools_result = sess.hard_refresh_latest_codex_apps_tools().await;
-
-    match mcp_tools_result {
-        Ok(mcp_tools) => {
-            let auth = sess.services.auth_manager.auth().await;
-            connectors::refresh_accessible_connectors_cache_from_mcp_tools(
-                &turn_context.config,
-                auth.as_ref(),
-                &mcp_tools,
-            );
-        }
-        Err(err) => {
-            tracing::warn!("failed to refresh Codex Apps tools after connector auth: {err:#}");
-        }
-    }
-}
 
 async fn augment_mcp_tool_request_meta_with_sandbox_state(
     step_context: &StepContext,

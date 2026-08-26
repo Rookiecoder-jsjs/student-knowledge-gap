@@ -16,7 +16,6 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::spec_plan::finalize_tool_router;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
-use codex_tools::DiscoverableTool;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
 use std::borrow::Cow;
@@ -70,17 +69,7 @@ pub struct ToolRouter {
     model_visible_specs: Arc<[ToolSpec]>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ToolSuggestPresentation {
-    ListTool,
-    RecommendationContext,
-}
 
-#[derive(Clone, Debug)]
-pub(crate) struct ToolSuggestCandidates {
-    pub(crate) tools: Vec<DiscoverableTool>,
-    pub(crate) presentation: ToolSuggestPresentation,
-}
 
 impl ToolRouter {
     #[cfg(test)]
@@ -205,9 +194,9 @@ impl ToolRouter {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))] // 仅测试直接调用；生产走 with_terminal_outcome
     #[instrument(level = "trace", skip_all, err)]
-    pub async fn dispatch_tool_call_with_code_mode_result(
+    pub async fn dispatch_tool_call(
         &self,
         session: Arc<Session>,
         step_context: Arc<StepContext>,
@@ -216,7 +205,7 @@ impl ToolRouter {
         call: ToolCall,
         source: ToolCallSource,
     ) -> Result<AnyToolResult, FunctionCallError> {
-        self.dispatch_tool_call_with_code_mode_result_inner(
+        self.dispatch_tool_call_inner(
             session,
             step_context,
             cancellation_token,
@@ -240,7 +229,7 @@ impl ToolRouter {
         source: ToolCallSource,
         terminal_outcome_reached: Arc<AtomicBool>,
     ) -> Result<AnyToolResult, FunctionCallError> {
-        self.dispatch_tool_call_with_code_mode_result_inner(
+        self.dispatch_tool_call_inner(
             session,
             step_context,
             cancellation_token,
@@ -253,7 +242,7 @@ impl ToolRouter {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn dispatch_tool_call_with_code_mode_result_inner(
+    async fn dispatch_tool_call_inner(
         &self,
         session: Arc<Session>,
         step_context: Arc<StepContext>,

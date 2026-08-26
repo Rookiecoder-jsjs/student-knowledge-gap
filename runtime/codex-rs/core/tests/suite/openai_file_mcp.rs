@@ -5,6 +5,13 @@ use std::path::Path;
 
 use anyhow::Context;
 use anyhow::Result;
+use core_test_support::apps_test_server::AppsTestServer;
+use core_test_support::PathExt;
+use core_test_support::apps_test_server::DOCUMENT_EXTRACT_TEXT_RESOURCE_URI;
+use core_test_support::apps_test_server::CALENDAR_EXTRACT_TEXT_TOOL_NAME;
+use core_test_support::apps_test_server::SEARCH_CALENDAR_NAMESPACE as DOCUMENT_EXTRACT_NAMESPACE;
+use core_test_support::apps_test_server::SEARCH_CALENDAR_EXTRACT_TEXT_TOOL as DOCUMENT_EXTRACT_TOOL;
+use core_test_support::apps_test_server::DIRECT_CALENDAR_EXTRACT_TEXT_TOOL as DOCUMENT_EXTRACT_HOOK_MATCHER;
 use codex_core::config::Config;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -14,15 +21,6 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
-use core_test_support::PathExt;
-use core_test_support::apps_test_server::AppsTestServer;
-use core_test_support::apps_test_server::CALENDAR_EXTRACT_TEXT_TOOL_NAME;
-use core_test_support::apps_test_server::DIRECT_CALENDAR_EXTRACT_TEXT_TOOL as DOCUMENT_EXTRACT_HOOK_MATCHER;
-use core_test_support::apps_test_server::DOCUMENT_EXTRACT_TEXT_RESOURCE_URI;
-use core_test_support::apps_test_server::SEARCH_CALENDAR_EXTRACT_TEXT_TOOL as DOCUMENT_EXTRACT_TOOL;
-use core_test_support::apps_test_server::SEARCH_CALENDAR_NAMESPACE as DOCUMENT_EXTRACT_NAMESPACE;
-use core_test_support::apps_test_server::apps_enabled_builder;
-use core_test_support::apps_test_server::recorded_apps_tool_call_by_name;
 use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::ev_assistant_message;
@@ -38,13 +36,14 @@ use core_test_support::skip_if_sandbox;
 use core_test_support::skip_if_target_windows;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::executor_path_uri;
+use core_test_support::apps_test_server::recorded_apps_tool_call_by_name;
+use core_test_support::apps_test_server::apps_enabled_builder;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
-use wiremock::matchers::body_json;
 use wiremock::matchers::body_partial_json;
 use wiremock::matchers::header;
 use wiremock::matchers::method;
@@ -328,91 +327,3 @@ async fn codex_apps_file_params_pass_uploaded_file_to_post_tool_use_hook() -> Re
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn codex_apps_file_params_stream_allowed_file_under_restricted_read_policy() -> Result<()> {
-    skip_if_target_windows!(
-        Ok(()),
-        "Windows restricted-token sandbox cannot enforce deny-read policies"
-    );
-    skip_if_sandbox!(Ok(()));
-
-    let server = start_mock_server().await;
-    let apps_server = AppsTestServer::mount(&server).await?;
-    mount_file_upload_mocks(&server, STREAMED_FILE_SIZE as u64).await;
-
-    let mut builder = apps_enabled_builder(apps_server.chatgpt_base_url)
-        .with_config(|config| restrict_apps_upload_reads(config, "private.txt"))
-        .with_workspace_setup(|cwd, fs| async move {
-            let report_path = PathUri::from_abs_path(&cwd.join("report.txt"));
-            fs.write_file(
-                &report_path,
-                vec![b'x'; STREAMED_FILE_SIZE],
-                Default::default(),
-                /*sandbox*/ None,
-            )
-            .await?;
-            Ok(())
-        });
-    let test = builder.build_with_auto_env(&server).await?;
-    let permission_profile = test.config.permissions.permission_profile().clone();
-
-    run_extract_turn(&test, &server, permission_profile).await?;
-
-    let apps_tool_call =
-        recorded_apps_tool_call_by_name(&server, CALENDAR_EXTRACT_TEXT_TOOL_NAME).await;
-    assert_eq!(
-        apps_tool_call.pointer("/params/arguments/file"),
-        Some(&schema_filtered_uploaded_file(&server))
-    );
-    server.verify().await;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn codex_apps_file_params_reject_denied_file_before_upload() -> Result<()> {
-    skip_if_target_windows!(
-        Ok(()),
-        "Windows restricted-token sandbox cannot enforce deny-read policies"
-    );
-    skip_if_sandbox!(Ok(()));
-
-    let server = start_mock_server().await;
-    let apps_server = AppsTestServer::mount(&server).await?;
-    let mut builder = apps_enabled_builder(apps_server.chatgpt_base_url)
-        .with_config(|config| restrict_apps_upload_reads(config, "report.txt"))
-        .with_workspace_setup(|cwd, fs| async move {
-            let report_path = PathUri::from_abs_path(&cwd.join("report.txt"));
-            fs.write_file(
-                &report_path,
-                b"private".to_vec(),
-                Default::default(),
-                /*sandbox*/ None,
-            )
-            .await?;
-            Ok(())
-        });
-    let test = builder.build_with_auto_env(&server).await?;
-    let permission_profile = test.config.permissions.permission_profile().clone();
-
-    let responses = run_extract_turn(&test, &server, permission_profile).await?;
-    let requests = responses.requests();
-    let output = requests[2]
-        .function_call_output_text("extract-call-1")
-        .context("denied Apps upload should return a tool error")?;
-
-    assert!(
-        output.contains("failed to upload `report.txt`")
-            && (output.contains("Permission denied") || output.contains("Operation not permitted")),
-        "unexpected upload error: {output}"
-    );
-    assert!(
-        server
-            .received_requests()
-            .await
-            .context("mock server should expose received requests")?
-            .iter()
-            .all(|request| request.url.path() != "/files"),
-        "denied files must not start an upload"
-    );
-    Ok(())
-}

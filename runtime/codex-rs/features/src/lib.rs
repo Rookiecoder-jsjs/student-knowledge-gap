@@ -16,8 +16,6 @@ use toml::Table;
 
 mod feature_configs;
 mod legacy;
-pub use feature_configs::CodeModeConfigToml;
-pub use feature_configs::CodeModeHostConfigToml;
 pub use feature_configs::CurrentTimeReminderConfigToml;
 pub use feature_configs::CurrentTimeReminderDeliveryMode;
 pub use feature_configs::CurrentTimeSource;
@@ -101,16 +99,6 @@ pub enum Feature {
     // Experimental
     /// Record model-attempted tool calls in internal Responses metadata.
     ExecutedToolCallMetadata,
-    /// Enable JavaScript code mode backed by the standalone host process.
-    CodeMode,
-    /// Removed compatibility flag for the configurable code-mode exec yield timeout.
-    CodeModeBufferedExec,
-    /// Run JavaScript code mode in the standalone host process.
-    CodeModeHost,
-    /// Terminate active code mode cells when their turn is interrupted.
-    CodeModeInterrupt,
-    /// Restrict model-visible tools to code mode entrypoints (`exec`, `wait`).
-    CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
     /// Route shell tool execution through the zsh exec bridge.
@@ -615,11 +603,7 @@ impl Features {
         self.enabled.iter().copied().collect()
     }
 
-    pub fn normalize_dependencies(&mut self) {
-        if self.enabled(Feature::CodeModeOnly) && !self.enabled(Feature::CodeMode) {
-            self.enable(Feature::CodeMode);
-        }
-    }
+    pub fn normalize_dependencies(&mut self) {}
 }
 
 fn legacy_usage_notice(alias: &str, feature: Feature) -> (String, Option<String>) {
@@ -704,10 +688,6 @@ pub struct FeaturesToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_registry: Option<ToolRegistryConfigToml>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_mode: Option<FeatureToml<CodeModeConfigToml>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code_mode_host: Option<FeatureToml<CodeModeHostConfigToml>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub non_prefixed_mcp_tool_names: Option<FeatureToml<NonPrefixedMcpToolNamesConfigToml>>,
     #[serde(
         default,
@@ -742,12 +722,6 @@ impl Features {
 impl FeaturesToml {
     pub fn entries(&self) -> BTreeMap<String, bool> {
         let mut entries = self.entries.clone();
-        if let Some(enabled) = self.code_mode.as_ref().and_then(FeatureToml::enabled) {
-            entries.insert(Feature::CodeMode.key().to_string(), enabled);
-        }
-        if let Some(enabled) = self.code_mode_host.as_ref().and_then(FeatureToml::enabled) {
-            entries.insert(Feature::CodeModeHost.key().to_string(), enabled);
-        }
         if let Some(enabled) = self
             .non_prefixed_mcp_tool_names
             .as_ref()
@@ -894,36 +868,6 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::ExecutedToolCallMetadata,
         key: "executed_tool_call_metadata",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodeMode,
-        key: "code_mode",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodeModeBufferedExec,
-        key: "code_mode_buffered_exec",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodeModeHost,
-        key: "code_mode_host",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::CodeModeInterrupt,
-        key: "code_mode_interrupt",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::CodeModeOnly,
-        key: "code_mode_only",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

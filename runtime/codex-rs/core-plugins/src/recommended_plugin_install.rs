@@ -8,9 +8,7 @@ pub async fn hydrate_selected_recommended_plugin_install_metadata(
     auth: Option<&CodexAuth>,
     mut tool: DiscoverableTool,
 ) -> Result<Option<DiscoverableTool>, RemotePluginCatalogError> {
-    let DiscoverableTool::Plugin(plugin) = &mut tool else {
-        return Ok(Some(tool));
-    };
+    let DiscoverableTool::Plugin(plugin) = &mut tool;
     let remote_plugin_id = plugin.remote_plugin_id.clone().ok_or_else(|| {
         RemotePluginCatalogError::UnexpectedResponse(format!(
             "recommended plugin `{}` is missing remote plugin identity",

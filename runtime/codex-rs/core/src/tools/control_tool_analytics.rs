@@ -1,4 +1,3 @@
-use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use codex_analytics::ControlToolCallFact;
 use codex_analytics::ControlToolCallStatus;
@@ -37,10 +36,7 @@ impl Drop for ControlToolCallGuard<'_> {
                 thread_id: invocation.session.thread_id.to_string(),
                 turn_id: invocation.turn.sub_id.clone(),
                 call_id: invocation.call_id.clone(),
-                cell_id: match &invocation.source {
-                    ToolCallSource::CodeMode { cell_id, .. } => Some(cell_id.clone()),
-                    ToolCallSource::Direct | ToolCallSource::DirectPlaintextMessage => None,
-                },
+                cell_id: None,
                 tool_name: invocation.tool_name.name.clone(),
                 started_at_ms: self.started_at_ms,
                 completed_at_ms: self

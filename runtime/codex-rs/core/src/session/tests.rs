@@ -83,7 +83,6 @@ use codex_utils_path_uri::PathUri;
 use std::collections::BTreeMap;
 use tracing::Span;
 
-use crate::connectors::AppInfo;
 use crate::rollout::recorder::RolloutRecorder;
 use crate::state::ActiveTurn;
 use crate::state::TaskKind;
@@ -508,17 +507,6 @@ async fn world_state_extension_metrics_follow_turn_model_switch() {
     );
 }
 
-fn skill_message(text: &str) -> ResponseItem {
-    ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: text.to_string(),
-        }],
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    }
-}
 
 #[tokio::test]
 async fn regular_turn_emits_turn_started_with_trace_id_without_waiting_for_startup_prewarm() {
@@ -842,7 +830,6 @@ pub(crate) fn tool_registry_for_test_step(
         step_context.turn.as_ref(),
         &step_context.environments,
         step_context.mcp.as_ref(),
-        /*tool_suggest_candidates*/ None,
         /*wait_for_environment_tool_config*/ None,
     );
     let hosted_specs = crate::tools::spec_plan::append_source_tools(
@@ -869,25 +856,6 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
     ToolCallRuntime::new(session, step_context, tracker)
 }
 
-fn make_connector(id: &str, name: &str) -> AppInfo {
-    AppInfo {
-        id: id.to_string(),
-        name: name.to_string(),
-        description: None,
-        logo_url: None,
-        logo_url_dark: None,
-        icon_assets: None,
-        icon_dark_assets: None,
-        distribution_channel: None,
-        branding: None,
-        app_metadata: None,
-        labels: None,
-        install_url: None,
-        is_accessible: true,
-        is_enabled: true,
-        plugin_display_names: Vec::new(),
-    }
-}
 
 #[test]
 fn assistant_message_stream_parsers_can_be_seeded_from_output_item_added_text() {
@@ -1980,48 +1948,8 @@ async fn refresh_mcp_config_replaces_managed_server_and_plugin_requirements() {
     assert!(plugin_servers["beta"].enabled);
 }
 
-#[test]
-fn collect_explicit_app_ids_from_skill_items_includes_linked_mentions() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse [$calendar](app://calendar)\n</skill>",
-    )];
 
-    let connector_ids =
-        collect_explicit_app_ids_from_skill_items(&skill_items, &connectors, &HashMap::new());
 
-    assert_eq!(connector_ids, HashSet::from(["calendar".to_string()]));
-}
-
-#[test]
-fn collect_explicit_app_ids_from_skill_items_resolves_unambiguous_plain_mentions() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse $calendar\n</skill>",
-    )];
-
-    let connector_ids =
-        collect_explicit_app_ids_from_skill_items(&skill_items, &connectors, &HashMap::new());
-
-    assert_eq!(connector_ids, HashSet::from(["calendar".to_string()]));
-}
-
-#[test]
-fn collect_explicit_app_ids_from_skill_items_skips_plain_mentions_with_skill_conflicts() {
-    let connectors = vec![make_connector("calendar", "Calendar")];
-    let skill_items = vec![skill_message(
-        "<skill>\n<name>demo</name>\n<path>/tmp/skills/demo/SKILL.md</path>\nuse $calendar\n</skill>",
-    )];
-    let skill_name_counts_lower = HashMap::from([("calendar".to_string(), 1)]);
-
-    let connector_ids = collect_explicit_app_ids_from_skill_items(
-        &skill_items,
-        &connectors,
-        &skill_name_counts_lower,
-    );
-
-    assert_eq!(connector_ids, HashSet::<String>::new());
-}
 
 #[tokio::test]
 async fn reconstruct_history_matches_live_compactions() {
@@ -5728,7 +5656,6 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
         skills_service,
         plugins_manager,
         mcp_manager,
-        Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         ClientMcpExtensions::default(),
@@ -5972,10 +5899,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             config.http_client_factory(),
         ),
         executed_tool_calls,
-        code_mode_service: crate::tools::code_mode::CodeModeService::new(
-            Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
-            &config.code_mode,
-        ),
         tool_search_handler_cache: Default::default(),
         turn_environments: Arc::clone(&turn_environments),
     };
@@ -6164,7 +6087,6 @@ async fn make_session_with_config_and_rx(
         skills_service,
         plugins_manager,
         mcp_manager,
-        Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         ClientMcpExtensions::default(),
@@ -6285,7 +6207,6 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
         skills_service,
         plugins_manager,
         mcp_manager,
-        Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
         Arc::new(codex_extension_api::ExtensionRegistryBuilder::new().build()),
         codex_extension_api::ExtensionDataInit::default(),
         ClientMcpExtensions::default(),
@@ -8181,10 +8102,6 @@ where
             config.http_client_factory(),
         ),
         executed_tool_calls,
-        code_mode_service: crate::tools::code_mode::CodeModeService::new(
-            Arc::new(codex_code_mode::DisabledCodeModeSessionProvider),
-            &config.code_mode,
-        ),
         tool_search_handler_cache: Default::default(),
         turn_environments: Arc::clone(&turn_environments),
     };
@@ -11100,7 +11017,7 @@ async fn fatal_tool_error_stops_turn_and_reports_error() {
         .expect("tool call present");
     let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
     let err = router
-        .dispatch_tool_call_with_code_mode_result(
+        .dispatch_tool_call(
             Arc::clone(&session),
             step_context,
             CancellationToken::new(),

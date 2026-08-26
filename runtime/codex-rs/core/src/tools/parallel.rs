@@ -103,11 +103,7 @@ impl ToolCallRuntime {
             .enabled(codex_features::Feature::ExecutedToolCallMetadata)
             && let Some(executed_tool_calls) = self.session.services.executed_tool_calls.as_ref()
         {
-            executed_tool_calls.record_tool_call(
-                &call,
-                &source,
-                super::effective_tool_mode(&self.step_context.turn),
-            );
+            executed_tool_calls.record_tool_call(&call, &source);
         }
         let router = &self.step_context.tool_router;
         let supports_parallel = router.tool_supports_parallel(&call);
@@ -134,7 +130,7 @@ impl ToolCallRuntime {
         let dispatch_call = call.clone();
 
         let dispatch_span = trace_span!(
-            "dispatch_tool_call_with_code_mode_result",
+            "dispatch_tool_call",
             otel.name = %call.tool_name,
             tool_name = %call.tool_name,
             call_id = call.call_id.as_str(),
@@ -412,21 +408,6 @@ mod tests {
                 "direct tool calls should create a timing guard"
             );
             drop(direct_guard);
-
-            let code_mode_guard = ToolCallTimingGuard::capture(
-                Instant::now(),
-                &"conversation-id",
-                "turn-id",
-                &call,
-                &ToolCallSource::CodeMode {
-                    cell_id: "cell-1".to_string(),
-                    runtime_tool_call_id: "runtime-call-1".to_string(),
-                },
-            );
-            assert!(
-                code_mode_guard.is_none(),
-                "nested code-mode calls should not create overlapping timing events"
-            );
         });
     }
 

@@ -22,7 +22,6 @@ use codex_utils_output_truncation::approx_token_count;
 use codex_utils_output_truncation::formatted_truncate_text;
 use codex_utils_output_truncation::truncate_text;
 use codex_utils_string::take_bytes_at_char_boundary;
-use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -46,14 +45,6 @@ pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 pub enum ToolCallSource {
     Direct,
     DirectPlaintextMessage,
-    CodeMode {
-        /// Runtime cell that issued the nested tool request.
-        cell_id: String,
-        /// Code-mode's per-cell tool invocation id. This is useful for
-        /// debugging the JS/runtime bridge, but it is not the Codex tool call id
-        /// because the runtime id only needs to be unique within one cell.
-        runtime_tool_call_id: String,
-    },
 }
 
 #[derive(Clone)]
@@ -100,9 +91,6 @@ impl ToolOutput for McpToolOutput {
         }
     }
 
-    fn code_mode_result(&self, payload: &ToolPayload) -> JsonValue {
-        self.result.code_mode_result(payload)
-    }
 
     fn post_tool_use_input(&self, _payload: &ToolPayload) -> Option<JsonValue> {
         Some(self.tool_input.clone())
@@ -272,9 +260,6 @@ impl ToolOutput for ApplyPatchToolOutput {
         Some(JsonValue::String(self.text.clone()))
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        JsonValue::Object(serde_json::Map::new())
-    }
 }
 
 pub struct AbortedToolOutput {
@@ -371,37 +356,6 @@ impl ToolOutput for ExecCommandToolOutput {
         ))
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        #[derive(Serialize)]
-        struct UnifiedExecCodeModeResult {
-            #[serde(skip_serializing_if = "Option::is_none")]
-            chunk_id: Option<String>,
-            wall_time_seconds: f64,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            exit_code: Option<i32>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            session_id: Option<i32>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            original_token_count: Option<usize>,
-            output: String,
-        }
-
-        let result = UnifiedExecCodeModeResult {
-            chunk_id: (!self.chunk_id.is_empty()).then(|| self.chunk_id.clone()),
-            wall_time_seconds: self.wall_time.as_secs_f64(),
-            exit_code: self.exit_code,
-            session_id: self.process_id,
-            original_token_count: self.original_token_count,
-            output: match self.max_output_tokens {
-                Some(max_tokens) => self.truncated_output(max_tokens),
-                None => String::from_utf8_lossy(&self.raw_output).to_string(),
-            },
-        };
-
-        serde_json::to_value(result).unwrap_or_else(|err| {
-            JsonValue::String(format!("failed to serialize exec result: {err}"))
-        })
-    }
 }
 
 impl ExecCommandToolOutput {

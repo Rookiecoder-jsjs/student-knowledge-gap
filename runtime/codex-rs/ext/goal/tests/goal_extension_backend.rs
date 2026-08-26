@@ -51,6 +51,19 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
 
+/// Extracts the tool output's JSON value via the model-facing response item
+/// (replaces the removed `ToolOutput::code_mode_result` test helper).
+fn output_json(output: &dyn codex_tools::ToolOutput, payload: &codex_tools::ToolPayload) -> serde_json::Value {
+    use codex_protocol::models::ResponseInputItem;
+    match output.to_response_item("test-call", payload) {
+        ResponseInputItem::FunctionCallOutput { output, .. } => {
+            serde_json::from_str(&output.body.to_text().unwrap_or_default())
+                .unwrap_or(serde_json::Value::Null)
+        }
+        _ => serde_json::Value::Null,
+    }
+}
+
 #[tokio::test]
 async fn installed_goal_tools_create_goal_and_fill_empty_preview() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
@@ -68,7 +81,7 @@ async fn installed_goal_tools_create_goal_and_fill_empty_preview() -> anyhow::Re
         }),
     );
     let output = create_tool.handle(invocation.clone()).await?;
-    let result = output.code_mode_result(&invocation.payload);
+    let result = output_json(output.as_ref(), &invocation.payload);
     assert_eq!(
         result,
         json!({
@@ -141,7 +154,7 @@ async fn installed_goal_tools_apply_maximum_token_budget() -> anyhow::Result<()>
     );
     let output = create_tool.handle(invocation.clone()).await?;
     assert_eq!(
-        output.code_mode_result(&invocation.payload)["goal"]["tokenBudget"],
+        output_json(output.as_ref(), &invocation.payload)["goal"]["tokenBudget"],
         json!(100)
     );
     Ok(())
@@ -228,7 +241,7 @@ async fn installed_goal_tools_only_replace_complete_goal() -> anyhow::Result<()>
         json!({ "objective": "replacement goal" }),
     );
     let output = create_tool.handle(invocation.clone()).await?;
-    let result = output.code_mode_result(&invocation.payload);
+    let result = output_json(output.as_ref(), &invocation.payload);
 
     assert_eq!(json!("replacement goal"), result["goal"]["objective"]);
     assert_eq!(json!("active"), result["goal"]["status"]);
@@ -843,7 +856,7 @@ async fn update_goal_can_block_and_accounts_final_progress() -> anyhow::Result<(
         json!({ "status": "blocked" }),
     );
     let output = update_tool.handle(invocation.clone()).await?;
-    let result = output.code_mode_result(&invocation.payload);
+    let result = output_json(output.as_ref(), &invocation.payload);
 
     assert_eq!(
         result,

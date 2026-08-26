@@ -181,10 +181,8 @@ async fn recommended_plugins_after_external_login(
         .flatten()
         .filter_map(|tool| tool.get("name").and_then(Value::as_str))
         .collect::<Vec<_>>();
-    assert_eq!(
-        tool_names.contains(&"request_plugin_install"),
-        tool_suggest_enabled
-    );
+    // tool_suggest/request_plugin_install 链路已随 connectors 裁剪移除。
+    assert!(!tool_names.contains(&"request_plugin_install"));
     assert!(!tool_names.contains(&"list_available_plugins_to_install"));
     Ok(())
 }

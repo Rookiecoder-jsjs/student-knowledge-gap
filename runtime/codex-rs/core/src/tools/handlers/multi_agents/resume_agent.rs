@@ -180,9 +180,6 @@ impl ToolOutput for ResumeAgentResult {
         tool_output_response_item(call_id, payload, self, Some(true), "resume_agent")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        tool_output_code_mode_result(self, "resume_agent")
-    }
 }
 
 async fn try_resume_closed_agent(

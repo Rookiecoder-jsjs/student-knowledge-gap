@@ -22,13 +22,9 @@ members = [
     "features",
     "install-context",
     "codex-backend-openapi-models",
-    "code-mode",
-    "code-mode-protocol",
-    "code-mode-runtime",
     "codex-home",
     "cloud-config",
     "collaboration-mode-templates",
-    "connectors",
     "config",
     "context-fragments",
     "shell-command",
@@ -49,7 +45,6 @@ members = [
     "exec-server/tests/support",
     "execpolicy",
     "ext/agent",
-    "ext/connectors",
     "ext/extension-api",
     "ext/goal",
     "ext/git-attribution",
@@ -157,20 +152,14 @@ codex-apply-patch = { path = "apply-patch" }
 codex-arg0 = { path = "arg0" }
 codex-async-utils = { path = "async-utils" }
 codex-backend-client = { path = "backend-client" }
-codex-chatgpt = { path = "chatgpt" }
 codex-client = { path = "codex-client" }
 codex-collaboration-mode-templates = { path = "collaboration-mode-templates" }
 codex-cloud-config = { path = "cloud-config" }
-codex-code-mode = { path = "code-mode" }
-codex-code-mode-protocol = { path = "code-mode-protocol" }
-codex-code-mode-runtime = { path = "code-mode-runtime" }
 codex-home = { path = "codex-home" }
 codex-http-client = { path = "http-client" }
 codex-websocket-client = { path = "websocket-client" }
 codex-config = { path = "config" }
-codex-connectors = { path = "connectors" }
 codex-agent-extension = { path = "ext/agent" }
-codex-connectors-extension = { path = "ext/connectors" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }
 codex-core-api = { path = "core-api" }

@@ -5,6 +5,8 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Result;
+use core_test_support::apps_test_server::SEARCH_CALENDAR_CREATE_TOOL;
+use core_test_support::apps_test_server::AppsTestServer;
 use codex_core::TurnInputRequest;
 use codex_core::config::Config;
 use codex_core_plugins::store::PluginStore;
@@ -28,8 +30,6 @@ use codex_protocol::user_input::UserInput;
 use codex_skills_extension::HostSkillsLoadInput;
 use codex_skills_extension::SkillsExtensionConfig;
 use codex_skills_extension::install;
-use core_test_support::apps_test_server::AppsTestServer;
-use core_test_support::apps_test_server::SEARCH_CALENDAR_CREATE_TOOL;
 use core_test_support::responses::ResponseMock;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
@@ -801,7 +801,6 @@ async fn curated_plugin_skills_follow_auth_switch() -> Result<()> {
     const CURATED_PLUGIN_SKILLS: &[&str] =
         &[CHATGPT_CURATED_PLUGIN_SKILL, API_CURATED_PLUGIN_SKILL];
 
-    #[derive(Clone, Copy)]
     enum TargetAuth {
         Chatgpt,
         ApiKey,
@@ -809,7 +808,6 @@ async fn curated_plugin_skills_follow_auth_switch() -> Result<()> {
         NoCodexAuth,
     }
 
-    #[derive(Clone, Copy)]
     struct Fixture {
         name: &'static str,
         target_auth: TargetAuth,
@@ -1045,103 +1043,6 @@ enabled = true
     Ok(())
 }
 
-#[test_case(true; "enabled app")]
-#[test_case(false; "disabled app")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn explicit_plugin_mentions_use_apps_for_chatgpt_dual_surface_plugins(
-    app_enabled: bool,
-) -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    let server = start_mock_server().await;
-    let apps_server = AppsTestServer::mount_with_connector_name(&server, "Google Calendar").await?;
-    let mock = mount_plugin_tool_search_turn(&server).await;
-
-    let codex_home = Arc::new(TempDir::new()?);
-    let rmcp_test_server_bin = match stdio_server_bin() {
-        Ok(bin) => bin,
-        Err(err) => {
-            eprintln!("test_stdio_server binary not available, skipping test: {err}");
-            return Ok(());
-        }
-    };
-    write_plugin_skill_plugin(codex_home.as_ref());
-    write_plugin_mcp_plugin(codex_home.as_ref(), &rmcp_test_server_bin);
-    write_plugin_app_plugin(codex_home.as_ref());
-    let config_path = codex_home.path().join("config.toml");
-    let config = std::fs::read_to_string(&config_path)?;
-    std::fs::write(
-        config_path,
-        format!("{config}\n[apps.calendar]\nenabled = {app_enabled}\n"),
-    )?;
-
-    let test_codex =
-        build_apps_enabled_plugin_test_codex(&server, codex_home, apps_server.chatgpt_base_url)
-            .await?;
-    let codex = Arc::clone(&test_codex.codex);
-    wait_for_mcp_server(&codex, CODEX_APPS_MCP_SERVER_NAME).await?;
-
-    codex
-        .start_or_steer_turn(TurnInputRequest::user_input(vec![
-            codex_protocol::user_input::UserInput::Mention {
-                name: "sample".into(),
-                path: format!("plugin://{SAMPLE_PLUGIN_CONFIG_NAME}"),
-            },
-        ]))
-        .await?;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let requests = mock.requests();
-    let request = &requests[0];
-    let developer_messages = request.message_input_texts("developer");
-    assert!(
-        developer_messages
-            .iter()
-            .any(|text| text.contains("Skills from this plugin")),
-        "expected plugin skills guidance: {developer_messages:?}"
-    );
-    assert!(
-        !developer_messages
-            .iter()
-            .any(|text| text.contains("MCP servers from this plugin")),
-        "expected plugin MCP guidance to be suppressed for ChatGPT auth: {developer_messages:?}"
-    );
-    assert_eq!(
-        developer_messages
-            .iter()
-            .any(|text| text.contains("Apps from this plugin")),
-        app_enabled,
-        "plugin app guidance should match app enablement: {developer_messages:?}"
-    );
-    assert_eq!(
-        developer_messages
-            .iter()
-            .any(|text| text.contains("if `tool_search` is available")),
-        app_enabled,
-        "plugin app search guidance should match app enablement: {developer_messages:?}"
-    );
-    assert!(
-        request
-            .tool_by_name(SAMPLE_PLUGIN_MCP_NAMESPACE, "echo")
-            .is_none(),
-        "plugin MCP tool should not leak into the request for ChatGPT auth"
-    );
-    let (calendar_tool, echo_tool) = searched_plugin_tools(&requests[1]);
-    assert_eq!(
-        calendar_tool.is_some(),
-        app_enabled,
-        "plugin app tool search should match app enablement"
-    );
-    if let Some(calendar_tool) = calendar_tool {
-        assert_plugin_provenance(&calendar_tool);
-    }
-    assert!(
-        echo_tool.is_none(),
-        "plugin MCP tool should be suppressed for ChatGPT auth"
-    );
-
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn explicit_plugin_mentions_keep_non_conflicting_mcp_for_chatgpt_auth() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -1203,7 +1104,6 @@ async fn explicit_plugin_mentions_keep_non_conflicting_mcp_for_chatgpt_auth() ->
     Ok(())
 }
 
-#[derive(Clone, Copy)]
 enum ExplicitMcpRequest {
     Plugin,
     PluginSkill,
@@ -1412,7 +1312,6 @@ async fn explicit_plugin_skill_invocation_tracks_remote_plugin_id() -> Result<()
     Ok(())
 }
 
-#[derive(Clone, Copy)]
 enum ImplicitPluginSkillInvocation {
     SkillDocumentRead,
     SkillScriptRun,

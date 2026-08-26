@@ -53,6 +53,7 @@ struct GuardianMcpElicitationReviewer {
 
 pub(crate) struct McpServerElicitationOutcome {
     pub(crate) response: Option<ElicitationResponse>,
+    #[allow(dead_code)] // 仅测试断言;生产路径只读 response
     pub(crate) sent: bool,
 }
 
@@ -219,63 +220,6 @@ impl Session {
                 return;
             }
         }
-    }
-
-    /// Reconnects the runtime so refreshed Apps tools belong to their new exact client.
-    pub(crate) async fn hard_refresh_latest_codex_apps_tools(
-        self: &Arc<Self>,
-    ) -> anyhow::Result<Vec<codex_mcp::ToolInfo>> {
-        self.refresh_mcp_if_dirty().await;
-        let _refresh = self
-            .mcp_refresh
-            .acquire()
-            .await
-            .map_err(|_| anyhow::anyhow!("MCP runtime refresh semaphore closed"))?;
-        let auth = self.services.auth_manager.auth().await;
-        let desired = self.latest_mcp_desired_state(auth).await;
-        let selected_capability_roots = self
-            .resolve_selected_capability_roots_for_step(&desired.environments)
-            .await;
-        let ready_selected_capability_roots =
-            Self::ready_selected_capability_roots(&selected_capability_roots);
-        let executor_capability_discovery = self
-            .executor_capability_discovery_for_step(
-                &desired.config,
-                &ready_selected_capability_roots,
-                &desired.environments,
-                desired.windows_sandbox_level,
-            )
-            .await;
-        let mcp_projection = self
-            .services
-            .mcp_manager
-            .runtime_config_for_step(
-                &desired.config,
-                &self.services.mcp_thread_init,
-                &self.services.thread_extension_data,
-                McpThreadIdentity {
-                    session_source: &desired.session_source,
-                    originator: &desired.originator,
-                    environments: McpEnvironmentScope::Live(&self.services.turn_environments),
-                },
-                &ready_selected_capability_roots,
-                executor_capability_discovery.as_deref(),
-            )
-            .await;
-        let selected_plugins = mcp_projection.selected_plugins.clone();
-        let input = self.build_mcp_runtime_input(
-            &desired,
-            mcp_projection,
-            &ready_selected_capability_roots,
-            Some(self.mcp_elicitation_reviewer()),
-        );
-        anyhow::ensure!(
-            input.mcp_servers.contains_key(CODEX_APPS_MCP_SERVER_NAME),
-            "unknown MCP server '{CODEX_APPS_MCP_SERVER_NAME}'"
-        );
-        let refreshed = self.services.mcp_runtime.replace_fresh(input).await;
-        self.services.thread_extension_data.insert(selected_plugins);
-        refreshed
     }
 
     pub(super) fn mark_mcp_runtime_dirty(&self) {

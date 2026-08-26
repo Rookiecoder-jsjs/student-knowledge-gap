@@ -349,7 +349,12 @@ async fn v2_residency_reload_preserves_inherited_environment_and_tools() -> Resu
             .expect("expected a model request for the original worker")
     };
     let reloaded_tools = worker_tools(&reloaded_worker_request);
-    assert!(reloaded_tools.to_string().contains("### `exec_command`"));
+    // code-mode 嵌套工具 markdown 描述已随 code-mode 裁剪移除；exec 工具以
+    // 标准 JSON function 形式暴露，这里断言工具名仍然保留。
+    assert!(
+        reloaded_tools.to_string().contains("exec_command"),
+        "reloaded worker should preserve the exec_command tool: {reloaded_tools}"
+    );
 
     Ok(())
 }

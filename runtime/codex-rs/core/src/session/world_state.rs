@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use super::session::Session;
 use super::step_context::StepContext;
-use crate::connectors;
 use crate::context::ApprovalPromptContext;
 use crate::context::TokenBudgetContext;
 use crate::context::world_state::AgentsMdState;
-use crate::context::world_state::AppsInstructionsState;
 use crate::context::world_state::CollaborationModeState;
 use crate::context::world_state::CompactPermissionsState;
 use crate::context::world_state::ContextWindowGuidanceState;
@@ -21,7 +19,6 @@ use crate::context::world_state::PluginsInstructionsState;
 use crate::context::world_state::RealtimeState;
 use crate::context::world_state::ToolsState;
 use crate::context::world_state::WorldState;
-use codex_connectors::AppToolPolicyEvaluator;
 use codex_extension_api::WorldStateContributionInput;
 use codex_features::Feature;
 use codex_protocol::error::CodexErr;
@@ -214,22 +211,7 @@ impl Session {
                     .features
                     .enabled(Feature::DeferredExecutor),
         ));
-        let apps_available =
-            if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
-                AppToolPolicyEvaluator::new(&turn_context.config.config_layer_stack)
-                    .apply_app_enabled_state(connectors::accessible_connectors_from_mcp_tools(
-                        step_context.mcp.tools(),
-                    ))
-                    .into_iter()
-                    .any(|connector| connector.is_accessible && connector.is_enabled)
-            } else {
-                false
-            };
-        let apps_usage_instructions_available =
-            apps_available && turn_context.model_info.include_apps_usage_instructions;
-        world_state.add_section(AppsInstructionsState::new(
-            apps_usage_instructions_available,
-        ));
+        // apps(connectors) 已裁剪，不再注入 Apps 使用说明。
         let plugins_usage_instructions_available = step_context.mcp.plugins_available()
             && turn_context.model_info.include_plugin_usage_instructions;
         world_state.add_section(PluginsInstructionsState::new(

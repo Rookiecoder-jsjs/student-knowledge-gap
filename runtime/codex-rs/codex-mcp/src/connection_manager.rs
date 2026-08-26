@@ -18,7 +18,6 @@ use startup::chatgpt_auth_provider_for_server;
 use startup::emit_update;
 use startup::mcp_init_error_display;
 use startup::mcp_startup_failure_reason;
-use startup::should_share_codex_apps_tools_cache;
 pub use tool_catalog::tool_is_model_visible;
 
 use std::collections::HashMap;
@@ -209,9 +208,7 @@ impl McpConnectionSet {
             tx_event,
             startup_cancellation_token,
             runtime_context,
-            codex_apps_tools_cache,
             tool_catalog_cache,
-            codex_apps_tools_cache_key,
             client_mcp_extensions,
             auth,
             codex_apps_auth_manager,
@@ -222,7 +219,6 @@ impl McpConnectionSet {
         let keyring_backend_kind = config.auth_keyring_backend_kind;
         let approval_policy = &config.approval_policy;
         let initial_permission_profile = config.permission_profile.clone();
-        let codex_home = config.codex_home.clone();
         let prefix_mcp_tool_names = config.prefix_mcp_tool_names;
         let non_prefixed_mcp_tool_servers = config.non_prefixed_mcp_tool_servers.clone();
         let protocol_mode = config.protocol_mode;
@@ -308,12 +304,6 @@ impl McpConnectionSet {
                 } => bearer_token_env_var.is_some(),
                 McpServerTransportConfig::Stdio { .. } => false,
             };
-            let shares_codex_apps_tools_cache = is_host_owned_codex_apps
-                && should_share_codex_apps_tools_cache(&server_name, uses_env_bearer_token);
-            let codex_apps_tools_cache_context = shares_codex_apps_tools_cache.then(|| {
-                codex_apps_tools_cache
-                    .context(codex_home.clone(), codex_apps_tools_cache_key.clone())
-            });
             // The reserved Codex Apps registration follows the shared
             // AuthManager across refreshes. In the hosted-plugin path, this
             // is the ChatGPT /ps/mcp connection. User-configured MCP
@@ -342,8 +332,6 @@ impl McpConnectionSet {
                 &runtime_context,
                 runtime_auth_provider.as_ref(),
                 auth,
-                shares_codex_apps_tools_cache
-                    .then(|| (codex_home.clone(), codex_apps_tools_cache_key.clone())),
                 client_elicitation_capability.clone(),
                 client_mcp_extensions.clone(),
                 previous
@@ -502,7 +490,6 @@ impl McpConnectionSet {
                 cancel_token.clone(),
                 tx_event.clone(),
                 elicitation_requests.clone(),
-                codex_apps_tools_cache_context,
                 tool_catalog_cache_context,
                 runtime_context.clone(),
                 resolved_environment,
@@ -905,27 +892,12 @@ impl McpConnectionSet {
     }
 
     /// Returns presentation metadata from the current connection.
-    /// Codex Apps metadata may come from its existing cache; regular MCP server information is
-    /// connection-specific, so pending regular clients are awaited.
+    /// Server information is connection-specific, so pending clients are awaited.
     pub(crate) async fn list_available_server_infos(&self) -> HashMap<String, McpServerInfo> {
         let mut server_infos = HashMap::new();
         for (server_name, view) in &self.servers {
-            let client = &view.connection.client;
-            if !client.startup_complete.load(Ordering::Acquire)
-                && let Some(server_info) = client.cached_server_info.clone()
-            {
-                server_infos.insert(server_name.clone(), server_info);
-                continue;
-            }
-            match view.connection.client().await {
-                Ok(managed_client) => {
-                    server_infos.insert(server_name.clone(), managed_client.server_info);
-                }
-                Err(_) => {
-                    if let Some(server_info) = client.cached_server_info.clone() {
-                        server_infos.insert(server_name.clone(), server_info);
-                    }
-                }
+            if let Ok(managed_client) = view.connection.client().await {
+                server_infos.insert(server_name.clone(), managed_client.server_info);
             }
         }
         server_infos

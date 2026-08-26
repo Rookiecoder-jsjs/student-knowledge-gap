@@ -1751,7 +1751,6 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         &config,
         auth_manager.clone(),
         codex_core::build_models_manager(&config, auth_manager),
-        codex_core::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1856,63 +1855,6 @@ async fn includes_user_instructions_message_in_request() {
             .any(|text| text.starts_with("<environment_context>")
                 && text.ends_with("</environment_context>")),
         "expected environment context in contextual user message, got {user_context_texts:?}"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
-    skip_if_no_network!();
-    let server = MockServer::start().await;
-    let apps_server = AppsTestServer::mount(&server)
-        .await
-        .expect("mount apps MCP mock");
-    let apps_base_url = apps_server.chatgpt_base_url.clone();
-
-    let resp_mock = mount_sse_once(
-        &server,
-        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
-    )
-    .await;
-
-    let mut builder = test_codex()
-        .with_auth(create_dummy_codex_auth())
-        .with_config(move |config| {
-            config
-                .features
-                .enable(Feature::Apps)
-                .expect("test config should allow feature update");
-            config.chatgpt_base_url = apps_base_url;
-        });
-    let codex = builder
-        .build(&server)
-        .await
-        .expect("create new conversation")
-        .codex;
-
-    codex
-        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
-            text: "hello".into(),
-            text_elements: Vec::new(),
-        }]))
-        .await
-        .unwrap();
-
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-
-    let request = resp_mock.single_request();
-    let apps_snippet =
-        "Apps (Connectors) can be explicitly triggered in user messages in the format";
-
-    assert!(
-        message_input_text_contains(&request, "developer", apps_snippet),
-        "expected apps guidance in a developer message, got {:?}",
-        request.body_json()["input"]
-    );
-
-    assert!(
-        !message_input_text_contains(&request, "user", apps_snippet),
-        "did not expect apps guidance in user messages, got {:?}",
-        request.body_json()["input"]
     );
 }
 

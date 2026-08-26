@@ -1,8 +1,8 @@
 //! Context fragments injected into model input.
 
 mod approved_command_prefix_saved;
-mod apps_instructions;
 mod available_plugins_instructions;
+mod plugin_instructions;
 mod contextual_user_message;
 mod current_time_reminder;
 mod environment_context;
@@ -25,7 +25,6 @@ mod network_rule_saved;
 mod node_repl_review_evidence;
 mod permissions_instructions;
 mod personality_spec_instructions;
-mod plugin_instructions;
 mod realtime_delegation;
 mod realtime_end_instructions;
 mod realtime_start_instructions;
@@ -41,8 +40,8 @@ pub(crate) mod world_state;
 
 pub(crate) use approved_command_prefix_saved::APPROVED_COMMAND_PREFIX_SAVED_MESSAGE_PREFIX;
 pub(crate) use approved_command_prefix_saved::ApprovedCommandPrefixSaved;
-pub(crate) use apps_instructions::AppsInstructions;
 pub(crate) use available_plugins_instructions::AvailablePluginsInstructions;
+pub(crate) use plugin_instructions::PluginInstructions;
 pub(crate) use codex_context_fragments::AdditionalContextDeveloperFragment;
 pub(crate) use codex_context_fragments::AdditionalContextUserFragment;
 pub use codex_context_fragments::ContextualUserFragment;
@@ -76,7 +75,6 @@ pub(crate) use node_repl_review_evidence::node_repl_review_evidence_mode;
 pub use permissions_instructions::ApprovalPromptContext;
 pub use permissions_instructions::PermissionsInstructions;
 pub(crate) use personality_spec_instructions::PersonalitySpecInstructions;
-pub(crate) use plugin_instructions::PluginInstructions;
 pub(crate) use realtime_delegation::RealtimeDelegation;
 pub(crate) use realtime_delegation::RealtimeDelegationSource;
 pub(crate) use realtime_end_instructions::RealtimeEndInstructions;

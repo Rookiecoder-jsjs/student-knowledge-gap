@@ -2,9 +2,6 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
 use codex_arg0::Arg0DispatchPaths;
-use codex_code_mode::CodeModeSessionProvider;
-use codex_code_mode::GrpcCodeModeSessionProvider;
-use codex_code_mode::WebSocketCodeModeSessionProvider;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_core::config::Config;
@@ -62,7 +59,6 @@ use codex_core::check_execpolicy_for_warnings;
 use codex_core::config::find_codex_home;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecServerRuntimePaths;
-use codex_features::Feature;
 use codex_feedback::CodexFeedback;
 use codex_protocol::protocol::SessionSource;
 use codex_rollout::state_db as rollout_state_db;
@@ -83,12 +79,10 @@ use tracing_subscriber::util::SubscriberInitExt;
 const SQLITE_RECOVERY_CONFIG_WARNING_SUMMARY: &str = "Codex rebuilt its local database.";
 
 mod analytics_utils;
-mod app_info;
 mod app_server_tracing;
 mod attestation;
 mod auth_mode;
 mod bespoke_event_handling;
-mod code_mode_host;
 mod command_exec;
 mod config_layer;
 mod config_manager;
@@ -122,8 +116,6 @@ mod thread_status;
 mod transport;
 mod turn_cost_worker;
 
-pub use crate::code_mode_host::AppServerCodeModeHostArgs;
-pub use crate::code_mode_host::CodeModeHostTransport;
 pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
 pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
 pub use crate::transport::AppServerTransport;
@@ -428,7 +420,6 @@ pub enum PluginStartupTasks {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppServerRuntimeOptions {
-    pub code_mode_host_transport: CodeModeHostTransport,
     pub plugin_startup_tasks: PluginStartupTasks,
     pub remote_control_startup_mode: RemoteControlStartupMode,
     pub install_shutdown_signal_handler: bool,
@@ -437,7 +428,6 @@ pub struct AppServerRuntimeOptions {
 impl Default for AppServerRuntimeOptions {
     fn default() -> Self {
         Self {
-            code_mode_host_transport: CodeModeHostTransport::Local,
             plugin_startup_tasks: PluginStartupTasks::Start,
             remote_control_startup_mode: RemoteControlStartupMode::ResolvePersisted,
             install_shutdown_signal_handler: true,
@@ -542,38 +532,6 @@ pub async fn run_main_with_transport_options(
         }
     };
     config.auth_config().validate()?;
-    let code_mode_session_provider: Option<Arc<dyn CodeModeSessionProvider>> =
-        match &runtime_options.code_mode_host_transport {
-            CodeModeHostTransport::Local => None,
-            CodeModeHostTransport::WebSocket(url) => {
-                if !config.features.enabled(Feature::CodeModeHost) {
-                    return Err(std::io::Error::new(
-                        ErrorKind::InvalidInput,
-                        "remote code-mode host requires the code_mode_host feature to be enabled",
-                    ));
-                }
-                Some(Arc::new(
-                    WebSocketCodeModeSessionProvider::with_http_client_factory(
-                        url.to_string(),
-                        config.http_client_factory(),
-                    ),
-                ))
-            }
-            CodeModeHostTransport::Grpc(url) => {
-                if !config.features.enabled(Feature::CodeModeHost) {
-                    return Err(std::io::Error::new(
-                        ErrorKind::InvalidInput,
-                        "remote code-mode host requires the code_mode_host feature to be enabled",
-                    ));
-                }
-                Some(Arc::new(
-                    GrpcCodeModeSessionProvider::with_http_client_factory(
-                        url.to_string(),
-                        config.http_client_factory(),
-                    ),
-                ))
-            }
-        };
     let environment_manager = if ignore_user_config {
         EnvironmentManager::from_env(Some(local_runtime_paths), config.http_client_factory()).await
     } else {
@@ -917,7 +875,6 @@ pub async fn run_main_with_transport_options(
             session_source,
             auth_manager,
             installation_id,
-            code_mode_session_provider,
             rpc_transport: analytics_rpc_transport(&transport),
             remote_control_handle: Some(remote_control_handle.clone()),
             plugin_startup_tasks: runtime_options.plugin_startup_tasks,

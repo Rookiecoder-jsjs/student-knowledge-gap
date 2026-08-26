@@ -11,7 +11,6 @@ use codex_config::McpServerConfig;
 use codex_config::McpServerTransportConfig;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
-use codex_connectors::ConnectorRuntimeContextKey;
 use codex_exec_server::Environment;
 use codex_login::CodexAuth;
 use codex_protocol::mcp::ClientMcpExtensions;
@@ -103,7 +102,6 @@ pub(crate) struct McpServerConnectionIdentity {
     referenced_environment_variables: Vec<(String, Option<OsString>)>,
     runtime_auth: Option<CodexAuth>,
     runtime_auth_token: Option<String>,
-    codex_apps_cache_identity: Option<(PathBuf, ConnectorRuntimeContextKey)>,
     client_elicitation_capability: ElicitationCapability,
     client_mcp_extensions: ClientMcpExtensions,
     agent_plugin: bool,
@@ -120,8 +118,7 @@ impl McpServerConnectionIdentity {
         runtime_context: &McpRuntimeContext,
         runtime_auth_provider: Option<&SharedAuthProvider>,
         auth: Option<&CodexAuth>,
-        codex_apps_cache_identity: Option<(PathBuf, ConnectorRuntimeContextKey)>,
-        client_elicitation_capability: ElicitationCapability,
+            client_elicitation_capability: ElicitationCapability,
         client_mcp_extensions: ClientMcpExtensions,
         previous_identity: Option<&Self>,
     ) -> Self {
@@ -218,7 +215,6 @@ impl McpServerConnectionIdentity {
             referenced_environment_variables,
             runtime_auth,
             runtime_auth_token,
-            codex_apps_cache_identity,
             client_elicitation_capability,
             client_mcp_extensions,
             agent_plugin: server.is_agent_plugin(),
@@ -247,7 +243,6 @@ impl McpServerConnectionIdentity {
             && self.referenced_environment_variables == other.referenced_environment_variables
             && same_runtime_auth
             && self.runtime_auth_token == other.runtime_auth_token
-            && self.codex_apps_cache_identity == other.codex_apps_cache_identity
             && self.client_elicitation_capability == other.client_elicitation_capability
             && self.client_mcp_extensions == other.client_mcp_extensions
             && self.agent_plugin == other.agent_plugin

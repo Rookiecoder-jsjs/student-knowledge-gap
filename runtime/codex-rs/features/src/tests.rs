@@ -115,28 +115,6 @@ path = "/custom/mcp"
 }
 
 #[test]
-fn code_mode_only_requires_code_mode() {
-    let mut features = Features::with_defaults();
-    features.enable(Feature::CodeModeOnly);
-    features.normalize_dependencies();
-
-    assert_eq!(features.enabled(Feature::CodeModeOnly), true);
-    assert_eq!(features.enabled(Feature::CodeMode), true);
-}
-
-#[test]
-fn code_mode_host_feature_config_preserves_boolean_toggle() {
-    let features: FeaturesToml =
-        toml::from_str("code_mode_host = false").expect("features table should deserialize");
-
-    assert_eq!(features.code_mode_host, Some(FeatureToml::Enabled(false)));
-    assert_eq!(
-        features.entries(),
-        BTreeMap::from([("code_mode_host".to_string(), false)])
-    );
-}
-
-#[test]
 fn guardian_v2_feature_config_preserves_boolean_toggle() {
     let features: FeaturesToml =
         toml::from_str("guardianv2 = true").expect("Guardian v2 boolean should deserialize");
@@ -280,30 +258,6 @@ fn guardian_v2_feature_config_accepts_boundary_values() {
 }
 
 #[test]
-fn code_mode_host_feature_config_deserializes_fallback_setting() {
-    let features: FeaturesToml = toml::from_str(
-        r#"
-[code_mode_host]
-enabled = true
-disable_in_process_fallback = true
-"#,
-    )
-    .expect("features table should deserialize");
-
-    assert_eq!(
-        features.code_mode_host,
-        Some(FeatureToml::Config(crate::CodeModeHostConfigToml {
-            enabled: Some(true),
-            disable_in_process_fallback: Some(true),
-        }))
-    );
-    assert_eq!(
-        features.entries(),
-        BTreeMap::from([("code_mode_host".to_string(), true)])
-    );
-}
-
-#[test]
 fn from_sources_ignores_removed_terminal_resize_reflow_feature_key() {
     let features_toml = FeaturesToml::from(BTreeMap::from([(
         "terminal_resize_reflow".to_string(),
@@ -429,7 +383,7 @@ fn from_sources_applies_base_profile_and_overrides() {
     };
 
     let mut profile_entries = BTreeMap::new();
-    profile_entries.insert("code_mode_only".to_string(), true);
+    profile_entries.insert("apply_patch_freeform".to_string(), true);
     let profile_features = FeaturesToml {
         entries: profile_entries,
         ..Default::default()
@@ -450,8 +404,6 @@ fn from_sources_applies_base_profile_and_overrides() {
     );
 
     assert_eq!(features.enabled(Feature::Plugins), true);
-    assert_eq!(features.enabled(Feature::CodeModeOnly), true);
-    assert_eq!(features.enabled(Feature::CodeMode), true);
     assert_eq!(features.enabled(Feature::ApplyPatchFreeform), false);
     assert_eq!(features.enabled(Feature::WebSearchRequest), false);
 }
@@ -739,14 +691,14 @@ fn unstable_warning_event_ignores_enabled_structured_stable_feature() {
     let configured_features: Table = toml::from_str(
         r#"
 multi_agent_v2 = { enabled = true, tool_namespace = "agents" }
-code_mode = true
+executed_tool_call_metadata = true
 "#,
     )
     .expect("features table should deserialize");
 
     let mut features = Features::with_defaults();
     features.enable(Feature::MultiAgentV2);
-    features.enable(Feature::CodeMode);
+    features.enable(Feature::ExecutedToolCallMetadata);
 
     let warning = unstable_features_warning_event(
         Some(&configured_features),
@@ -760,7 +712,7 @@ code_mode = true
         panic!("expected warning event");
     };
     assert_eq!(
-        "Under-development features enabled: code_mode. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /tmp/config.toml.".to_string(),
+        "Under-development features enabled: executed_tool_call_metadata. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /tmp/config.toml.".to_string(),
         message
     );
 }

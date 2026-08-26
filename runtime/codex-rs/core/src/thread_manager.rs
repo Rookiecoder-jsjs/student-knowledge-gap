@@ -1,4 +1,3 @@
-use crate::CodexAppsToolsCache;
 use crate::agent::AgentControl;
 use crate::attestation::AttestationProvider;
 use crate::codex_thread::CodexThread;
@@ -23,9 +22,6 @@ use codex_agent_graph_store::LocalAgentGraphStore;
 use codex_analytics::AnalyticsEventsClient;
 use codex_app_server_protocol::ThreadHistoryBuilder;
 use codex_app_server_protocol::TurnStatus;
-use codex_code_mode::CodeModeSessionProvider;
-use codex_code_mode::DisabledCodeModeSessionProvider;
-use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
 use codex_core_plugins::PluginsManager;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionDataInit;
@@ -344,7 +340,6 @@ pub(crate) struct ThreadManagerState {
     skills_service: Arc<HostSkillsService>,
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
-    code_mode_session_provider: Arc<dyn CodeModeSessionProvider>,
     extensions: Arc<ExtensionRegistry<Config>>,
     user_instructions_provider: Arc<dyn UserInstructionsProvider>,
     thread_store: Arc<dyn ThreadStore>,
@@ -421,7 +416,6 @@ impl ThreadManager {
         config: &Config,
         auth_manager: Arc<AuthManager>,
         models_manager: SharedModelsManager,
-        codex_apps_tools_cache: CodexAppsToolsCache,
         session_source: SessionSource,
         environment_manager: Arc<EnvironmentManager>,
         extensions: Arc<ExtensionRegistry<Config>>,
@@ -450,16 +444,7 @@ impl ThreadManager {
         let mcp_manager = Arc::new(McpManager::new_with_extensions(
             Arc::clone(&plugins_manager),
             Arc::clone(&extensions),
-            codex_apps_tools_cache,
         ));
-        let code_mode_session_provider: Arc<dyn CodeModeSessionProvider> =
-            if config.features.enabled(Feature::CodeModeHost)
-                || config.code_mode.disable_in_process_fallback
-            {
-                Arc::new(ProcessOwnedCodeModeSessionProvider::default())
-            } else {
-                Arc::new(DisabledCodeModeSessionProvider)
-            };
         Self {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
@@ -471,7 +456,6 @@ impl ThreadManager {
                 skills_service,
                 plugins_manager,
                 mcp_manager,
-                code_mode_session_provider,
                 extensions,
                 user_instructions_provider,
                 thread_store,
@@ -501,31 +485,6 @@ impl ThreadManager {
         self
     }
 
-    /// Replaces the process-wide provider before this manager is shared with threads.
-    pub fn with_code_mode_session_provider(
-        mut self,
-        provider: Arc<dyn CodeModeSessionProvider>,
-    ) -> Self {
-        let Some(state) = Arc::get_mut(&mut self.state) else {
-            unreachable!("code-mode session provider must be set before thread manager is shared");
-        };
-        state.code_mode_session_provider = provider;
-        self
-    }
-
-    pub(crate) fn with_code_mode_host_program_for_tests(
-        mut self,
-        host_program: PathBuf,
-        _config: &Config,
-    ) -> Self {
-        let Some(state) = Arc::get_mut(&mut self.state) else {
-            unreachable!("new thread manager state should not be shared");
-        };
-        state.code_mode_session_provider = Arc::new(
-            ProcessOwnedCodeModeSessionProvider::with_host_program(host_program),
-        );
-        self
-    }
 
     /// Construct with a dummy AuthManager containing the provided CodexAuth.
     /// Used for integration tests: should not be used by ordinary business logic.
@@ -618,7 +577,6 @@ impl ThreadManager {
                 skills_service,
                 plugins_manager,
                 mcp_manager,
-                code_mode_session_provider: Arc::new(DisabledCodeModeSessionProvider),
                 extensions: empty_extension_registry(),
                 user_instructions_provider: Arc::new(
                     crate::test_support::EmptyUserInstructionsProvider,
@@ -1866,7 +1824,6 @@ impl ThreadManagerState {
             skills_service: Arc::clone(&self.skills_service),
             plugins_manager: Arc::clone(&self.plugins_manager),
             mcp_manager: Arc::clone(&self.mcp_manager),
-            code_mode_session_provider: Arc::clone(&self.code_mode_session_provider),
             extensions: Arc::clone(&self.extensions),
             conversation_history: initial_history,
             requested_history_mode: history_mode,

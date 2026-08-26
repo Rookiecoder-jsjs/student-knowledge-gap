@@ -137,7 +137,6 @@ fn test_tool_router(
         step_context.turn.as_ref(),
         &step_context.environments,
         step_context.mcp.as_ref(),
-        /*tool_suggest_candidates*/ None,
         /*wait_for_environment_tool_config*/ None,
     );
     let hosted_specs = append_source_tools(
@@ -586,7 +585,7 @@ async fn extension_tool_executors_are_model_visible_and_dispatchable() -> anyhow
     })?
     .expect("function_call should produce a tool call");
     let result = router
-        .dispatch_tool_call_with_code_mode_result(
+        .dispatch_tool_call(
             Arc::new(session),
             step_context,
             CancellationToken::new(),

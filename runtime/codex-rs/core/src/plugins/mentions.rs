@@ -1,21 +1,18 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
-use codex_connectors::metadata::connector_mention_slug;
 use codex_protocol::user_input::UserInput;
 use codex_skills::ToolMentionKind;
-use codex_skills::app_id_from_path;
 use codex_skills::extract_tool_mentions_with_sigil;
 use codex_skills::plugin_config_name_from_path;
 use codex_skills::tool_kind_for_path;
 
-use crate::connectors;
 use crate::mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
 use crate::mention_syntax::TOOL_MENTION_SIGIL;
 
 use super::PluginCapabilitySummary;
 
 pub(crate) struct CollectedToolMentions {
+    #[allow(dead_code)] // plain_names 仅 connectors 提及链路使用,已裁剪
     pub(crate) plain_names: HashSet<String>,
     pub(crate) paths: HashSet<String>,
 }
@@ -38,26 +35,6 @@ fn collect_tool_mentions_from_messages_with_sigil(
     CollectedToolMentions { plain_names, paths }
 }
 
-pub(crate) fn collect_explicit_app_ids(input: &[UserInput]) -> HashSet<String> {
-    let messages = input
-        .iter()
-        .filter_map(|item| match item {
-            UserInput::Text { text, .. } => Some(text.clone()),
-            _ => None,
-        })
-        .collect::<Vec<String>>();
-
-    input
-        .iter()
-        .filter_map(|item| match item {
-            UserInput::Mention { path, .. } => Some(path.clone()),
-            _ => None,
-        })
-        .chain(collect_tool_mentions_from_messages(&messages).paths)
-        .filter(|path| tool_kind_for_path(path.as_str()) == ToolMentionKind::App)
-        .filter_map(|path| app_id_from_path(path.as_str()).map(str::to_string))
-        .collect()
-}
 
 /// Collect explicit structured or linked `plugin://...` mentions.
 pub(crate) fn collect_explicit_plugin_mentions(
@@ -101,18 +78,3 @@ pub(crate) fn collect_explicit_plugin_mentions(
         .cloned()
         .collect()
 }
-
-pub(crate) fn build_connector_slug_counts(
-    connectors: &[connectors::AppInfo],
-) -> HashMap<String, usize> {
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for connector in connectors {
-        let slug = connector_mention_slug(connector);
-        *counts.entry(slug).or_insert(0) += 1;
-    }
-    counts
-}
-
-#[cfg(test)]
-#[path = "mentions_tests.rs"]
-mod tests;

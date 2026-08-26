@@ -157,7 +157,4 @@ impl ToolOutput for SendInputResult {
         tool_output_response_item(call_id, payload, self, Some(true), "send_input")
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> JsonValue {
-        tool_output_code_mode_result(self, "send_input")
-    }
 }

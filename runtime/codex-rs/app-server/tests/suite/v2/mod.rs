@@ -1,9 +1,6 @@
 mod account;
 mod account_thread_usage;
 mod analytics;
-mod app_installed;
-mod app_list;
-mod app_read;
 mod attestation;
 mod auto_env;
 mod client_metadata;

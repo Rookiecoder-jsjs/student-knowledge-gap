@@ -59,7 +59,6 @@ use codex_core_plugins::PluginsConfigInput;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
 use codex_exec_server::ReadFileOptions;
-use codex_features::CodeModeConfigToml;
 use codex_features::CurrentTimeReminderConfigToml;
 use codex_features::CurrentTimeReminderDeliveryMode;
 use codex_features::CurrentTimeSource;
@@ -985,7 +984,6 @@ pub struct Config {
     pub tool_registry: ToolRegistryConfig,
 
     /// Configuration for the experimental code-mode tool surface.
-    pub code_mode: CodeModeConfig,
 
     /// If set to `true`, used only the experimental unified exec tool.
     pub use_experimental_unified_exec_tool: bool,
@@ -1052,28 +1050,6 @@ pub struct ToolRegistryConfig {
     pub error_on_tool_collisions: bool,
     /// Include authoritative tool information in per-turn request metadata.
     pub turn_metadata_includes_tool_info: bool,
-}
-
-const DEFAULT_CODE_MODE_EXEC_YIELD_TIME_MS: u64 = 30_000;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CodeModeConfig {
-    pub default_exec_yield_time_ms: u64,
-    pub excluded_tool_namespaces: Vec<String>,
-    pub direct_only_tool_namespaces: Vec<String>,
-    /// Keep code mode fail-closed when the standalone host is unavailable.
-    pub disable_in_process_fallback: bool,
-}
-
-impl Default for CodeModeConfig {
-    fn default() -> Self {
-        Self {
-            default_exec_yield_time_ms: DEFAULT_CODE_MODE_EXEC_YIELD_TIME_MS,
-            excluded_tool_namespaces: Vec::new(),
-            direct_only_tool_namespaces: Vec::new(),
-            disable_in_process_fallback: false,
-        }
-    }
 }
 
 pub(crate) const DEFAULT_TOKEN_BUDGET_REMINDER_MESSAGE_TEMPLATE: &str = concat!(
@@ -1717,10 +1693,6 @@ impl Config {
                 ElicitationCapability::default()
             },
             mcp_server_catalog: catalog.build(),
-            connector_snapshot:
-                codex_connectors::ConnectorSnapshot::from_plugin_capability_summaries(
-                    loaded_plugins.capability_summaries(),
-                ),
         }
     }
 
@@ -2604,35 +2576,6 @@ fn resolve_orchestrator_feature_enabled(
     feature.and_then(|feature| feature.enabled).unwrap_or(true)
 }
 
-fn resolve_code_mode_config(config_toml: &ConfigToml) -> CodeModeConfig {
-    let base = code_mode_toml_config(config_toml.features.as_ref());
-    let host = config_toml
-        .features
-        .as_ref()
-        .and_then(|features| features.code_mode_host.as_ref())
-        .and_then(|feature| match feature {
-            FeatureToml::Enabled(_) => None,
-            FeatureToml::Config(config) => Some(config),
-        });
-
-    CodeModeConfig {
-        default_exec_yield_time_ms: base
-            .and_then(|config| config.default_exec_yield_time_ms)
-            .unwrap_or(DEFAULT_CODE_MODE_EXEC_YIELD_TIME_MS),
-        excluded_tool_namespaces: base
-            .and_then(|config| config.excluded_tool_namespaces.as_ref())
-            .cloned()
-            .unwrap_or_default(),
-        direct_only_tool_namespaces: base
-            .and_then(|config| config.direct_only_tool_namespaces.as_ref())
-            .cloned()
-            .unwrap_or_default(),
-        disable_in_process_fallback: host
-            .and_then(|config| config.disable_in_process_fallback)
-            .unwrap_or_default(),
-    }
-}
-
 fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config {
     let base = multi_agent_v2_toml_config(config_toml.features.as_ref());
     let max_concurrent_threads_per_session = base
@@ -2852,13 +2795,6 @@ fn resolve_terminal_resize_reflow_config(config_toml: &ConfigToml) -> TerminalRe
             Some(rows) => TerminalResizeReflowMaxRows::Limit(rows),
             None => TerminalResizeReflowMaxRows::Auto,
         },
-    }
-}
-
-fn code_mode_toml_config(features: Option<&FeaturesToml>) -> Option<&CodeModeConfigToml> {
-    match features?.code_mode.as_ref()? {
-        FeatureToml::Enabled(_) => None,
-        FeatureToml::Config(config) => Some(config),
     }
 }
 
@@ -3623,7 +3559,6 @@ impl Config {
                 .and_then(|config| config.turn_metadata_includes_tool_info)
                 .unwrap_or_default(),
         };
-        let code_mode = resolve_code_mode_config(&cfg);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg);
         let token_budget = resolve_token_budget_config(&cfg, &features)?;
         let rollout_budget = resolve_rollout_budget_config(&cfg, &features)?;
@@ -4163,7 +4098,6 @@ impl Config {
             experimental_request_user_input_enabled,
             update_plan_enabled,
             tool_registry,
-            code_mode,
             use_experimental_unified_exec_tool,
             background_terminal_max_timeout,
             ghost_snapshot,

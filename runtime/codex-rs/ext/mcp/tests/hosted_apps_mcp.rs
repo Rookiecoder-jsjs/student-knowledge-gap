@@ -126,7 +126,6 @@ async fn later_extension_can_remove_same_name_registration() -> TestResult {
             AuthManager::from_auth_for_testing(auth.clone()),
         )),
         Arc::new(builder.build()),
-        codex_core::CodexAppsToolsCache::default(),
     );
 
     let servers = manager.effective_servers(&config, Some(&auth)).await;
@@ -191,7 +190,6 @@ fn installed_manager(config: &Config, auth: Option<CodexAuth>) -> McpManager {
             auth_manager_from_optional_auth(auth),
         )),
         Arc::new(builder.build()),
-        codex_core::CodexAppsToolsCache::default(),
     )
 }
 

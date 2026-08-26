@@ -384,48 +384,6 @@
       },
       "type": "object"
     },
-    "CodeModeConfigToml": {
-      "additionalProperties": false,
-      "properties": {
-        "default_exec_yield_time_ms": {
-          "description": "Default yield timeout for code-mode exec calls, in milliseconds.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "direct_only_tool_namespaces": {
-          "description": "Exact tool namespaces to expose only as direct model tools. These tools bypass deferral, remain top-level in code-mode-only sessions, and are omitted from the nested code-mode tool surface.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "excluded_tool_namespaces": {
-          "description": "Exact tool namespaces to omit from the code-mode nested tool surface.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "CodeModeHostConfigToml": {
-      "additionalProperties": false,
-      "properties": {
-        "disable_in_process_fallback": {
-          "description": "Keep code mode fail-closed when the standalone host is unavailable.",
-          "type": "boolean"
-        },
-        "enabled": {
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "ConfigProfile": {
       "additionalProperties": false,
       "description": "Collection of common configuration options that a user can define as a unit in `config.toml`.",
@@ -500,21 +458,6 @@
               "type": "boolean"
             },
             "chronicle": {
-              "type": "boolean"
-            },
-            "code_mode": {
-              "$ref": "#/definitions/FeatureToml_for_CodeModeConfigToml"
-            },
-            "code_mode_buffered_exec": {
-              "type": "boolean"
-            },
-            "code_mode_host": {
-              "$ref": "#/definitions/FeatureToml_for_CodeModeHostConfigToml"
-            },
-            "code_mode_interrupt": {
-              "type": "boolean"
-            },
-            "code_mode_only": {
               "type": "boolean"
             },
             "codex_git_commit": {
@@ -1037,26 +980,6 @@
         }
       },
       "type": "object"
-    },
-    "FeatureToml_for_CodeModeConfigToml": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "$ref": "#/definitions/CodeModeConfigToml"
-        }
-      ]
-    },
-    "FeatureToml_for_CodeModeHostConfigToml": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "$ref": "#/definitions/CodeModeHostConfigToml"
-        }
-      ]
     },
     "FeatureToml_for_CurrentTimeReminderConfigToml": {
       "anyOf": [
@@ -5400,21 +5323,6 @@
           "type": "boolean"
         },
         "chronicle": {
-          "type": "boolean"
-        },
-        "code_mode": {
-          "$ref": "#/definitions/FeatureToml_for_CodeModeConfigToml"
-        },
-        "code_mode_buffered_exec": {
-          "type": "boolean"
-        },
-        "code_mode_host": {
-          "$ref": "#/definitions/FeatureToml_for_CodeModeHostConfigToml"
-        },
-        "code_mode_interrupt": {
-          "type": "boolean"
-        },
-        "code_mode_only": {
           "type": "boolean"
         },
         "codex_git_commit": {

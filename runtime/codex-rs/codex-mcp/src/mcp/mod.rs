@@ -27,9 +27,6 @@ use codex_config::types::AppToolApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
-use codex_connectors::ConnectorRuntimeManager;
-use codex_connectors::ConnectorSnapshot;
-use codex_connectors::connector_runtime_context_key;
 use codex_login::CodexAuth;
 use codex_model_provider::CHATGPT_CODEX_BASE_URL;
 use codex_protocol::mcp::ClientMcpExtensions;
@@ -55,7 +52,6 @@ use crate::runtime::McpRuntimeContext;
 use crate::runtime::McpRuntimeInput;
 use crate::runtime::McpStartupPolicy;
 use crate::server::EffectiveMcpServer;
-use crate::tools::ToolInfo;
 
 pub const CODEX_APPS_MCP_SERVER_NAME: &str = "codex_apps";
 const DEFAULT_CODEX_APPS_MCP_PRODUCT_SKU: &str = "codex";
@@ -164,9 +160,6 @@ pub struct McpConfig {
     pub client_elicitation_capability: ElicitationCapability,
     /// Resolved MCP registrations keyed by logical server name.
     pub mcp_server_catalog: ResolvedMcpCatalog,
-    /// Plugin declarations used to attribute connector tools to plugin display names.
-    /// MCP registrations retain their own package attribution in the catalog.
-    pub connector_snapshot: ConnectorSnapshot,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -204,18 +197,6 @@ impl ToolPluginProvenance {
 
     fn from_config(config: &McpConfig) -> Self {
         let mut tool_plugin_provenance = Self::default();
-        for connector_id in config.connector_snapshot.connector_ids() {
-            tool_plugin_provenance
-                .plugin_display_names_by_connector_id
-                .insert(
-                    connector_id.0.clone(),
-                    config
-                        .connector_snapshot
-                        .plugin_display_names_for_connector_id(&connector_id.0)
-                        .to_vec(),
-                );
-        }
-
         for (server_name, attribution) in config
             .mcp_server_catalog
             .plugin_attributions_by_server_name()
@@ -346,7 +327,6 @@ pub async fn read_mcp_resource(
     config: &McpConfig,
     auth: Option<&CodexAuth>,
     runtime_context: McpRuntimeContext,
-    codex_apps_tools_cache: ConnectorRuntimeManager<ToolInfo>,
     tool_catalog_cache: crate::McpToolCatalogCache,
     server: &str,
     params: ReadResourceRequestParams,
@@ -369,9 +349,7 @@ pub async fn read_mcp_resource(
             tx_event: None,
             startup_cancellation_token: cancel_token.clone(),
             runtime_context,
-            codex_apps_tools_cache,
             tool_catalog_cache,
-            codex_apps_tools_cache_key: connector_runtime_context_key(auth),
             client_mcp_extensions: ClientMcpExtensions::default(),
             auth: auth.cloned(),
             codex_apps_auth_manager: None,
@@ -402,7 +380,6 @@ pub async fn collect_mcp_server_status_snapshot_with_detail(
     auth: Option<&CodexAuth>,
     submit_id: String,
     runtime_context: McpRuntimeContext,
-    codex_apps_tools_cache: ConnectorRuntimeManager<ToolInfo>,
     tool_catalog_cache: crate::McpToolCatalogCache,
     detail: McpSnapshotDetail,
 ) -> McpServerStatusSnapshot {
@@ -445,9 +422,7 @@ pub async fn collect_mcp_server_status_snapshot_with_detail(
             tx_event: None,
             startup_cancellation_token: cancel_token.clone(),
             runtime_context,
-            codex_apps_tools_cache,
             tool_catalog_cache,
-            codex_apps_tools_cache_key: connector_runtime_context_key(auth),
             client_mcp_extensions: ClientMcpExtensions::default(),
             auth: auth.cloned(),
             codex_apps_auth_manager: None,

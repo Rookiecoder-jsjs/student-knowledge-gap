@@ -66,13 +66,6 @@ fn tool_dispatch_invocation(invocation: &ToolInvocation) -> Option<ToolDispatchI
                 model_visible_call_id: invocation.call_id.clone(),
             }
         }
-        ToolCallSource::CodeMode {
-            cell_id,
-            runtime_tool_call_id,
-        } => ToolDispatchRequester::CodeCell {
-            runtime_cell_id: cell_id.clone(),
-            runtime_tool_call_id: runtime_tool_call_id.clone(),
-        },
     };
 
     Some(ToolDispatchInvocation {
@@ -103,9 +96,6 @@ fn tool_dispatch_result(
                 response_item: result.to_response_item(call_id, payload),
             })
         }
-        ToolCallSource::CodeMode { .. } => Some(ToolDispatchResult::CodeModeResponse {
-            value: result.code_mode_result(payload),
-        }),
     }
 }
 

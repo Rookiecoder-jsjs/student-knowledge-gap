@@ -760,7 +760,6 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
                 TurnToolFunctionInfo {
                     name: "lookup".to_string(),
                     direct: true,
-                    code_mode_name: Some("mcp__calendar__lookup".to_string()),
                     deferred: false,
                     source: TurnToolSource::Mcp {
                         server_name: "calendar".to_string(),
@@ -794,7 +793,6 @@ fn turn_metadata_state_merges_client_metadata_without_replacing_reserved_fields(
                     "lookup": {
                         "name": "lookup",
                         "direct": true,
-                        "code_mode_name": "mcp__calendar__lookup",
                         "deferred": false,
                         "source": {
                             "kind": "mcp",

@@ -76,13 +76,11 @@ fn expected_runtimes(
 fn runtimes_by_name(
     tools: &[ToolInfo],
     config: &Config,
-    apps_enabled: bool,
     search_tool_enabled: bool,
 ) -> HashMap<ToolName, ToolExposure> {
     runtimes_by_name_with_catalog(
         tools,
         config,
-        apps_enabled,
         &ResolvedMcpCatalog::default(),
         search_tool_enabled,
     )
@@ -91,7 +89,6 @@ fn runtimes_by_name(
 fn runtimes_by_name_with_catalog(
     tools: &[ToolInfo],
     config: &Config,
-    apps_enabled: bool,
     mcp_server_catalog: &ResolvedMcpCatalog,
     search_tool_enabled: bool,
 ) -> HashMap<ToolName, ToolExposure> {
@@ -99,8 +96,6 @@ fn runtimes_by_name_with_catalog(
     let mut registry = ToolRegistry::default();
     append_mcp_tools(
         tools,
-        config,
-        apps_enabled,
         mcp_server_catalog,
         search_tool_enabled,
         &mut handlers,
@@ -178,7 +173,7 @@ async fn agent_plugin_budget_hides_only_overflow_agent_tools() {
     tools.push(legacy_tool.clone());
 
     let runtimes = runtimes_by_name_with_catalog(
-        &tools, &config, /*apps_enabled*/ false, &catalog, /*search_tool_enabled*/ false,
+        &tools, &config, &catalog, /*search_tool_enabled*/ false,
     );
     let agent_exposures = tools[..40]
         .iter()
@@ -213,96 +208,13 @@ async fn directly_exposes_effective_tool_sets_when_search_is_unavailable() {
     let mcp_tools = numbered_mcp_tools(/*count*/ 2);
 
     let runtimes = runtimes_by_name(
-        &mcp_tools, &config, /*apps_enabled*/ false, /*search_tool_enabled*/ false,
+        &mcp_tools, &config, /*search_tool_enabled*/ false,
     );
 
     assert_eq!(
         runtimes,
         expected_runtimes(&mcp_tools, ToolExposure::Direct)
     );
-}
-
-#[tokio::test]
-async fn cached_app_handlers_still_obey_current_apps_enablement_and_tool_policy() {
-    let config = test_config().await;
-    let codex_home = tempdir().expect("create restrictive config directory");
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        "[apps.calendar]\ndefault_tools_enabled = false\n",
-    )
-    .expect("write restrictive app policy");
-    let restricted_config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("build restrictive app policy");
-    let tools = [make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "events/create",
-        "mcp__codex_apps__calendar",
-        "create",
-        Some("calendar"),
-        Some("Calendar"),
-    )];
-    let mut handlers = HashMap::new();
-    let catalog = ResolvedMcpCatalog::default();
-    let mut allowed_registry = ToolRegistry::default();
-    let allowed = append_mcp_tools(
-        &tools,
-        &config,
-        /*apps_enabled*/ true,
-        &catalog,
-        /*search_tool_enabled*/ false,
-        &mut handlers,
-        &mut allowed_registry,
-    );
-    let cached_handler = &allowed_registry
-        .entries()
-        .next()
-        .expect("allowed app tool should be registered")
-        .runtime;
-
-    let mut disabled_registry = ToolRegistry::default();
-    let disabled = append_mcp_tools(
-        &tools,
-        &config,
-        /*apps_enabled*/ false,
-        &catalog,
-        /*search_tool_enabled*/ false,
-        &mut handlers,
-        &mut disabled_registry,
-    );
-    let mut restricted_registry = ToolRegistry::default();
-    let restricted = append_mcp_tools(
-        &tools,
-        &restricted_config,
-        /*apps_enabled*/ true,
-        &catalog,
-        /*search_tool_enabled*/ false,
-        &mut handlers,
-        &mut restricted_registry,
-    );
-    let mut restored_registry = ToolRegistry::default();
-    let restored = append_mcp_tools(
-        &tools,
-        &config,
-        /*apps_enabled*/ true,
-        &catalog,
-        /*search_tool_enabled*/ true,
-        &mut handlers,
-        &mut restored_registry,
-    );
-    let restored_handler = restored_registry
-        .entries()
-        .next()
-        .expect("restored app tool should be registered");
-
-    assert_eq!(allowed, HashSet::from([tools[0].canonical_tool_name()]));
-    assert!(disabled.is_empty());
-    assert!(restricted.is_empty());
-    assert_eq!(restored, allowed);
-    assert!(Arc::ptr_eq(cached_handler, &restored_handler.runtime));
-    assert_eq!(restored_handler.exposure, ToolExposure::Deferred);
 }
 
 #[tokio::test]
@@ -338,178 +250,29 @@ async fn excludes_tools_hidden_from_model_exposure() {
         ),
         &[],
     );
-    let visible_app_tool = with_visibility(
-        make_mcp_tool(
-            CODEX_APPS_MCP_SERVER_NAME,
-            "calendar_read",
-            "mcp__codex_apps__calendar",
-            "read",
-            Some("calendar"),
-            Some("Calendar"),
-        ),
-        &["app", "model"],
-    );
-    let hidden_app_tool = with_visibility(
-        make_mcp_tool(
-            CODEX_APPS_MCP_SERVER_NAME,
-            "calendar_open",
-            "mcp__codex_apps__calendar",
-            "open",
-            Some("calendar"),
-            Some("Calendar"),
-        ),
-        &["app"],
-    );
     let mcp_tools = vec![
         visible_tool.clone(),
         hidden_tool,
         empty_visibility_tool,
-        visible_app_tool.clone(),
-        hidden_app_tool,
     ];
     let runtimes = runtimes_by_name(
-        &mcp_tools, &config, /*apps_enabled*/ true, /*search_tool_enabled*/ false,
+        &mcp_tools, &config, /*search_tool_enabled*/ false,
     );
 
     assert_eq!(
         runtimes,
-        expected_runtimes(&[visible_tool, visible_app_tool], ToolExposure::Direct)
+        expected_runtimes(&[visible_tool], ToolExposure::Direct)
     );
 }
 
 #[tokio::test]
-async fn app_tool_registration_uses_trusted_catalog_metadata_and_preserves_source_order() {
-    let config = test_config().await;
-    let app_tool = make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "calendar_list_events",
-        "mcp__codex_apps__calendar",
-        "list_events",
-        Some("calendar"),
-        Some("Calendar"),
-    );
-    let missing_connector_id = make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "unknown_tool",
-        "mcp__codex_apps__unknown",
-        "unknown",
-        /*connector_id*/ None,
-        /*connector_name*/ None,
-    );
-    let mut synthetic_app_tool = make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "gmail_batch_read_email",
-        "mcp__codex_apps__gmail",
-        "batch_read_email",
-        Some("gmail"),
-        Some("Gmail"),
-    );
-    synthetic_app_tool.tool.meta = Some(MetaObject(
-        serde_json::json!({ "_codex_apps": { "synthetic_link": true } })
-            .as_object()
-            .expect("metadata should be an object")
-            .clone(),
-    ));
-    let regular_tool = make_mcp_tool(
-        "rmcp",
-        "regular_tool",
-        "mcp__rmcp",
-        "regular_tool",
-        /*connector_id*/ None,
-        /*connector_name*/ None,
-    );
-    let mcp_tools = [
-        app_tool.clone(),
-        missing_connector_id,
-        synthetic_app_tool.clone(),
-        regular_tool.clone(),
-    ];
-    let mut handlers = HashMap::new();
-    let mut registry = ToolRegistry::default();
-
-    append_mcp_tools(
-        &mcp_tools,
-        &config,
-        /*apps_enabled*/ true,
-        &ResolvedMcpCatalog::default(),
-        /*search_tool_enabled*/ false,
-        &mut handlers,
-        &mut registry,
-    );
-
-    let registered_names = registry
-        .entries()
-        .map(|entry| entry.runtime.tool_name())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        registered_names,
-        vec![
-            regular_tool.canonical_tool_name(),
-            app_tool.canonical_tool_name(),
-            synthetic_app_tool.canonical_tool_name(),
-        ]
-    );
-    assert_eq!(
-        runtimes_by_name(
-            &mcp_tools, &config, /*apps_enabled*/ false, /*search_tool_enabled*/ false,
-        ),
-        expected_runtimes(&[regular_tool], ToolExposure::Direct)
-    );
-}
-
-#[tokio::test]
-async fn applies_per_tool_app_policy_across_the_exposure_build() {
-    let codex_home = tempdir().expect("tempdir should succeed");
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        r#"
-[apps.calendar]
-default_tools_enabled = false
-
-[apps.calendar.tools."events/create"]
-enabled = true
-"#,
-    )
-    .expect("write config");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("config should build");
-    let enabled_tool = make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "events/create",
-        "mcp__codex_apps__calendar",
-        "create",
-        Some("calendar"),
-        Some("Calendar"),
-    );
-    let disabled_tool = make_mcp_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "events/list",
-        "mcp__codex_apps__calendar",
-        "list",
-        Some("calendar"),
-        Some("Calendar"),
-    );
-    let mcp_tools = [enabled_tool.clone(), disabled_tool];
-    let runtimes = runtimes_by_name(
-        &mcp_tools, &config, /*apps_enabled*/ true, /*search_tool_enabled*/ false,
-    );
-
-    assert_eq!(
-        runtimes,
-        expected_runtimes(&[enabled_tool], ToolExposure::Direct)
-    );
-}
-
-#[tokio::test]
+async #[tokio::test]
 async fn defers_effective_tool_sets_when_search_is_available() {
     let config = test_config().await;
     let mcp_tools = numbered_mcp_tools(/*count*/ 2);
 
     let runtimes = runtimes_by_name(
-        &mcp_tools, &config, /*apps_enabled*/ false, /*search_tool_enabled*/ true,
+        &mcp_tools, &config, /*search_tool_enabled*/ true,
     );
 
     assert_eq!(
@@ -519,32 +282,4 @@ async fn defers_effective_tool_sets_when_search_is_available() {
 }
 
 #[tokio::test]
-async fn defers_apps_and_non_app_mcp_tools() {
-    let config = test_config().await;
-    let mcp_tools = vec![
-        make_mcp_tool(
-            "rmcp",
-            "tool",
-            "mcp__rmcp",
-            "tool",
-            /*connector_id*/ None,
-            /*connector_name*/ None,
-        ),
-        make_mcp_tool(
-            CODEX_APPS_MCP_SERVER_NAME,
-            "calendar_create_event",
-            "mcp__codex_apps__calendar",
-            "_create_event",
-            Some("calendar"),
-            Some("Calendar"),
-        ),
-    ];
-    let runtimes = runtimes_by_name(
-        &mcp_tools, &config, /*apps_enabled*/ true, /*search_tool_enabled*/ true,
-    );
-
-    assert_eq!(
-        runtimes,
-        expected_runtimes(&mcp_tools, ToolExposure::Deferred)
-    );
-}
+async 

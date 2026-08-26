@@ -17,6 +17,9 @@ use crate::guardian::GUARDIAN_MAX_NODE_REPL_TOOL_RESULT_TOKENS;
 use crate::guardian::guardian_truncate_text;
 use crate::session::turn_context::TurnContext;
 
+// 写入侧（record/retained_bytes/discard_images）随 code-mode 嵌套采集端退役，
+// 读侧（snapshot_since/into_inputs/images）仍被 guardian 审查使用。
+#[allow(dead_code)]
 const MAX_RENDERED_BYTES: usize = 32_000;
 const MAX_RENDERED_OMISSION_BYTES: usize = 160;
 const MAX_PROVENANCE_BYTES: usize = 128;
@@ -49,6 +52,7 @@ struct NodeReplReviewResponse {
     items: Vec<UserInput>,
 }
 
+#[allow(dead_code)]
 impl NodeReplReviewResponse {
     fn has_images(&self) -> bool {
         self.items.iter().any(|item| matches!(item, Image { .. }))
@@ -81,6 +85,7 @@ impl NodeReplReviewResponse {
 }
 
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 struct NodeReplReviewEvidenceState {
     responses: VecDeque<Arc<NodeReplReviewResponse>>,
     next_sequence: u64,
@@ -92,6 +97,7 @@ struct NodeReplReviewEvidenceState {
 #[derive(Debug, Default)]
 pub struct NodeReplReviewEvidence(Mutex<NodeReplReviewEvidenceState>);
 
+#[allow(dead_code)]
 impl NodeReplReviewEvidence {
     pub(crate) const MAX_RETAINED_BYTES: usize = 8 * 1024 * 1024;
 
@@ -266,6 +272,7 @@ impl NodeReplReviewEvidence {
     }
 }
 
+#[allow(dead_code)]
 fn bounded_provenance(value: &str) -> String {
     let sanitized = take_bytes_at_char_boundary(value, MAX_PROVENANCE_BYTES)
         .replace(['\n', '\r', '[', ']', '='], "_")

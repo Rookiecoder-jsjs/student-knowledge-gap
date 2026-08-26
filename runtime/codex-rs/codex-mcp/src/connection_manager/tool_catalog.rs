@@ -6,7 +6,6 @@ use std::time::Instant;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
-use codex_connectors::ConnectorRuntimeFetchSource;
 use futures::future::join_all;
 use tracing::Instrument;
 use tracing::instrument;
@@ -367,13 +366,6 @@ impl McpConnectionSet {
             .context("failed to get client")?;
 
         let list_start = Instant::now();
-        let fetch_ticket =
-            managed_client
-                .codex_apps_tools_cache_context
-                .as_ref()
-                .map(|cache_context| {
-                    cache_context.begin_fetch(ConnectorRuntimeFetchSource::HardRefresh)
-                });
         let client_tools = list_tools_for_client_uncached(
             CODEX_APPS_MCP_SERVER_NAME,
             /*is_codex_apps_mcp_server*/ true,
@@ -389,19 +381,7 @@ impl McpConnectionSet {
         })?;
 
         let mut tool_catalog_revision = self.tool_catalog_revision.write().await;
-        let tools = match (
-            managed_client.codex_apps_tools_cache_context.as_ref(),
-            fetch_ticket,
-        ) {
-            (Some(cache_context), Some(fetch_ticket)) => cache_context.publish_if_newest_accepted(
-                fetch_ticket,
-                &managed_client.server_info,
-                client_tools.clone(),
-            ),
-            (None, None) => client_tools.clone(),
-            _ => unreachable!("Codex Apps fetch ticket requires cache context"),
-        };
-        *self.codex_apps_tools_override.write().await = Some(client_tools);
+        *self.codex_apps_tools_override.write().await = Some(client_tools.clone());
         *tool_catalog_revision += 1;
         drop(tool_catalog_revision);
         emit_duration(
@@ -410,7 +390,7 @@ impl McpConnectionSet {
             &[("cache", "miss")],
         );
         let tools = prepare_codex_apps_tools_for_model(
-            filter_tools(tools, &view.tool_filter),
+            filter_tools(client_tools, &view.tool_filter),
             &self.tool_plugin_provenance,
         )
         .into_iter()

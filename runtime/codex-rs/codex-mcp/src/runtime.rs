@@ -16,8 +16,6 @@ use std::time::Duration;
 use arc_swap::ArcSwap;
 use async_channel::Sender;
 use codex_config::types::McpServerDisabledReason;
-use codex_connectors::ConnectorRuntimeContextKey;
-use codex_connectors::ConnectorRuntimeManager;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::HttpClient;
@@ -74,9 +72,7 @@ pub struct McpRuntimeInput {
     pub tx_event: Option<Sender<Event>>,
     pub startup_cancellation_token: CancellationToken,
     pub runtime_context: McpRuntimeContext,
-    pub codex_apps_tools_cache: ConnectorRuntimeManager<ToolInfo>,
     pub tool_catalog_cache: McpToolCatalogCache,
-    pub codex_apps_tools_cache_key: ConnectorRuntimeContextKey,
     pub client_mcp_extensions: ClientMcpExtensions,
     pub auth: Option<CodexAuth>,
     pub codex_apps_auth_manager: Option<Arc<AuthManager>>,
@@ -252,12 +248,6 @@ impl McpRuntime {
         )
         .await;
         reconnect.claimed = false;
-    }
-
-    /// Starts fresh connections and returns their complete, refreshed Apps catalog.
-    pub async fn replace_fresh(&self, input: McpRuntimeInput) -> anyhow::Result<Vec<ToolInfo>> {
-        self.publish(input, /*previous*/ None).await;
-        self.latest_hard_refresh_codex_apps_tools_cache().await
     }
 
     async fn publish(&self, input: McpRuntimeInput, previous: Option<&McpConnectionSet>) {

@@ -6,7 +6,6 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
 mod apply_patch;
-mod apps;
 mod client;
 mod client_common;
 mod realtime_context;
@@ -73,7 +72,6 @@ mod mcp_tool_exposure;
 mod network_policy_decision;
 pub use mcp::McpManager;
 mod original_image_detail;
-pub use codex_mcp::CodexAppsToolsCache;
 pub use codex_mcp::SandboxState;
 mod mcp_openai_file;
 mod mcp_tool_call;
@@ -89,8 +87,6 @@ pub(crate) mod prompt_debug;
 #[doc(hidden)]
 pub use prompt_debug::build_prompt_input;
 pub(crate) mod mentions {
-    pub(crate) use crate::plugins::build_connector_slug_counts;
-    pub(crate) use crate::plugins::collect_explicit_app_ids;
     pub(crate) use crate::plugins::collect_explicit_plugin_mentions;
     pub(crate) use crate::plugins::collect_tool_mentions_from_messages;
 }

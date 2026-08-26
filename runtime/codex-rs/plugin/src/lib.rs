@@ -2,9 +2,12 @@
 
 use std::collections::HashSet;
 
+pub use app_config::parse_plugin_app_config;
+pub use app_config::parse_plugin_app_config_value;
 pub use codex_utils_plugins::mention_syntax;
 
 mod load_outcome;
+pub mod app_config;
 pub mod manifest;
 mod plugin_id;
 mod provider;

@@ -676,64 +676,6 @@ async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     assert!(manager.list_thread_ids().await.is_empty());
 }
 
-#[tokio::test]
-async fn code_mode_session_provider_is_shared_across_threads() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config().await;
-    config.codex_home = temp_dir.path().join("codex-home").abs();
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-
-    let provider: Arc<dyn CodeModeSessionProvider> = Arc::new(DisabledCodeModeSessionProvider);
-    let manager = ThreadManager::with_models_provider_and_home_for_tests(
-        CodexAuth::from_api_key("dummy"),
-        config.model_provider.clone(),
-        config.codex_home.to_path_buf(),
-        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
-    )
-    .with_code_mode_session_provider(Arc::clone(&provider));
-    let first = manager
-        .start_thread(StartThreadOptions::new(config.clone()))
-        .await
-        .expect("start first thread");
-    let second = manager
-        .start_thread(StartThreadOptions::new(config))
-        .await
-        .expect("start second thread");
-
-    let first_provider = first
-        .thread
-        .session
-        .services
-        .code_mode_service
-        .session_provider();
-    let second_provider = second
-        .thread
-        .session
-        .services
-        .code_mode_service
-        .session_provider();
-    assert!(Arc::ptr_eq(&first_provider, &second_provider));
-    assert!(Arc::ptr_eq(&first_provider, &provider));
-    assert!(Arc::ptr_eq(
-        &first_provider,
-        &manager.state.code_mode_session_provider
-    ));
-
-    let mut completed = vec![first.thread_id, second.thread_id];
-    completed.sort_by_key(std::string::ToString::to_string);
-    let report = manager
-        .shutdown_all_threads_bounded(Duration::from_secs(10))
-        .await;
-    assert_eq!(
-        report,
-        ThreadShutdownReport {
-            completed,
-            submit_failed: Vec::new(),
-            timed_out: Vec::new(),
-        }
-    );
-}
 
 #[tokio::test]
 async fn mcp_invalidation_refreshes_threads_that_are_still_starting() {
@@ -795,7 +737,6 @@ async fn mcp_invalidation_refreshes_threads_that_are_still_starting() {
         &config,
         Arc::clone(&auth_manager),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         Arc::new(extensions.build()),
@@ -977,7 +918,6 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         Arc::new(extensions.build()),
@@ -1184,7 +1124,6 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1318,7 +1257,6 @@ async fn explicit_installation_id_skips_codex_home_file() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1361,7 +1299,6 @@ async fn resume_active_thread_from_rollout_returns_running_thread() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1423,7 +1360,6 @@ async fn resume_stopped_thread_from_rollout_spawns_new_thread() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1492,7 +1428,6 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1577,7 +1512,6 @@ async fn subtree_listing_uses_injected_graph_store_without_state_db() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1624,7 +1558,6 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1734,7 +1667,6 @@ async fn metadata_update_without_result_reads_only_when_the_caller_needs_the_thr
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1860,7 +1792,6 @@ async fn new_uses_active_provider_for_model_refresh() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -1907,7 +1838,6 @@ async fn injected_models_manager_controls_refresh_policy() {
         &config,
         auth_manager,
         models_manager,
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Custom("test-embedder".to_string()),
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -2158,7 +2088,6 @@ async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_histor
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -2271,7 +2200,6 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),
@@ -2374,7 +2302,6 @@ async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_
         &config,
         auth_manager.clone(),
         build_models_manager(&config, auth_manager.clone()),
-        crate::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         empty_extension_registry(),

@@ -19,24 +19,6 @@ fn executed_tool_call_recorder_bounds_pending_calls_and_preserves_overflow() {
                 encrypted_function_args: None,
             },
             &ToolCallSource::Direct,
-            ToolMode::Direct,
-        );
-    }
-
-    let cell_id = CellId::new("bounded-cell".to_string());
-    recorder.register_cell(&cell_id, "bounded-output");
-    for _ in 0..MAX_PENDING_EXECUTED_TOOL_CALLS + 2 {
-        recorder.record_nested_tool_call(
-            cell_id.clone(),
-            ExecutedToolCall::new("nested_tool".to_string(), json!({})),
-            /*original_bytes*/ 2,
-        );
-    }
-
-    for index in 0..MAX_PENDING_EXECUTED_TOOL_CALLS + 2 {
-        recorder.register_cell(
-            &CellId::new(format!("cell-{index}")),
-            &format!("output-{index}"),
         );
     }
 
@@ -67,75 +49,7 @@ fn executed_tool_call_recorder_bounds_pending_calls_and_preserves_overflow() {
                 },
             }),
         );
-        assert_eq!(
-            state.pending_nested_calls,
-            MAX_PENDING_EXECUTED_TOOL_CALLS + 1
-        );
-        assert_eq!(state.cells.len(), MAX_PENDING_EXECUTED_TOOL_CALLS);
-        assert_eq!(state.output_cells.len(), MAX_PENDING_EXECUTED_TOOL_CALLS);
     }
-
-    let mut items = [ResponseItem::FunctionCallOutput {
-        id: None,
-        call_id: "bounded-output".to_string(),
-        output: FunctionCallOutputPayload::from_text(String::new()),
-        internal_chat_message_metadata_passthrough: None,
-    }];
-    let mut retry_cache = HashMap::new();
-    recorder.attach_pending_to_prompt(&mut items, &mut retry_cache);
-
-    let calls = items[0]
-        .executed_tool_call_metadata()
-        .and_then(|metadata| metadata.executed_tool_calls.as_ref())
-        .expect("bounded nested calls must attach to their own output");
-    assert_eq!(calls.len(), MAX_PENDING_EXECUTED_TOOL_CALLS + 1);
-    assert_eq!(
-        serde_json::to_value(calls.last().expect("overflow marker must be retained"))
-            .expect("nested overflow marker must serialize"),
-        json!({
-            "name": "nested_tool",
-            "arguments": {
-                "_codex_executed_tool_call_truncated": {
-                    "original_bytes": 2,
-                    "max_bytes": 0,
-                },
-            },
-        }),
-    );
-    let expected_calls = calls.clone();
-
-    {
-        let state = recorder
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert_eq!(state.pending_nested_calls, 0);
-        assert!(!state.cells.contains_key(&cell_id));
-        assert_eq!(retry_cache.len(), 1);
-    }
-
-    let mut replayed_items = [ResponseItem::FunctionCallOutput {
-        id: None,
-        call_id: "bounded-output".to_string(),
-        output: FunctionCallOutputPayload::from_text(String::new()),
-        internal_chat_message_metadata_passthrough: None,
-    }];
-    let mut replay_retry_cache = HashMap::new();
-    assert!(recorder.attach_pending_to_prompt(&mut replayed_items, &mut replay_retry_cache));
-    assert_eq!(
-        replayed_items[0]
-            .executed_tool_call_metadata()
-            .and_then(|metadata| metadata.executed_tool_calls.as_ref()),
-        Some(&expected_calls),
-    );
-
-    let mut compacted_retry_cache = HashMap::new();
-    assert!(!recorder.attach_pending_to_prompt(&mut [], &mut compacted_retry_cache));
-    let state = recorder
-        .state
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(state.retained_calls.is_empty());
 }
 
 #[test]
@@ -158,7 +72,6 @@ fn executed_tool_call_recorder_bounds_retained_history_and_reports_omissions() {
                 encrypted_function_args: None,
             },
             &ToolCallSource::Direct,
-            ToolMode::Direct,
         );
         history.push(ResponseItem::FunctionCallOutput {
             id: None,

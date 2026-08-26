@@ -53,7 +53,6 @@ use codex_analytics::ImagePreparationMetadata;
 use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::TurnCodexErrorFact;
 use codex_async_utils::OrCancelExt;
-use codex_connectors::connector_runtime_context_key;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
 use codex_execpolicy::prefix_rule_migration;
@@ -203,7 +202,6 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
 
-mod code_mode_warning;
 pub(crate) mod context_window;
 mod environment;
 pub(crate) mod extension_metrics;
@@ -228,7 +226,6 @@ pub(crate) mod turn;
 pub(crate) mod turn_context;
 mod turn_input;
 mod world_state;
-use self::code_mode_warning::unsupported_code_mode_warning;
 #[cfg(test)]
 use self::handlers::submission_dispatch_span;
 use self::handlers::submission_loop;
@@ -243,8 +240,6 @@ pub(crate) use self::session::SessionSettingsUpdate;
 #[cfg(test)]
 use self::turn::AssistantMessageStreamParsers;
 use self::turn::agent_message_text;
-#[cfg(test)]
-use self::turn::collect_explicit_app_ids_from_skill_items;
 use self::turn::realtime_text_for_event;
 use self::turn_context::TurnContext;
 #[cfg(test)]
@@ -400,7 +395,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) skills_service: Arc<HostSkillsService>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
-    pub(crate) code_mode_session_provider: Arc<dyn codex_code_mode::CodeModeSessionProvider>,
     pub(crate) extensions: Arc<codex_extension_api::ExtensionRegistry<crate::config::Config>>,
     pub(crate) conversation_history: InitialHistory,
     pub(crate) requested_history_mode: Option<ThreadHistoryMode>,
@@ -497,7 +491,6 @@ impl Session {
             skills_service,
             plugins_manager,
             mcp_manager,
-            code_mode_session_provider,
             extensions,
             conversation_history,
             requested_history_mode,
@@ -744,7 +737,6 @@ impl Session {
             skills_service,
             plugins_manager,
             mcp_manager.clone(),
-            code_mode_session_provider,
             extensions,
             thread_extension_init,
             client_mcp_extensions,

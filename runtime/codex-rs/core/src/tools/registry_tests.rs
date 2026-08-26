@@ -267,33 +267,6 @@ fn registry_rejects_default_namespace_alias_collisions() {
     }
 }
 
-#[test]
-fn registry_preserves_external_winners_and_trusted_synthetic_order() {
-    let handler = |tool_name| Arc::new(TestHandler { tool_name }) as Arc<dyn CoreToolRuntime>;
-    let [first_name, second_name, synthetic_name] =
-        ["first", "second", "synthetic"].map(codex_tools::ToolName::plain);
-    let first_handler = handler(first_name.clone());
-
-    let mut registry = ToolRegistry::from_tools([Arc::clone(&first_handler)]);
-    assert!(!registry.register_external(handler(first_name.clone())));
-    let canonical_first_name = first_name.clone().with_default_namespace();
-    assert_eq!(registry.first_collision(), Some(&canonical_first_name));
-    assert!(registry.register_external(handler(second_name.clone())));
-    registry.prepend_trusted(handler(synthetic_name.clone()));
-
-    assert_eq!(
-        registry
-            .entries()
-            .map(|tool| tool.runtime.tool_name())
-            .collect::<Vec<_>>(),
-        vec![synthetic_name, first_name.clone(), second_name],
-    );
-    assert!(
-        registry
-            .remove(&first_name)
-            .is_some_and(|handler| Arc::ptr_eq(&handler, &first_handler))
-    );
-}
 
 #[test]
 fn reserved_shell_command_rejects_external_runtimes_without_a_builtin() {
@@ -543,21 +516,6 @@ async fn spawn_agent_function_tools_use_agent_matcher_alias() {
     );
 }
 
-#[tokio::test]
-async fn code_mode_wait_does_not_expose_default_hook_payloads() {
-    let (session, turn) = crate::session::tests::make_session_and_context().await;
-    let output = crate::tools::context::FunctionToolOutput::from_text("ok".to_string(), Some(true));
-
-    let wait = crate::tools::handlers::CodeModeWaitHandler;
-    let wait_invocation = test_invocation(
-        Arc::new(session),
-        Arc::new(turn),
-        "wait-call",
-        wait.tool_name(),
-    );
-    assert_eq!(wait.pre_tool_use_payload(&wait_invocation), None);
-    assert_eq!(wait.post_tool_use_payload(&wait_invocation, &output), None);
-}
 
 #[tokio::test]
 async fn write_stdin_does_not_expose_default_pre_tool_use_payload() {
@@ -574,57 +532,6 @@ async fn write_stdin_does_not_expose_default_pre_tool_use_payload() {
     assert_eq!(write_stdin.pre_tool_use_payload(&invocation), None);
 }
 
-#[test]
-fn post_tool_use_feedback_output_keeps_code_mode_result_typed() {
-    let result = AnyToolResult {
-        call_id: "call-1".to_string(),
-        payload: ToolPayload::Function {
-            arguments: "{}".to_string(),
-        },
-        result: Box::new(PostToolUseFeedbackOutput {
-            original: Box::new(codex_tools::JsonToolOutput::new(
-                serde_json::json!({ "typed": true }),
-            )),
-            model_visible: crate::tools::context::FunctionToolOutput::from_text(
-                "hook feedback".to_string(),
-                /*success*/ None,
-            ),
-        }),
-        post_tool_use_payload: None,
-    };
-
-    assert_eq!(
-        result.into_response(),
-        ResponseInputItem::FunctionCallOutput {
-            call_id: "call-1".to_string(),
-            output: codex_protocol::models::FunctionCallOutputPayload::from_text(
-                "hook feedback".to_string()
-            ),
-        }
-    );
-
-    let result = AnyToolResult {
-        call_id: "call-1".to_string(),
-        payload: ToolPayload::Function {
-            arguments: "{}".to_string(),
-        },
-        result: Box::new(PostToolUseFeedbackOutput {
-            original: Box::new(codex_tools::JsonToolOutput::new(
-                serde_json::json!({ "typed": true }),
-            )),
-            model_visible: crate::tools::context::FunctionToolOutput::from_text(
-                "hook feedback".to_string(),
-                /*success*/ None,
-            ),
-        }),
-        post_tool_use_payload: None,
-    };
-
-    assert_eq!(
-        result.code_mode_result(),
-        serde_json::json!({ "typed": true })
-    );
-}
 
 #[tokio::test]
 async fn dispatch_uses_canonical_tool_names_for_lifecycle_contributors() -> anyhow::Result<()> {

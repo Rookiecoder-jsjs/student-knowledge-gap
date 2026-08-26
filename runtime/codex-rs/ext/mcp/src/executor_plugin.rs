@@ -1,5 +1,4 @@
 use codex_config::types::PluginMcpServerConfig;
-use codex_connectors_extension::ExecutorPluginConnectorProvider;
 use codex_core::config::Config;
 use codex_core_plugins::ExecutorPluginProvider;
 use codex_core_plugins::loader::apply_configured_plugin_mcp_server_policies;
@@ -28,7 +27,6 @@ struct SelectedPluginMetadata {
     plugin_id: String,
     plugin_display_name: String,
     servers: Vec<(String, codex_config::McpServerConfig)>,
-    connector_ids: Vec<String>,
 }
 
 #[derive(Default)]
@@ -44,7 +42,6 @@ struct CachedSelectedRoot {
 pub(crate) struct SelectedExecutorPluginMcpContributor {
     plugin_provider: ExecutorPluginProvider,
     mcp_provider: ExecutorPluginMcpProvider,
-    connector_provider: ExecutorPluginConnectorProvider,
 }
 
 impl SelectedExecutorPluginMcpContributor {
@@ -52,7 +49,6 @@ impl SelectedExecutorPluginMcpContributor {
         Self {
             plugin_provider: ExecutorPluginProvider::new(Arc::clone(&environment_manager)),
             mcp_provider: ExecutorPluginMcpProvider,
-            connector_provider: ExecutorPluginConnectorProvider,
         }
     }
 
@@ -90,14 +86,7 @@ impl SelectedExecutorPluginMcpContributor {
         };
         let metadata = match plugin {
             Some(plugin) => {
-                // MCP server declarations and app connector declarations are separate
-                // executor-owned files. Read them together so a remote environment only
-                // pays for the slower read instead of both reads back-to-back.
-                let (servers, connector_declarations) = tokio::join!(
-                    self.mcp_provider.load(&plugin),
-                    self.connector_provider.load(&plugin)
-                );
-                let servers = servers.unwrap_or_else(|err| {
+                let servers = self.mcp_provider.load(&plugin).await.unwrap_or_else(|err| {
                     tracing::warn!(
                         selected_root = selected_root.id,
                         error = %err,
@@ -105,23 +94,10 @@ impl SelectedExecutorPluginMcpContributor {
                     );
                     Vec::new()
                 });
-                let connector_ids = connector_declarations
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            selected_root = selected_root.id,
-                            error = %err,
-                            "failed to load selected executor plugin connectors"
-                        );
-                        Vec::new()
-                    })
-                    .into_iter()
-                    .map(|declaration| declaration.connector_id.0)
-                    .collect();
                 Some(SelectedPluginMetadata {
                     plugin_id: plugin.plugin().selected_root_id().to_string(),
                     plugin_display_name: plugin.plugin().manifest().display_name().to_string(),
                     servers,
-                    connector_ids,
                 })
             }
             None => None,
@@ -237,7 +213,6 @@ fn project_metadata(
         selected_root_id: selected_root_id.to_owned(),
         plugin_id: plugin.plugin_id,
         plugin_display_name: plugin.plugin_display_name,
-        connector_ids: plugin.connector_ids,
     });
     contributions
 }

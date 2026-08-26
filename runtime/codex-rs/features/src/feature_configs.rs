@@ -19,46 +19,6 @@ pub struct ToolRegistryConfigToml {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct CodeModeConfigToml {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    /// Default yield timeout for code-mode exec calls, in milliseconds.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub default_exec_yield_time_ms: Option<u64>,
-    /// Exact tool namespaces to omit from the code-mode nested tool surface.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub excluded_tool_namespaces: Option<Vec<String>>,
-    /// Exact tool namespaces to expose only as direct model tools.
-    /// These tools bypass deferral, remain top-level in code-mode-only sessions, and are omitted
-    /// from the nested code-mode tool surface.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub direct_only_tool_namespaces: Option<Vec<String>>,
-}
-
-impl FeatureConfig for CodeModeConfigToml {
-    fn enabled(&self) -> Option<bool> {
-        self.enabled
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct CodeModeHostConfigToml {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-    /// Keep code mode fail-closed when the standalone host is unavailable.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub disable_in_process_fallback: Option<bool>,
-}
-
-impl FeatureConfig for CodeModeHostConfigToml {
-    fn enabled(&self) -> Option<bool> {
-        self.enabled
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct NonPrefixedMcpToolNamesConfigToml {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,

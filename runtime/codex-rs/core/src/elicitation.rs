@@ -67,6 +67,7 @@ impl ElicitationService {
         self.inner.paused.subscribe()
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // 上游自带：仅模块内测试使用
     pub(crate) async fn wait_until_clear(&self) {
         let mut paused = self.subscribe();
         let _ = paused.wait_for(|paused| !*paused).await;

@@ -94,17 +94,6 @@ async fn notify_tool_finish_parts(
     }
 }
 
-fn extension_tool_call_source(source: ToolCallSource) -> ExtensionToolCallSource {
-    match source {
-        ToolCallSource::Direct | ToolCallSource::DirectPlaintextMessage => {
-            ExtensionToolCallSource::Direct
-        }
-        ToolCallSource::CodeMode {
-            cell_id,
-            runtime_tool_call_id,
-        } => ExtensionToolCallSource::CodeMode {
-            cell_id,
-            runtime_tool_call_id,
-        },
-    }
+fn extension_tool_call_source(_source: ToolCallSource) -> ExtensionToolCallSource {
+    ExtensionToolCallSource::Direct
 }

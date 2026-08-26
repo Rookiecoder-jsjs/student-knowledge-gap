@@ -21,7 +21,6 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_config::types::AuthCredentialsStoreMode;
-use codex_features::Feature;
 use core_test_support::responses;
 use core_test_support::skip_if_remote;
 use pretty_assertions::assert_eq;
@@ -45,7 +44,6 @@ const TINY_PNG_DATA_URL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA
 #[derive(Clone, Copy)]
 enum ImagegenTestMode {
     Direct,
-    CodeModeOnly,
 }
 
 // macOS and Windows Bazel CI can spend tens of seconds starting app-server
@@ -639,50 +637,6 @@ async fn transparent_image_edit_preserves_metadata_and_recent_pathless_image() -
     Ok(())
 }
 
-#[tokio::test]
-async fn standalone_image_generation_is_exposed_in_code_mode_only() -> Result<()> {
-    let server = responses::start_mock_server().await;
-    let response_mock = responses::mount_sse_once(
-        &server,
-        responses::sse(vec![
-            responses::ev_assistant_message("msg-1", "Done"),
-            responses::ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-
-    let codex_home = TempDir::new()?;
-    create_config_toml(
-        codex_home.path(),
-        &server.uri(),
-        ImagegenTestMode::CodeModeOnly,
-    )?;
-    write_chatgpt_auth(
-        codex_home.path(),
-        ChatGptAuthFixture::new("access-chatgpt"),
-        AuthCredentialsStoreMode::File,
-    )?;
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
-        .await?;
-    start_image_generation_turn(&mut mcp, ThreadStartParams::default()).await?;
-    timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("turn/completed"),
-    )
-    .await??;
-
-    assert!(
-        response_mock
-            .single_request()
-            .body_contains_text("image_gen__imagegen")
-    );
-
-    Ok(())
-}
 
 
 async fn start_image_generation_turn(
@@ -871,16 +825,13 @@ async fn mount_image_edit_response(server: &MockServer) {
 fn create_config_toml(
     codex_home: &Path,
     server_uri: &str,
-    mode: ImagegenTestMode,
+    _mode: ImagegenTestMode,
 ) -> std::io::Result<()> {
-    let mut config = MockResponsesConfig::new(server_uri)
+    let config = MockResponsesConfig::new(server_uri)
         .with_model_provider("openai-custom")
         .with_provider_name("OpenAI")
         .with_provider_base_url(&format!("{server_uri}/api/codex"))
         .with_root_config(&format!("chatgpt_base_url = \"{server_uri}\""))
         .with_provider_config("supports_websockets = false\nrequires_openai_auth = true");
-    if matches!(mode, ImagegenTestMode::CodeModeOnly) {
-        config = config.enable_feature(Feature::CodeModeOnly);
-    }
     config.write(codex_home)
 }

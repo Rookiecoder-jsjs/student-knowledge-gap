@@ -205,7 +205,6 @@ impl ViewImageHandler {
         Ok(boxed_tool_output(ViewImageOutput {
             image_url,
             image_detail,
-            unified_image_budget: self.options.unified_image_budget,
         }))
     }
 }
@@ -219,7 +218,6 @@ impl CoreToolRuntime for ViewImageHandler {
 pub struct ViewImageOutput {
     image_url: String,
     image_detail: ImageDetail,
-    unified_image_budget: bool,
 }
 
 impl ToolOutput for ViewImageOutput {
@@ -248,16 +246,6 @@ impl ToolOutput for ViewImageOutput {
         }
     }
 
-    fn code_mode_result(&self, _payload: &ToolPayload) -> serde_json::Value {
-        if self.unified_image_budget {
-            serde_json::json!({ "image_url": self.image_url })
-        } else {
-            serde_json::json!({
-                "image_url": self.image_url,
-                "detail": self.image_detail
-            })
-        }
-    }
 }
 
 #[cfg(test)]
@@ -320,32 +308,12 @@ mod tests {
         let output = ViewImageOutput {
             image_url: "data:image/png;base64,AAA".to_string(),
             image_detail: DEFAULT_IMAGE_DETAIL,
-            unified_image_budget: false,
         };
 
         assert_eq!(output.log_preview(), "<image data URL omitted: 25 bytes>");
     }
 
-    #[test]
-    fn code_mode_result_returns_image_url_object() {
-        let output = ViewImageOutput {
-            image_url: "data:image/png;base64,AAA".to_string(),
-            image_detail: DEFAULT_IMAGE_DETAIL,
-            unified_image_budget: false,
-        };
 
-        let result = output.code_mode_result(&ToolPayload::Function {
-            arguments: "{}".to_string(),
-        });
-
-        assert_eq!(
-            result,
-            json!({
-                "image_url": "data:image/png;base64,AAA",
-                "detail": "high",
-            })
-        );
-    }
 
     #[tokio::test]
     async fn handle_passes_sandbox_context_for_local_filesystem_reads() {
@@ -486,10 +454,7 @@ mod tests {
                 tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
                 call_id: "call-view-image".to_string(),
                 tool_name: codex_tools::ToolName::plain("view_image"),
-                source: ToolCallSource::CodeMode {
-                    cell_id: "cell-1".to_string(),
-                    runtime_tool_call_id: "tool-1".to_string(),
-                },
+                source: ToolCallSource::Direct,
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "not-an-image.txt" }).to_string(),
                 },

@@ -63,11 +63,6 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
         None
     }
 
-    /// Returns lazily cached Code Mode definitions owned by this runtime.
-    fn cached_code_mode_definitions(&self) -> Option<&[codex_code_mode::ToolDefinition]> {
-        None
-    }
-
     /// Returns a readiness wait for this exact tool before taking the execution gate.
     fn wait_until_ready<'a>(&'a self, _session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
         None
@@ -207,12 +202,6 @@ impl AnyToolResult {
         result.to_response_item(&call_id, &payload)
     }
 
-    pub(crate) fn code_mode_result(self) -> serde_json::Value {
-        let Self {
-            payload, result, ..
-        } = self;
-        result.code_mode_result(&payload)
-    }
 }
 
 struct PostToolUseFeedbackOutput {
@@ -233,9 +222,6 @@ impl ToolOutput for PostToolUseFeedbackOutput {
         self.model_visible.to_response_item(call_id, payload)
     }
 
-    fn code_mode_result(&self, payload: &ToolPayload) -> Value {
-        self.original.code_mode_result(payload)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,17 +313,6 @@ impl ToolRegistry {
         }
     }
 
-    pub(crate) fn prepend_trusted(&mut self, runtime: Arc<dyn CoreToolRuntime>) {
-        let tool_name = runtime.tool_name().with_default_namespace();
-        if self.tools.contains_key(&tool_name) {
-            error_or_panic(format!("tool {tool_name} already registered"));
-            return;
-        }
-
-        let exposure = runtime.exposure();
-        self.tools
-            .shift_insert(0, tool_name, RegisteredTool { runtime, exposure });
-    }
 
     pub(crate) fn register_external(&mut self, runtime: Arc<dyn CoreToolRuntime>) -> bool {
         let exposure = runtime.exposure();

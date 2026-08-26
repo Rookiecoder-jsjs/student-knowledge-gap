@@ -27,6 +27,8 @@
 | P1-1（执行批 ✅） | code-mode-host | **删除**（member 移除 + 目录；独立二进制零反向依赖） | code-mode/v8 全家范畴（§6.1） | 2026-08-25 |
 | P1-1（执行批 ✅） | thread-manager-sample | **删除**（member 移除 + 目录；sample 类，零反向依赖） | 示例工程不随产品分发 | 2026-08-25 |
 | P1-2（前门批 ✅） | cli / tui / cloud-tasks / cloud-tasks-client / cloud-tasks-mock-client | **删除五件套**（依赖闭包核实：cli→cloud-tasks→tui 链外无其他依赖者；manifest 移除 5 members + 3 workspace.deps）。随批退役 app-server 测试：code_mode_host.rs、executor_mcp.rs（codex bin 作 executor）、selected_capability_stack.rs（cargo_bin("codex")）、turn_start 的 code_mode analytics 用例、imagegen 的 code_mode_only 用例 | 教育产品唯一前门 = app-server；终端 UI/云端任务/交互式 CLI 均不随产品分发 | 2026-08-25 |
+| P1-3a（code-mode 手术批 ✅） | code-mode / code-mode-protocol / code-mode-runtime | **删除三件套**（members + workspace.deps + 目录）。连带拆除：Feature 枚举 5 个 CodeMode* 变体与配置结构、ToolOutput::code_mode_result trait 方法、ToolCallSource/ExecutedToolCallRecorder 单元格追踪、spec_plan 工具路由的 code-mode 分支、rollout-trace 仅保留回放数据结构；**workspace 全量 check 自此不再拉 V8** | code-mode/v8 全家范畴（§6.1）；DeepSeek 单模型单会话下 code-mode 执行面永不激活 | 2026-08-25 |
+| P1-3b（connectors 手术批 ✅） | connectors / ext/connectors | **删除两件套**（members + workspace.deps + 目录）。连带拆除：`ConnectorRuntimeManager` MCP 缓存通道（McpRuntimeInput/AsyncManagedClient/cached_server_info）、`ConnectorSnapshot`、`AppToolPolicyEvaluator`（内联为 codex-mcp 本地实现）、`parse_plugin_app_config`（迁入 codex-plugin）、app 认证 elicitation 流程、core 的 connectors 列表/缓存模块、`selected_plugin_connector_sources` 死代码链、tools 的 `DiscoverableTool::Connector` 变体；58 处源码引用全部清除 | §6.1 预定名单；全部依赖 ChatGPT 认证，教育产品永不激活 | 2026-08-26 |
 
 P1-1 验证：`cargo check -p codex-app-server` 全绿（基线 2m12s → 删除后复验通过）；
 `--workspace` 全量检查因 code-mode-runtime→v8 的既有依赖仍需 V8 归档，
@@ -35,14 +37,22 @@ P1-2 验证：`cargo check -p codex-app-server` 全绿；app-server 测试 **949
 （RUST_MIN_STACK=8388608）；core 2260 passed，唯一失败
 （blocking_snapshot_waits_for_starting_environment）经锚点 worktree 对照确认为
 **上游自带红测试**，与本批无关。130 → 125 members。
+P1-3 验证：`cargo check --workspace` 全绿（不再拉 V8）；core lib 2163 passed（2 个
+全局 tracing/时序敏感测试在并行全量下偶红、隔离全绿，经对照与本批无关）；codex-mcp
+176 passed、core-plugins 409 passed、app-server `all` 915 passed 全绿。
+P1-3 期间修复两处**上批遗留红测试**：plugin_install 三个 remote-oauth 用例缺
+`mount_remote_plugin_install` mock（上批删 with_apps_needing_auth 时误删）、
+recommended_plugins 断言 request_plugin_install 工具存在（该工具已随 tool_suggest 裁剪）。
+另退役 35 个已删功能的过期集成测试（CLI 二进制/apps/tool_suggest，DELTA.md D-013），
+并修复三处上批误删（插件能力段恢复、McpCallEvent derive、ProviderAuthCommandFixture cfg）。
+core `all` 集成套件并行全量 68 红均为负载脆弱性（隔离全绿；HEAD 基线同为 173 红）。
+125 → 120 members。
 
 ### 后续批次规划
 
-- **P1-3 手术批（剩余最大件）**：connectors 家（58 处引用）+ code-mode 全家
-  （含 code-mode-runtime 的 v8 依赖、core/tools/app-server 的 342 处引用）——
-  深度织入 spec_plan 工具暴露路径，需独立会话专项处理，全量测试护航；
 - **P1-4 沙箱批**：linux/windows-sandbox + bwrap + network-proxy（先设计 sandboxing
   门面保留方案）。
+- 后续可裁：realtime 全家 · exec 人类输出面 · 编码类 prompt 文件 · apply_patch 默认工具。
 
 ### 预定删除名单（§6.1 规划，Phase 1 逐个核实依赖后执行）
 

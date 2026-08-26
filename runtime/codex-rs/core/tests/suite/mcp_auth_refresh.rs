@@ -12,7 +12,6 @@ use codex_login::ExternalAuth;
 use codex_login::ExternalAuthFuture;
 use codex_login::ExternalAuthRefreshContext;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
-use codex_mcp::CodexAppsToolsCache;
 use codex_mcp::EffectiveMcpServer;
 use codex_mcp::McpRuntime;
 use codex_mcp::McpRuntimeContext;
@@ -103,9 +102,7 @@ async fn hosted_plugin_runtime_ps_mcp_tool_calls_use_current_auth_manager_token(
             Arc::new(environment_manager_without_environments()),
             home.path().to_path_buf(),
         ),
-        codex_apps_tools_cache: CodexAppsToolsCache::default(),
         tool_catalog_cache: McpToolCatalogCache::default(),
-        codex_apps_tools_cache_key: codex_mcp::codex_apps_tools_cache_key(Some(&expected_auth)),
         client_mcp_extensions: ClientMcpExtensions::default(),
         auth: Some(expected_auth.clone()),
         codex_apps_auth_manager: Some(Arc::clone(&auth_manager)),
