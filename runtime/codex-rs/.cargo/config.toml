@@ -1,3 +1,8 @@
+# 开发机 16GB 内存：限制并行编译/测试任务数，避免多 rustc 同时编译吃满内存。
+# 需要更快时临时用 `cargo build -j 8` 覆盖。
+[build]
+jobs = 4
+
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608", "-C", "target-feature=+crt-static"]
 
