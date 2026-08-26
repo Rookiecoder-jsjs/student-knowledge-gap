@@ -775,12 +775,6 @@
             "use_agent_identity": {
               "type": "boolean"
             },
-            "use_legacy_landlock": {
-              "type": "boolean"
-            },
-            "use_linux_sandbox_bwrap": {
-              "type": "boolean"
-            },
             "view_image": {
               "type": "boolean"
             },
@@ -5638,12 +5632,6 @@
           "type": "boolean"
         },
         "use_agent_identity": {
-          "type": "boolean"
-        },
-        "use_legacy_landlock": {
-          "type": "boolean"
-        },
-        "use_linux_sandbox_bwrap": {
           "type": "boolean"
         },
         "view_image": {

@@ -255,8 +255,6 @@ fn windows_sandbox_env_preserves_denied_reads_or_rejects_unsupported_backend() {
         manager: &manager,
         sandbox_cwd: &cwd_uri,
         workspace_roots: std::slice::from_ref(&cwd_uri),
-        codex_linux_sandbox_exe: None,
-        use_legacy_landlock: false,
         windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Elevated,
         windows_sandbox_private_desktop: false,
         network_denial_cancellation_token: None,
@@ -326,8 +324,6 @@ fn exec_server_env_keeps_command_native_and_carries_sandbox_context() {
         manager: &manager,
         sandbox_cwd: &cwd_uri,
         workspace_roots: std::slice::from_ref(&cwd_uri),
-        codex_linux_sandbox_exe: None,
-        use_legacy_landlock: false,
         windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
         windows_sandbox_private_desktop: false,
         network_denial_cancellation_token: None,
@@ -376,7 +372,6 @@ fn exec_server_env_keeps_command_native_and_carries_sandbox_context() {
             },
             windows_sandbox_private_desktop: false,
             windows_sandbox_proxy_settings_mode: None,
-            use_legacy_landlock: false,
         })
     );
     assert!(request.exec_server_enforce_managed_network);

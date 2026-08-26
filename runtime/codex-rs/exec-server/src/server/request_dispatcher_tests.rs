@@ -175,10 +175,7 @@ async fn request_queue_waits_for_dispatcher_admission_before_recording_telemetry
     let handler = Arc::new(ExecServerHandler::new(
         SessionRegistry::new(telemetry.clone()),
         notifications,
-        ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current executable"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
+        ExecServerRuntimePaths::new(std::env::current_exe().expect("current executable"))
         .expect("runtime paths"),
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     ));

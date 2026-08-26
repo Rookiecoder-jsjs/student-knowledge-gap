@@ -83,7 +83,6 @@ pub(crate) async fn load_project_instructions(
                 executor_windows_sandbox_level(windows_sandbox_level, turn_environment.cwd());
             sandbox.windows_sandbox_private_desktop =
                 config.permissions.windows_sandbox_private_desktop;
-            sandbox.use_legacy_landlock = config.features.use_legacy_landlock();
             sandbox
         });
         match read_agents_md(

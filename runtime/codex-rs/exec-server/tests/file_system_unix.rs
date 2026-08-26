@@ -117,55 +117,6 @@ fn create_directory_symlink(target: &Path, alias: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-fn write_fake_bwrap(bin_dir: &Path) -> Result<PathBuf> {
-    std::fs::create_dir_all(bin_dir)?;
-    let fake_bwrap = bin_dir.join("bwrap");
-    std::fs::write(
-        &fake_bwrap,
-        r#"#!/bin/bash
-set -euo pipefail
-
-for arg in "$@"; do
-  if [[ "${arg}" == "--help" ]]; then
-    echo "Usage: bwrap --argv0 --perms --as-pid-1"
-    exit 0
-  fi
-done
-
-printf '%s\n' "$*" >> "${0}.log"
-
-args=("$@")
-argv0=""
-command_start=-1
-for i in "${!args[@]}"; do
-  if [[ "${args[$i]}" == "--argv0" && $((i + 1)) -lt ${#args[@]} ]]; then
-    argv0="${args[$((i + 1))]}"
-  fi
-  if [[ "${args[$i]}" == "--" ]]; then
-    command_start=$((i + 1))
-    break
-  fi
-done
-
-if [[ "${command_start}" -lt 0 || "${command_start}" -ge "${#args[@]}" ]]; then
-  echo "fake bwrap did not find an inner command" >&2
-  exit 125
-fi
-
-cmd=("${args[@]:$command_start}")
-if [[ -n "${argv0}" ]]; then
-  exec -a "${argv0}" "${cmd[@]}"
-fi
-exec "${cmd[@]}"
-"#,
-    )?;
-    let mut permissions = std::fs::metadata(&fake_bwrap)?.permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(&fake_bwrap, permissions)?;
-    Ok(fake_bwrap)
-}
-
 #[test_case(FileSystemImplementation::Local ; "local")]
 #[test_case(FileSystemImplementation::Remote ; "remote")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -569,48 +520,6 @@ async fn file_system_sandboxed_canonicalize_resolves_directory_symlink(
         create_directory_symlink,
     )
     .await
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn sandboxed_file_system_helper_finds_bwrap_on_preserved_path() -> Result<()> {
-    let tmp = TempDir::new()?;
-    let fake_bin_dir = tmp.path().join("bin");
-    let fake_bwrap = write_fake_bwrap(&fake_bin_dir)?;
-    let mut path_entries = vec![fake_bin_dir];
-    if let Some(path) = std::env::var_os("PATH") {
-        path_entries.extend(std::env::split_paths(&path));
-    }
-    let helper_path = std::env::join_paths(path_entries)?;
-
-    let server = exec_server_with_env([("PATH", helper_path.as_os_str())], &[]).await?;
-    let environment = Environment::create_for_tests(Some(server.websocket_url().to_string()))?;
-    let file_system = environment.get_filesystem();
-    let workspace = tmp.path().join("workspace");
-    std::fs::create_dir_all(&workspace)?;
-    let file_path = workspace.join("created.txt");
-    let sandbox = workspace_write_sandbox(workspace);
-
-    file_system
-        .write_file(
-            &PathUri::from_host_native_path(&file_path)?,
-            b"written through fs helper".to_vec(),
-            Default::default(),
-            Some(&sandbox),
-        )
-        .await?;
-
-    assert_eq!(std::fs::read(&file_path)?, b"written through fs helper");
-
-    let bwrap_log = fake_bwrap.with_file_name("bwrap.log");
-    let log = std::fs::read_to_string(&bwrap_log)
-        .with_context(|| format!("expected fake bwrap log at {}", bwrap_log.display()))?;
-    assert!(
-        log.contains("--argv0"),
-        "expected fs helper sandbox path to invoke PATH bwrap with --argv0, got: {log}"
-    );
-
-    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

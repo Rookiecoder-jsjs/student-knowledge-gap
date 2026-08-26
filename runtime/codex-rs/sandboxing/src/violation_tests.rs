@@ -37,7 +37,7 @@ fn classifies_legacy_denial_keywords() {
         let output = make_exec_output(/*exit_code*/ 1, "", keyword, "");
 
         assert!(
-            classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output).is_some(),
+            classify_filesystem_sandbox_violation(SandboxType::MacosSeatbelt, &output).is_some(),
             "{keyword}"
         );
     }
@@ -49,9 +49,9 @@ fn normalizes_backend_keywords_as_policy_denied() {
         let output = make_exec_output(/*exit_code*/ 1, "", keyword, "");
 
         assert_eq!(
-            classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output),
+            classify_filesystem_sandbox_violation(SandboxType::MacosSeatbelt, &output),
             Some(FileSystemSandboxViolation {
-                backend: SandboxViolationBackend::LinuxSandbox,
+                backend: SandboxViolationBackend::Seatbelt,
                 reason: FileSystemSandboxViolationReason::PolicyDenied,
                 path: None,
                 output_snippet: keyword.to_string(),
@@ -73,21 +73,24 @@ fn preserves_legacy_denial_ordering() {
 
     assert!(
         classify_filesystem_sandbox_violation(
-            SandboxType::LinuxSeccomp,
+            SandboxType::MacosSeatbelt,
             &quick_reject_without_keyword
         )
         .is_none()
     );
     assert!(
         classify_filesystem_sandbox_violation(
-            SandboxType::LinuxSeccomp,
+            SandboxType::MacosSeatbelt,
             &quick_reject_with_keyword
         )
         .is_some()
     );
     assert!(
-        classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &zero_exit_with_keyword)
-            .is_none()
+        classify_filesystem_sandbox_violation(
+            SandboxType::MacosSeatbelt,
+            &zero_exit_with_keyword
+        )
+        .is_none()
     );
     assert!(
         classify_filesystem_sandbox_violation(SandboxType::None, &non_sandbox_with_keyword)
@@ -172,27 +175,6 @@ fn keeps_output_snippet_on_the_stream_that_matched() {
             reason: FileSystemSandboxViolationReason::PermissionDenied,
             path: Some("/private/tmp/denied".to_string()),
             output_snippet: "bash: /private/tmp/denied: Permission denied".to_string(),
-        })
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn classifies_linux_sigsys_exit() {
-    let output = make_exec_output(
-        /*exit_code*/ EXIT_CODE_SIGNAL_BASE + libc::SIGSYS,
-        "",
-        "",
-        "",
-    );
-
-    assert_eq!(
-        classify_filesystem_sandbox_violation(SandboxType::LinuxSeccomp, &output),
-        Some(FileSystemSandboxViolation {
-            backend: SandboxViolationBackend::LinuxSandbox,
-            reason: FileSystemSandboxViolationReason::SignalSyscall,
-            path: None,
-            output_snippet: String::new(),
         })
     );
 }

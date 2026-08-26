@@ -1576,9 +1576,7 @@ async fn stdio_mcp_tool_call_includes_sandbox_state_meta(
         sandbox_state,
         SandboxState {
             permission_profile: PermissionProfile::read_only(),
-            codex_linux_sandbox_exe: fixture.config.codex_linux_sandbox_exe.clone(),
             sandbox_cwd: PathUri::from_abs_path(&fixture.config.cwd),
-            use_legacy_landlock: false,
         }
     );
 

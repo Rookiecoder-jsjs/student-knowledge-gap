@@ -2165,7 +2165,6 @@ dependencies = [
  "codex-apply-patch",
  "codex-exec-server",
  "codex-install-context",
- "codex-linux-sandbox",
  "codex-sandboxing",
  "codex-shell-escalation",
  "codex-utils-absolute-path",
@@ -2240,15 +2239,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "codex-bwrap"
-version = "0.149.1"
-dependencies = [
- "cc",
- "libc",
- "pkg-config",
 ]
 
 [[package]]
@@ -3059,31 +3049,6 @@ version = "0.149.1"
 dependencies = [
  "keyring",
  "tracing",
-]
-
-[[package]]
-name = "codex-linux-sandbox"
-version = "0.149.1"
-dependencies = [
- "clap",
- "codex-core",
- "codex-install-context",
- "codex-network-proxy",
- "codex-process-hardening",
- "codex-protocol",
- "codex-sandboxing",
- "codex-utils-absolute-path",
- "globset",
- "landlock",
- "libc",
- "pretty_assertions",
- "seccompiler",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "tokio",
- "url",
 ]
 
 [[package]]

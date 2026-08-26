@@ -627,9 +627,7 @@ async fn augment_mcp_tool_request_meta_with_sandbox_state(
     let permission_profile = prepared_call.config().permission_profile.clone();
     let sandbox_state = serde_json::to_value(SandboxState {
         permission_profile,
-        codex_linux_sandbox_exe: prepared_call.config().codex_linux_sandbox_exe.clone(),
         sandbox_cwd,
-        use_legacy_landlock: prepared_call.config().use_legacy_landlock,
     })?;
 
     match meta.as_mut() {

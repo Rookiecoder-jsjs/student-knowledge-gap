@@ -60,7 +60,6 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 | `exec` / `exec-server` / `exec-server-protocol` | 统一执行进程 / 执行服务器及其协议（`unified_exec`、`EnvironmentManager`）。 |
 | `execpolicy` | 执行策略规则（`Policy`、`RequirementsExecPolicy`、前缀规则迁移）。 |
 | `sandboxing` | 沙箱策略类型与转换（`policy_transforms`、`intersect_permission_profiles`）。 |
-| `bwrap` / `linux-sandbox` | Linux 沙箱（bubblewrap 包装）。 |
 | `process-hardening` | 进程加固（结构/常量）。 |
 | `file-system` | 文件系统策略。 |
 | `shell-command` / `shell-escalation` | shell 命令解析 / 权限提升（macOS `ESCALATE_SOCKET_ENV_VAR`）。 |
@@ -112,8 +111,6 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 
 | crate（目录） | 一句话职责 |
 | --- | --- |
-| `bwrap` | Linux bubblewrap 沙箱（沙箱化/非沙箱化执行）。 |
-| `linux-sandbox` | Linux 沙箱实现细节。 |
 | `process-hardening` | 进程加固。 |
 | `sandboxing` | 沙箱策略类型与权限画像（`PermissionProfile`、`SandboxEnforcement`）。 |
 | `execpolicy` | 执行策略规则引擎。 |

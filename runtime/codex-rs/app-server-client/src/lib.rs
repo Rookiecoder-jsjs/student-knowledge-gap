@@ -1951,11 +1951,8 @@ mod tests {
             EnvironmentManager::create_for_tests(
                 Some("ws://127.0.0.1:8765".to_string()),
                 Some(
-                    ExecServerRuntimePaths::new(
-                        std::env::current_exe().expect("current exe"),
-                        /*codex_linux_sandbox_exe*/ None,
-                    )
-                    .expect("runtime paths"),
+                    ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
+                        .expect("runtime paths"),
                 ),
             )
             .await,

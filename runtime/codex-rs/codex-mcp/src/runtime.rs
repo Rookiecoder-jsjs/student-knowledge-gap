@@ -504,10 +504,7 @@ impl McpRuntime {
 #[serde(rename_all = "camelCase")]
 pub struct SandboxState {
     pub permission_profile: PermissionProfile,
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
     pub sandbox_cwd: PathUri,
-    #[serde(default)]
-    pub use_legacy_landlock: bool,
 }
 
 /// Runtime context used when resolving per-server MCP environments.
@@ -752,9 +749,7 @@ mod tests {
         .expect("current directory should convert to a URI");
         let sandbox_state = SandboxState {
             permission_profile: PermissionProfile::workspace_write(),
-            codex_linux_sandbox_exe: None,
             sandbox_cwd,
-            use_legacy_landlock: false,
         };
 
         let serialized = serde_json::to_value(&sandbox_state).expect("serialize sandbox state");

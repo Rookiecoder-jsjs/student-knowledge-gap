@@ -54,8 +54,6 @@ where
         &PermissionProfile::read_only(),
         &cwd,
         std::slice::from_ref(&cwd),
-        &None,
-        /*use_legacy_landlock*/ false,
         /*stdout_stream*/ None,
     )
     .await

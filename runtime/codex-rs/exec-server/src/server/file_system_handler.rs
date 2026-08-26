@@ -361,10 +361,7 @@ mod tests {
     #[tokio::test]
     async fn private_directories_are_created_with_owner_only_permissions() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let runtime_paths = ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current exe"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
+        let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
         .expect("runtime paths");
         let handler = FileSystemHandler::new(runtime_paths);
         let directory = temp_dir.path().join("private-metrics");
@@ -393,10 +390,7 @@ mod tests {
     #[tokio::test]
     async fn private_directories_reject_no_follow_before_resolving_the_path() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let runtime_paths = ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current exe"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
+        let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
         .expect("runtime paths");
         let handler = FileSystemHandler::new(runtime_paths);
         let target = temp_dir.path().join("target");
@@ -424,10 +418,7 @@ mod tests {
     #[tokio::test]
     async fn private_directories_are_rejected_when_owner_only_permissions_are_unsupported() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let runtime_paths = ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current exe"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
+        let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
         .expect("runtime paths");
         let handler = FileSystemHandler::new(runtime_paths);
         let directory = temp_dir.path().join("private-metrics");
@@ -449,10 +440,7 @@ mod tests {
     #[tokio::test]
     async fn no_platform_sandbox_policies_do_not_require_configured_sandbox_helper() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let runtime_paths = ExecServerRuntimePaths::new(
-            std::env::current_exe().expect("current exe"),
-            /*codex_linux_sandbox_exe*/ None,
-        )
+        let runtime_paths = ExecServerRuntimePaths::new(std::env::current_exe().expect("current exe"))
         .expect("runtime paths");
         let handler = FileSystemHandler::new(runtime_paths);
         let sandbox_cwd = PathUri::from_host_native_path(temp_dir.path()).expect("tempdir URI");

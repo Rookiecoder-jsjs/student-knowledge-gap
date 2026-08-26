@@ -89,8 +89,6 @@ impl ToolOrchestrator {
             manager: attempt.manager,
             sandbox_cwd: attempt.sandbox_cwd,
             workspace_roots: attempt.workspace_roots,
-            codex_linux_sandbox_exe: attempt.codex_linux_sandbox_exe,
-            use_legacy_landlock: attempt.use_legacy_landlock,
             windows_sandbox_level: attempt.windows_sandbox_level,
             windows_sandbox_private_desktop: attempt.windows_sandbox_private_desktop,
             network_denial_cancellation_token: network_approval
@@ -252,8 +250,6 @@ impl ToolOrchestrator {
             SandboxType::None
         };
 
-        // Platform-specific flag gating is handled by SandboxManager::select_initial.
-        let use_legacy_landlock = turn_ctx.config.features.use_legacy_landlock();
         let sandbox_policy_cwd = tool
             .sandbox_cwd(req)
             .cloned()
@@ -267,8 +263,6 @@ impl ToolOrchestrator {
             manager: &self.sandbox,
             sandbox_cwd: &sandbox_policy_cwd,
             workspace_roots,
-            codex_linux_sandbox_exe: turn_ctx.config.codex_linux_sandbox_exe.as_ref(),
-            use_legacy_landlock,
             windows_sandbox_level: turn_ctx.windows_sandbox_level,
             windows_sandbox_private_desktop: turn_ctx
                 .config
@@ -437,11 +431,6 @@ impl ToolOrchestrator {
                 } else {
                     SandboxType::None
                 };
-                let retry_codex_linux_sandbox_exe = if unsandboxed_allowed {
-                    None
-                } else {
-                    turn_ctx.config.codex_linux_sandbox_exe.as_ref()
-                };
                 let retry_attempt = SandboxAttempt {
                     sandbox: retry_sandbox,
                     sandbox_requested: retry_sandbox_requested,
@@ -451,8 +440,6 @@ impl ToolOrchestrator {
                     manager: &self.sandbox,
                     sandbox_cwd: &sandbox_policy_cwd,
                     workspace_roots,
-                    codex_linux_sandbox_exe: retry_codex_linux_sandbox_exe,
-                    use_legacy_landlock,
                     windows_sandbox_level: turn_ctx.windows_sandbox_level,
                     windows_sandbox_private_desktop: turn_ctx
                         .config

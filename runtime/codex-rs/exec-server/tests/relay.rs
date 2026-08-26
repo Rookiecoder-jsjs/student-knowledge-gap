@@ -162,8 +162,8 @@ async fn pending_noise_environment_connects_and_reconnects_after_ready_report() 
         .mount(&registry)
         .await;
 
-    let (codex_exe, codex_linux_sandbox_exe) = common::current_test_binary_helper_paths()?;
-    let runtime_paths = ExecServerRuntimePaths::new(codex_exe, codex_linux_sandbox_exe)?;
+    let codex_exe = common::current_test_binary_helper_paths()?;
+    let runtime_paths = ExecServerRuntimePaths::new(codex_exe)?;
     let http_client_factory = HttpClientFactory::new(OutboundProxyPolicy::RespectSystemProxy);
     let config = RemoteEnvironmentConfig::new(
         registry.uri(),
@@ -310,8 +310,8 @@ async fn next_connection_state(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn remote_environment_routes_encrypted_exec_server_rpc() -> Result<()> {
     let relay = RelayTest::new().await?;
-    let (codex_exe, codex_linux_sandbox_exe) = common::current_test_binary_helper_paths()?;
-    let runtime_paths = ExecServerRuntimePaths::new(codex_exe, codex_linux_sandbox_exe)?;
+    let codex_exe = common::current_test_binary_helper_paths()?;
+    let runtime_paths = ExecServerRuntimePaths::new(codex_exe)?;
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let remote_environment = AbortOnDropHandle::new(tokio::spawn(
         codex_exec_server::run_remote_environment_until_shutdown(

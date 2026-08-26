@@ -395,7 +395,6 @@ impl MessageProcessor {
             config_manager.clone(),
         );
         let command_exec_processor = CommandExecRequestProcessor::new(
-            arg0_paths.clone(),
             Arc::clone(&config),
             outgoing.clone(),
             config_manager.clone(),

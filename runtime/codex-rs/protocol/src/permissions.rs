@@ -1194,7 +1194,7 @@ impl FileSystemSandboxPolicy {
             // as separate WritableRoot values and are checked independently.
             // Preserve symlink path components that live under the writable root
             // so downstream sandboxes can still mask the symlink inode itself.
-            // Example: if `<root>/.codex -> <root>/decoy`, bwrap must still see
+            // Example: if `<root>/.codex -> <root>/decoy`, the sandbox must still see
             // `<root>/.codex`, not only the resolved `<root>/decoy`.
             read_only_subpaths.extend(
                 resolved_entries

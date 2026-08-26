@@ -224,7 +224,7 @@ pub struct ExecParams {
     /// Keep non-tty stdin writable through `process/write`.
     #[serde(default)]
     pub pipe_stdin: bool,
-    /// Optional process-visible argv0 override. Values such as `codex-linux-sandbox` are command
+    /// Optional process-visible argv0 override. Values such as the apply-patch helper are command
     /// names rather than paths, so this is not a [`PathUri`].
     pub arg0: Option<String>,
     /// Portable sandbox intent. Concrete wrapper argv is resolved by the exec-server.
@@ -270,7 +270,6 @@ pub enum ProcessSandboxType {
     /// The process was explicitly started without a platform sandbox.
     None,
     MacosSeatbelt,
-    LinuxSeccomp,
     WindowsRestrictedToken,
 }
 

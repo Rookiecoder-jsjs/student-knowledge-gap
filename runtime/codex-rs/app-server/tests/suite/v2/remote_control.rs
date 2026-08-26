@@ -223,7 +223,6 @@ async fn explicit_remote_control_startup_fails_when_disabled_by_requirements() -
         run_main_with_transport_options(
             Arg0DispatchPaths {
                 codex_self_exe: Some(std::env::current_exe()?),
-                codex_linux_sandbox_exe: None,
                 main_execve_wrapper_exe: None,
             },
             CliConfigOverrides::default(),

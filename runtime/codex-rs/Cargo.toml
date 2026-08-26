@@ -5,7 +5,6 @@ members = [
     "agent-graph-store",
     "agent-identity",
     "backend-client",
-    "bwrap",
     "build-info",
     "ansi-escape",
     "async-utils",
@@ -60,7 +59,6 @@ members = [
     "keyring-store",
     "file-search",
     "file-watcher",
-    "linux-sandbox",
     "lmstudio",
     "login",
     "codex-mcp",
@@ -188,7 +186,6 @@ codex-git-utils = { path = "git-utils" }
 codex-hooks = { path = "hooks" }
 codex-history = { path = "history" }
 codex-keyring-store = { path = "keyring-store" }
-codex-linux-sandbox = { path = "linux-sandbox" }
 codex-lmstudio = { path = "lmstudio" }
 codex-login = { path = "login" }
 codex-message-history = { path = "message-history" }

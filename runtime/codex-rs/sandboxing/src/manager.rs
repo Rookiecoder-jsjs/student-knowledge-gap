@@ -1,10 +1,3 @@
-#[cfg(target_os = "linux")]
-use crate::bwrap::WSL1_BWRAP_WARNING;
-#[cfg(target_os = "linux")]
-use crate::bwrap::is_wsl1;
-use crate::landlock::CODEX_LINUX_SANDBOX_ARG0;
-use crate::landlock::allow_network_for_proxy;
-use crate::landlock::create_linux_sandbox_command_args_for_permission_profile;
 use crate::policy_transforms::effective_permission_profile;
 use crate::policy_transforms::should_require_platform_sandbox;
 #[cfg(target_os = "windows")]
@@ -37,7 +30,6 @@ const WINDOWS_SANDBOX_WRAPPER_SETUP_ENV_ALLOWLIST: &[&str] = &["USERNAME", "USER
 pub enum SandboxType {
     None,
     MacosSeatbelt,
-    LinuxSeccomp,
     WindowsRestrictedToken,
 }
 
@@ -46,7 +38,6 @@ impl SandboxType {
         match self {
             SandboxType::None => "none",
             SandboxType::MacosSeatbelt => "seatbelt",
-            SandboxType::LinuxSeccomp => "seccomp",
             SandboxType::WindowsRestrictedToken => "windows_sandbox",
         }
     }
@@ -62,8 +53,6 @@ pub enum SandboxablePreference {
 pub fn get_platform_sandbox(windows_sandbox_enabled: bool) -> Option<SandboxType> {
     if cfg!(target_os = "macos") {
         Some(SandboxType::MacosSeatbelt)
-    } else if cfg!(target_os = "linux") {
-        Some(SandboxType::LinuxSeccomp)
     } else if cfg!(target_os = "windows") {
         if windows_sandbox_enabled {
             Some(SandboxType::WindowsRestrictedToken)
@@ -138,8 +127,6 @@ pub struct SandboxTransformRequest<'a> {
     // to make shared ownership explicit across runtime/sandbox plumbing.
     pub network: Option<&'a NetworkProxy>,
     pub sandbox_policy_cwd: &'a PathUri,
-    pub codex_linux_sandbox_exe: Option<&'a Path>,
-    pub use_legacy_landlock: bool,
     pub windows_sandbox_level: WindowsSandboxLevel,
     pub windows_sandbox_private_desktop: bool,
 }
@@ -157,7 +144,6 @@ pub struct SandboxDirectSpawnTransformRequest<'a> {
 
 // TODO(anp): Revisit this preparation type once this module's PathUri migration is complete.
 struct PendingSandboxedExecRequest {
-    native_command_cwd: AbsolutePathBuf,
     native_sandbox_policy_cwd: AbsolutePathBuf,
     effective_permission_profile: PermissionProfile,
 }
@@ -170,12 +156,7 @@ impl PendingSandboxedExecRequest {
         managed_mitm_ca_trust_bundle_path: Option<&AbsolutePathBuf>,
     ) -> Result<Self, SandboxTransformError> {
         // TODO(anp): Move PathUri conversion into the platform sandbox implementations.
-        let native_command_cwd = command_cwd.to_abs_path().map_err(|source| {
-            SandboxTransformError::InvalidCommandCwd {
-                cwd: command_cwd.clone(),
-                source,
-            }
-        })?;
+        let _ = command_cwd;
         let native_sandbox_policy_cwd = sandbox_policy_cwd.to_abs_path().map_err(|source| {
             SandboxTransformError::InvalidSandboxPolicyCwd {
                 cwd: sandbox_policy_cwd.clone(),
@@ -188,7 +169,6 @@ impl PendingSandboxedExecRequest {
             native_sandbox_policy_cwd.as_path(),
         );
         Ok(Self {
-            native_command_cwd,
             native_sandbox_policy_cwd,
             effective_permission_profile,
         })
@@ -205,12 +185,9 @@ pub enum SandboxTransformError {
         cwd: PathUri,
         source: io::Error,
     },
-    MissingLinuxSandboxExecutable,
     EnvironmentNetworkProxy(String),
     #[cfg(target_os = "macos")]
     SeatbeltPreparation(String),
-    #[cfg(target_os = "linux")]
-    Wsl1UnsupportedForBubblewrap,
     #[cfg(not(target_os = "macos"))]
     SeatbeltUnavailable,
     #[cfg(target_os = "windows")]
@@ -230,9 +207,6 @@ impl std::fmt::Display for SandboxTransformError {
                 f,
                 "sandbox policy cwd URI `{cwd}` is not valid on this host: {source}"
             ),
-            Self::MissingLinuxSandboxExecutable => {
-                write!(f, "missing codex-linux-sandbox executable path")
-            }
             Self::EnvironmentNetworkProxy(err) => {
                 write!(f, "failed to prepare environment network proxy: {err}")
             }
@@ -240,8 +214,6 @@ impl std::fmt::Display for SandboxTransformError {
             Self::SeatbeltPreparation(err) => {
                 write!(f, "failed to prepare Seatbelt sandbox: {err}")
             }
-            #[cfg(target_os = "linux")]
-            Self::Wsl1UnsupportedForBubblewrap => write!(f, "{WSL1_BWRAP_WARNING}"),
             #[cfg(not(target_os = "macos"))]
             Self::SeatbeltUnavailable => write!(f, "seatbelt sandbox is only available on macOS"),
             #[cfg(target_os = "windows")]
@@ -257,12 +229,9 @@ impl std::error::Error for SandboxTransformError {
         match self {
             Self::InvalidCommandCwd { source, .. }
             | Self::InvalidSandboxPolicyCwd { source, .. } => Some(source),
-            Self::MissingLinuxSandboxExecutable => None,
             Self::EnvironmentNetworkProxy(_) => None,
             #[cfg(target_os = "macos")]
             Self::SeatbeltPreparation(_) => None,
-            #[cfg(target_os = "linux")]
-            Self::Wsl1UnsupportedForBubblewrap => None,
             #[cfg(not(target_os = "macos"))]
             Self::SeatbeltUnavailable => None,
             #[cfg(target_os = "windows")]
@@ -340,8 +309,6 @@ impl SandboxManager {
             environment_id,
             network,
             sandbox_policy_cwd,
-            codex_linux_sandbox_exe,
-            use_legacy_landlock,
             windows_sandbox_level,
             windows_sandbox_private_desktop,
         } = request;
@@ -404,37 +371,6 @@ impl SandboxManager {
             }
             #[cfg(not(target_os = "macos"))]
             SandboxType::MacosSeatbelt => return Err(SandboxTransformError::SeatbeltUnavailable),
-            SandboxType::LinuxSeccomp => {
-                let pending = pending_sandboxed_request?;
-                let exe = codex_linux_sandbox_exe
-                    .ok_or(SandboxTransformError::MissingLinuxSandboxExecutable)?;
-                let allow_proxy_network = allow_network_for_proxy(enforce_managed_network);
-                #[cfg(target_os = "linux")]
-                ensure_linux_bubblewrap_is_supported(
-                    &pending
-                        .effective_permission_profile
-                        .file_system_sandbox_policy(),
-                    use_legacy_landlock,
-                    allow_proxy_network,
-                    is_wsl1(),
-                )?;
-                let mut args = create_linux_sandbox_command_args_for_permission_profile(
-                    os_argv_to_strings(argv),
-                    pending.native_command_cwd.as_path(),
-                    &pending.effective_permission_profile,
-                    pending.native_sandbox_policy_cwd.as_path(),
-                    use_legacy_landlock,
-                    allow_proxy_network,
-                );
-                let mut full_command = Vec::with_capacity(1 + args.len());
-                full_command.push(os_string_to_command_component(exe.as_os_str().to_owned()));
-                full_command.append(&mut args);
-                (
-                    full_command,
-                    Some(linux_sandbox_arg0_override(exe)),
-                    Some(pending),
-                )
-            }
             #[cfg(target_os = "windows")]
             SandboxType::WindowsRestrictedToken => {
                 if enforce_managed_network && windows_sandbox_level != WindowsSandboxLevel::Elevated
@@ -693,22 +629,6 @@ fn compatibility_workspace_write_policy(
     }
 }
 
-#[cfg(target_os = "linux")]
-fn ensure_linux_bubblewrap_is_supported(
-    file_system_sandbox_policy: &FileSystemSandboxPolicy,
-    use_legacy_landlock: bool,
-    allow_network_for_proxy: bool,
-    is_wsl1: bool,
-) -> Result<(), SandboxTransformError> {
-    let requires_bubblewrap = allow_network_for_proxy
-        || (!use_legacy_landlock && !file_system_sandbox_policy.has_full_disk_write_access());
-    if is_wsl1 && requires_bubblewrap {
-        return Err(SandboxTransformError::Wsl1UnsupportedForBubblewrap);
-    }
-
-    Ok(())
-}
-
 fn os_argv_to_strings(argv: Vec<OsString>) -> Vec<String> {
     argv.into_iter()
         .map(os_string_to_command_component)
@@ -719,14 +639,6 @@ fn os_string_to_command_component(value: OsString) -> String {
     value
         .into_string()
         .unwrap_or_else(|value| value.to_string_lossy().into_owned())
-}
-
-fn linux_sandbox_arg0_override(exe: &Path) -> String {
-    if exe.file_name().and_then(|name| name.to_str()) == Some(CODEX_LINUX_SANDBOX_ARG0) {
-        os_string_to_command_component(exe.as_os_str().to_owned())
-    } else {
-        CODEX_LINUX_SANDBOX_ARG0.to_string()
-    }
 }
 
 #[cfg(test)]

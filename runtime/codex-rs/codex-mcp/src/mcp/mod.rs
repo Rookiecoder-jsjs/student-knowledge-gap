@@ -140,10 +140,6 @@ pub struct McpConfig {
     pub approvals_reviewer: ApprovalsReviewer,
     /// Working directories for the exact environment handles used by this runtime.
     pub environment_cwds: HashMap<String, PathUri>,
-    /// Optional path to `codex-linux-sandbox` for sandboxed MCP tool execution.
-    pub codex_linux_sandbox_exe: Option<PathBuf>,
-    /// Whether to use legacy Landlock behavior in the MCP sandbox state.
-    pub use_legacy_landlock: bool,
     /// Whether the app MCP integration is enabled by config.
     ///
     /// ChatGPT auth is checked separately before a materialized host-owned Apps

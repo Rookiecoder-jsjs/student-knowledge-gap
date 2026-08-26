@@ -13,7 +13,6 @@ use codex_exec_server::ExecServerTelemetry;
 use codex_exec_server::RequestDispatchMode;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
-use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 use codex_test_binary_support::TestBinaryDispatchGuard;
 use codex_test_binary_support::TestBinaryDispatchMode;
 use codex_test_binary_support::configure_test_binary_dispatch;
@@ -42,9 +41,6 @@ pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
         if argv1 == Some(CODEX_WINDOWS_SANDBOX_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if exe_name == CODEX_LINUX_SANDBOX_ARG0 {
-            return TestBinaryDispatchMode::DispatchArg0Only;
-        }
         TestBinaryDispatchMode::InstallAliases
     });
     maybe_run_delayed_output_after_exit_from_test_binary();
@@ -52,17 +48,9 @@ pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
     guard
 };
 
-pub(crate) fn current_test_binary_helper_paths() -> anyhow::Result<(PathBuf, Option<PathBuf>)> {
+pub(crate) fn current_test_binary_helper_paths() -> anyhow::Result<PathBuf> {
     let current_exe = env::current_exe()?;
-    let codex_linux_sandbox_exe = if cfg!(target_os = "linux") {
-        TEST_BINARY_DISPATCH_GUARD
-            .as_ref()
-            .and_then(|guard| guard.paths().codex_linux_sandbox_exe.clone())
-            .or_else(|| Some(current_exe.clone()))
-    } else {
-        None
-    };
-    Ok((current_exe, codex_linux_sandbox_exe))
+    Ok(current_exe)
 }
 
 fn maybe_run_delayed_output_after_exit_from_test_binary() {
@@ -186,10 +174,7 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
             std::process::exit(1);
         }
     };
-    let runtime_paths = match ExecServerRuntimePaths::new(
-        current_exe.clone(),
-        linux_sandbox_exe(guard, &current_exe),
-    ) {
+    let runtime_paths = match ExecServerRuntimePaths::new(current_exe.clone()) {
         Ok(runtime_paths) => runtime_paths,
         Err(error) => {
             eprintln!("failed to configure exec-server runtime paths: {error}");
@@ -238,20 +223,3 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
     std::process::exit(exit_code);
 }
 
-fn linux_sandbox_exe(
-    guard: Option<&TestBinaryDispatchGuard>,
-    current_exe: &std::path::Path,
-) -> Option<PathBuf> {
-    #[cfg(target_os = "linux")]
-    {
-        guard
-            .and_then(|guard| guard.paths().codex_linux_sandbox_exe.clone())
-            .or_else(|| Some(current_exe.to_path_buf()))
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = guard;
-        let _ = current_exe;
-        None
-    }
-}

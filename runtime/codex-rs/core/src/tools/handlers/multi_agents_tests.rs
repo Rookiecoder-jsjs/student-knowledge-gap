@@ -70,7 +70,6 @@ use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -4543,7 +4542,6 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         use_profile: true,
         ..ShellEnvironmentPolicy::default()
     };
-    config.codex_linux_sandbox_exe = Some(PathBuf::from("/bin/echo"));
     turn.config = Arc::new(config);
     let temp_dir = tempfile::tempdir().expect("temp dir");
     #[allow(deprecated)]

@@ -466,10 +466,8 @@ pub async fn run_main_with_transport_options(
         )
     })?;
     let codex_home = find_codex_home()?;
-    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
-        arg0_paths.codex_self_exe.clone(),
-        arg0_paths.codex_linux_sandbox_exe.clone(),
-    )?;
+    let local_runtime_paths =
+        ExecServerRuntimePaths::from_optional_paths(arg0_paths.codex_self_exe.clone())?;
     let ignore_user_config = loader_overrides.ignore_user_config;
     let config_manager = ConfigManager::new(
         codex_home.to_path_buf(),
@@ -597,16 +595,6 @@ pub async fn run_main_with_transport_options(
     for warning in &config.startup_warnings {
         config_warnings.push(ConfigWarningNotification {
             summary: warning.clone(),
-            details: None,
-            path: None,
-            range: None,
-        });
-    }
-    if let Some(warning) =
-        codex_core::config::system_bwrap_warning(config.permissions.permission_profile())
-    {
-        config_warnings.push(ConfigWarningNotification {
-            summary: warning,
             details: None,
             path: None,
             range: None,

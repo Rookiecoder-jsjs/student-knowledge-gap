@@ -10,8 +10,6 @@ use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use std::ffi::OsStr;
 
-const CODEX_LINUX_SANDBOX_EXE_ENV_VAR: &str = "CODEX_TEST_LINUX_SANDBOX_EXE";
-
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut args = std::env::args_os();
     let _ = args.next();
@@ -25,9 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     let current_exe = std::env::current_exe()?;
-    let codex_linux_sandbox_exe =
-        std::env::var_os(CODEX_LINUX_SANDBOX_EXE_ENV_VAR).map(std::path::PathBuf::from);
-    let runtime_paths = ExecServerRuntimePaths::new(current_exe, codex_linux_sandbox_exe)?;
+    let runtime_paths = ExecServerRuntimePaths::new(current_exe)?;
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?

@@ -346,7 +346,6 @@ impl LocalProcess {
         let sandbox_type = match prepared.sandbox {
             SandboxType::None => Some(ProcessSandboxType::None),
             SandboxType::MacosSeatbelt => Some(ProcessSandboxType::MacosSeatbelt),
-            SandboxType::LinuxSeccomp => Some(ProcessSandboxType::LinuxSeccomp),
             SandboxType::WindowsRestrictedToken => Some(ProcessSandboxType::WindowsRestrictedToken),
         };
 

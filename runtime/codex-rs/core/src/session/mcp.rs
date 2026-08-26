@@ -331,7 +331,6 @@ impl Session {
                         executor_windows_sandbox_level(windows_sandbox_level, environment.cwd());
                     sandbox.windows_sandbox_private_desktop =
                         config.permissions.windows_sandbox_private_desktop;
-                    sandbox.use_legacy_landlock = config.features.use_legacy_landlock();
                     (environment.selection.environment_id.clone(), sandbox)
                 })
                 .collect::<HashMap<_, _>>()

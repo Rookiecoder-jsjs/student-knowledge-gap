@@ -1,7 +1,4 @@
-#[cfg(target_os = "linux")]
-mod bwrap;
 mod denial;
-pub mod landlock;
 mod manager;
 pub mod policy_transforms;
 #[cfg(target_os = "macos")]
@@ -10,10 +7,6 @@ mod spawn;
 mod violation;
 mod windows;
 
-#[cfg(target_os = "linux")]
-pub use bwrap::find_system_bwrap_in_path;
-#[cfg(target_os = "linux")]
-pub use bwrap::system_bwrap_warning;
 pub use codex_windows_sandbox::WindowsSandboxProxySettingsMode;
 pub use denial::is_likely_executor_managed_sandbox_denied;
 pub use denial::is_likely_sandbox_denied;
@@ -48,13 +41,6 @@ pub use windows::windows_sandbox_uses_elevated_backend;
 
 use codex_protocol::error::CodexErr;
 
-#[cfg(not(target_os = "linux"))]
-pub fn system_bwrap_warning(
-    _permission_profile: &codex_protocol::models::PermissionProfile,
-) -> Option<String> {
-    None
-}
-
 impl From<SandboxTransformError> for CodexErr {
     fn from(err: SandboxTransformError) -> Self {
         match err {
@@ -62,19 +48,12 @@ impl From<SandboxTransformError> for CodexErr {
             | error @ SandboxTransformError::InvalidSandboxPolicyCwd { .. } => {
                 CodexErr::InvalidRequest(error.to_string())
             }
-            SandboxTransformError::MissingLinuxSandboxExecutable => {
-                CodexErr::LandlockSandboxExecutableNotProvided
-            }
             SandboxTransformError::EnvironmentNetworkProxy(message) => {
                 CodexErr::UnsupportedOperation(message)
             }
             #[cfg(target_os = "macos")]
             SandboxTransformError::SeatbeltPreparation(message) => {
                 CodexErr::UnsupportedOperation(message)
-            }
-            #[cfg(target_os = "linux")]
-            SandboxTransformError::Wsl1UnsupportedForBubblewrap => {
-                CodexErr::UnsupportedOperation(crate::bwrap::WSL1_BWRAP_WARNING.to_string())
             }
             #[cfg(not(target_os = "macos"))]
             SandboxTransformError::SeatbeltUnavailable => CodexErr::UnsupportedOperation(
