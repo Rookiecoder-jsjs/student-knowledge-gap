@@ -652,12 +652,7 @@ timeout = 900
     let mut builder = builder.with_config(move |config| {
         config.project_doc_max_bytes = 0;
         config.use_experimental_unified_exec_tool = true;
-        if matches!(scenario, PushedExecScenario::ElevatedPowerShell) {
-            config.set_windows_elevated_sandbox_enabled(/*value*/ true);
-        }
         if managed_network {
-            #[cfg(windows)]
-            config.set_windows_sandbox_enabled(/*value*/ true);
             config.approvals_reviewer = ApprovalsReviewer::AutoReview;
             config.bypass_hook_trust = true;
         }

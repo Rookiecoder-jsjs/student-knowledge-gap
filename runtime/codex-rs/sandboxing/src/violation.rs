@@ -40,7 +40,6 @@ pub enum SandboxViolationEvent {
 pub enum SandboxViolationBackend {
     ManagedNetworkProxy,
     Seatbelt,
-    WindowsSandbox,
 }
 
 impl SandboxViolationBackend {
@@ -48,7 +47,6 @@ impl SandboxViolationBackend {
         match self {
             Self::ManagedNetworkProxy => "managed_network_proxy",
             Self::Seatbelt => "seatbelt",
-            Self::WindowsSandbox => "windows_sandbox",
         }
     }
 }
@@ -129,7 +127,6 @@ fn classify_filesystem_sandbox_violation(
     let backend = match sandbox_type {
         SandboxType::None => return None,
         SandboxType::MacosSeatbelt => SandboxViolationBackend::Seatbelt,
-        SandboxType::WindowsRestrictedToken => SandboxViolationBackend::WindowsSandbox,
     };
 
     if let Some((reason, output)) = filesystem_reason_from_output(exec_output) {

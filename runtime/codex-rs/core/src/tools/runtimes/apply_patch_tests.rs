@@ -2,7 +2,6 @@ use super::*;
 use crate::config::PermissionProfileSnapshot;
 use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::tools::sandboxing::SandboxAttempt;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
@@ -242,8 +241,6 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
         manager: &manager,
         sandbox_cwd: &sandbox_policy_cwd,
         workspace_roots: std::slice::from_ref(&sandbox_policy_cwd),
-        windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
-        windows_sandbox_private_desktop: true,
         network_denial_cancellation_token: None,
         network_proxy: None,
     };
@@ -269,11 +266,6 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
         sandbox.cwd,
         Some(codex_utils_path_uri::PathUri::from_abs_path(&path))
     );
-    assert_eq!(
-        sandbox.windows_sandbox_level,
-        WindowsSandboxLevel::RestrictedToken
-    );
-    assert_eq!(sandbox.windows_sandbox_private_desktop, true);
 }
 
 #[tokio::test]
@@ -308,8 +300,6 @@ async fn file_system_sandbox_context_respects_sandbox_request() {
         manager: &manager,
         sandbox_cwd: &sandbox_policy_cwd,
         workspace_roots: std::slice::from_ref(&sandbox_policy_cwd),
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        windows_sandbox_private_desktop: false,
         network_denial_cancellation_token: None,
         network_proxy: None,
     };
@@ -336,9 +326,6 @@ async fn file_system_sandbox_context_respects_sandbox_request() {
             permissions: permissions.into(),
             cwd: Some(cwd.clone()),
             workspace_roots: vec![cwd],
-            windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
-            windows_sandbox_private_desktop: false,
-            windows_sandbox_proxy_settings_mode: None,
         })
     );
 }

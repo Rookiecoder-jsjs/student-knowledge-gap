@@ -50,7 +50,8 @@
 - TUI 相关模块纪律（chatwidget.rs / chat_composer.rs 等）——TUI 在 §6.1 删除名单；
 - 编码产品工作流条目（apply_patch 默认工具、PR 模板、release 流程的 npm 发布段）；
 - 上游 docs/ 外链约定——fork 的工程文档单一归属 handbook/；
-- CODEX_SANDBOX 环境变量的沙箱约定随 linux-sandbox 裁剪失效（windows-sandbox 待 P1-4b 评估）。
+- CODEX_SANDBOX 环境变量的沙箱约定随 linux-sandbox 裁剪失效；windows-sandbox 已随 P1-4b 整链拆除。
+  剩余 OS 沙箱面为 macOS seatbelt + exec-server 的既有 unix 沙箱封装（util/command-runner 除外，已删）。
 
 ## 五、sc 侧（backend/gateway/frontend）纪律
 

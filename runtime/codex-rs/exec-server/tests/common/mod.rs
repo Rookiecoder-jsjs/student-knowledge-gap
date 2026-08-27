@@ -26,25 +26,21 @@ pub(crate) const SYSTEM_PROXY_REQUEST_URL_ENV: &str =
     "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_REQUEST_URL";
 pub(crate) const SYSTEM_PROXY_URL_ENV: &str = "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_URL";
 
-const CODEX_WINDOWS_SANDBOX_ARG1: &str = "--run-as-windows-sandbox";
 const DELAYED_OUTPUT_AFTER_EXIT_CHILD_ARG: &str = "--codex-test-delayed-output-after-exit-child";
 
 #[ctor]
 pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
-    let guard = configure_test_binary_dispatch("codex-exec-server-tests", |exe_name, argv1| {
+    let guard = configure_test_binary_dispatch("codex-exec-server-tests", |_exe_name, argv1| {
         if argv1 == Some(CODEX_ARG0_EXEC_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         if argv1 == Some(CODEX_FS_HELPER_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
-        if argv1 == Some(CODEX_WINDOWS_SANDBOX_ARG1) {
-            return TestBinaryDispatchMode::DispatchArg0Only;
-        }
         TestBinaryDispatchMode::InstallAliases
     });
     maybe_run_delayed_output_after_exit_from_test_binary();
-    maybe_run_exec_server_from_test_binary(guard.as_ref());
+    maybe_run_exec_server_from_test_binary();
     guard
 };
 
@@ -129,7 +125,7 @@ fn run_delayed_output_after_exit_child(release_path: &Path) {
     std::process::exit(1);
 }
 
-fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard>) {
+fn maybe_run_exec_server_from_test_binary() {
     let mut args = env::args();
     let _program = args.next();
     let Some(command) = args.next() else {

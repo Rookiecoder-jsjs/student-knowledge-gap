@@ -30,6 +30,7 @@
 | P1-3a（code-mode 手术批 ✅） | code-mode / code-mode-protocol / code-mode-runtime | **删除三件套**（members + workspace.deps + 目录）。连带拆除：Feature 枚举 5 个 CodeMode* 变体与配置结构、ToolOutput::code_mode_result trait 方法、ToolCallSource/ExecutedToolCallRecorder 单元格追踪、spec_plan 工具路由的 code-mode 分支、rollout-trace 仅保留回放数据结构；**workspace 全量 check 自此不再拉 V8** | code-mode/v8 全家范畴（§6.1）；DeepSeek 单模型单会话下 code-mode 执行面永不激活 | 2026-08-25 |
 | P1-3b（connectors 手术批 ✅） | connectors / ext/connectors | **删除两件套**（members + workspace.deps + 目录）。连带拆除：`ConnectorRuntimeManager` MCP 缓存通道（McpRuntimeInput/AsyncManagedClient/cached_server_info）、`ConnectorSnapshot`、`AppToolPolicyEvaluator`（内联为 codex-mcp 本地实现）、`parse_plugin_app_config`（迁入 codex-plugin）、app 认证 elicitation 流程、core 的 connectors 列表/缓存模块、`selected_plugin_connector_sources` 死代码链、tools 的 `DiscoverableTool::Connector` 变体；58 处源码引用全部清除 | §6.1 预定名单；全部依赖 ChatGPT 认证，教育产品永不激活 | 2026-08-26 |
 | P1-4a（沙箱批第一批 ✅） | bwrap / linux-sandbox | **删除两件套**（members + workspace.deps + 目录，含 vendor/bubblewrap C 源码）。连带拆除：`SandboxType::LinuxSeccomp` 变体、`codex-linux-sandbox` 派发/别名/路径管线（arg0/core/exec-server/app-server/exec/codex-mcp/mcp-server）、landlock/bwrap 门面模块、`codex_linux_sandbox_exe` / `use_legacy_landlock` 两字段跨 crates 全清、`Feature::UseLegacyLandlock`(Deprecated) / `UseLinuxSandboxBwrap`(Removed) 标志、`SystemError::LandlockSandboxExecutableNotProvided`、exec-server 的 sandboxed-file-system Require 失败关闭路径保留（fail-closed）；**workspace 不再编译 landlock/seccomp/seccompiler/bubblewrap 依赖链** | §6.1（linux-sandbox/windows-sandbox"内部函数调用无需 OS 沙箱"）；容器化部署下 OS 沙箱冗余；network-proxy/windows-sandbox 留后续批 | 2026-08-26 |
+| P1-4b（沙箱批第二批 ✅） | windows-sandbox-rs | **删除**（path 依赖隐式成员 + workspace.deps + 目录，约 60 个 Windows 目标门控源文件）。连带拆除整条跨平台面：`SandboxType::WindowsRestrictedToken` 变体与 spawn/门面（sandboxing manager/lib/spawn/violation，windows.rs 文件删除）、exec-server `ProcessSandboxType::WindowsRestrictedToken` 与 `PreparedWindowsSandboxRequest` 强制面、core `windows_sandbox.rs` setup 模块与 `WindowsSandboxLevelExt`、`Feature::WindowsSandbox`/`WindowsSandboxElevated` 标志、config `[windows]` 段（`WindowsToml`/`WindowsSandboxModeToml`/`windows_sandbox_mode` 需求）、protocol `WindowsSandboxLevel`/`WindowsSandboxProxySettingsMode` 类型、app-server readiness/Setup UX 请求处理器与 protocol v2 报文（含 TS/JSON schema 再生）、exec-server 的 Windows spawn 沙箱测试面；network-proxy 的 windows 沙箱 ingress 测试随删 | §6.1 预定名单（windows-sandbox"内部函数调用无需 OS 沙箱"）；纯 Windows 桌面面，容器化/Linux 部署永不激活；**磁盘零增益**（crate 本就 Windows 目标门控、macOS/Linux 不编译）但依赖图 ledger 收口；config/protocol/UX 全量下线 | 2026-08-27 |
 
 P1-1 验证：`cargo check -p codex-app-server` 全绿（基线 2m12s → 删除后复验通过）；
 `--workspace` 全量检查因 code-mode-runtime→v8 的既有依赖仍需 V8 归档，
@@ -55,18 +56,28 @@ P1-4a 验证：`cargo check -p codex-app-server` 全绿；`cargo test --no-run` 
 config_schema_matches_fixture 已随 regeneraton 修复）。退役 linux OS 沙箱的过期集成测试
 （exec sandbox 套件、arg0 别名、fs_sandbox bwrap 用例、hostile-helper 用例等，DELTA.md
 D-019）。120 → 118 members。
+P1-4b 验证：`cargo check -p codex-app-server` 全绿；受影响 crate 定向测试全绿
+（config 261 / features 34 / sandboxing 82 / exec-server 集成通过 / exec 沙箱测试 /
+core lib 2122 passed 仅剩 2 个既有负载脆弱红、app-server `all` 913 passed）；schema
+再生：`core/config.schema.json`（FEATURES 驱动，-55 行）+ `write_schema_fixtures.py`
+重写 `app-server-protocol/schema/precomputed/*.zst`，TS/JSON Windows*.ts/json 随
+build.rs 消失；退役 windows 沙箱的过期集成测试（exec-server process_sandbox/file_system
+windows 用例、exec_process windows 写、app-server windows_sandbox_processor/Setup UX、
+core windows_sandbox.rs/read_grants 模块、DELTA.md D-021～D-030）。`workspace_members`
+显式 118 不变（windows-sandbox-rs 本是 path 依赖隐式成员，未列入显式清单）；
+零残留 grep（WindowsSandbox*|windows_sandbox|WindowsRestrictedToken 等）为空。
+**windows-sandbox == 拆毕，network-proxy 独立评估留待后续批。**
 
 ### 后续批次规划
 
-- **P1-4b**：windows-sandbox-rs + network-proxy（本轮保留；windows 纯 Windows 面、
-  network-proxy 为 Restricted 网络策略核心，各自独立批）。
+- **network-proxy 独立评估批**：P1-4b 保留（Restricted 网络策略核心——exec-policy 依赖、代理鉴权/SID 路由），裁/留另行裁决。
 - 后续可裁：realtime 全家 · exec 人类输出面 · 编码类 prompt 文件 · apply_patch 默认工具。
 
 ### 预定删除名单（§6.1 规划，Phase 1 逐个核实依赖后执行）
 
 cloud-tasks 全家 · realtime 全家 · code-mode/v8 全家 · connectors ·
 TUI（唯一前门是 app-server）· exec 人类输出面 · apply_patch 默认工具 ·
-编码类 prompt 文件 · windows-sandbox（内部函数调用无需 OS 沙箱；network-proxy 独立评估）
+编码类 prompt 文件 · network-proxy（独立评估）
 
 ### 预定新增（§6.3，均须配 BUILD.bazel——D8 双轨义务）
 

@@ -8,8 +8,6 @@ use codex_network_proxy::NetworkProxyConfig;
 use codex_network_proxy::PROXY_ATTRIBUTION_TOKEN_ENV_KEY;
 use codex_network_proxy::RemoteNetworkProxyConfig;
 use codex_network_proxy::RemoteNetworkProxyLaunchConfig;
-#[cfg(windows)]
-use codex_protocol::config_types::WindowsSandboxLevel;
 #[cfg(any(unix, windows))]
 use codex_protocol::models::PermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -380,83 +378,4 @@ async fn disabled_remote_proxy_config_is_rejected_before_exporting_ports() {
             .message
             .contains("executor-local network proxy launch requires an enabled proxy")
     );
-}
-
-#[cfg(windows)]
-#[test_case(WindowsSandboxLevel::RestrictedToken ; "unelevated is rejected")]
-#[test_case(WindowsSandboxLevel::Elevated ; "elevated is accepted")]
-#[tokio::test]
-async fn managed_network_honors_windows_sandbox_level(windows_sandbox_level: WindowsSandboxLevel) {
-    let cwd: AbsolutePathBuf = std::env::current_dir()
-        .expect("current directory")
-        .try_into()
-        .expect("absolute cwd");
-    let cwd_uri = PathUri::from_abs_path(&cwd);
-    let self_exe = std::env::current_exe().expect("current executable");
-    let runtime_paths = ExecServerRuntimePaths::new(self_exe).expect("runtime paths");
-    let permissions = PermissionProfile::read_only();
-    let mut sandbox = FileSystemSandboxContext::from_permission_profile_with_cwd(
-        permissions.clone(),
-        cwd_uri.clone(),
-    );
-    sandbox.windows_sandbox_level = windows_sandbox_level;
-    sandbox.windows_sandbox_proxy_settings_mode =
-        Some(codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve);
-    let proxy_config = RemoteNetworkProxyConfig::from_effective_config(&NetworkProxyConfig {
-        enabled: true,
-        enable_socks5: false,
-        ..NetworkProxyConfig::default()
-    })
-    .expect("supported remote proxy config");
-    let params = ExecParams {
-        process_id: ProcessId::from("process-managed-network"),
-        argv: vec!["cmd.exe".to_string(), "/c".to_string(), "exit".to_string()],
-        cwd: cwd_uri,
-        env_policy: None,
-        env: HashMap::new(),
-        tty: false,
-        pipe_stdin: false,
-        arg0: None,
-        sandbox: Some(sandbox),
-        enforce_managed_network: true,
-        managed_network: None,
-        network_proxy: Some(RemoteNetworkProxyLaunchConfig::new(proxy_config)),
-    };
-
-    let prepared = prepare_exec_request(
-        &params,
-        HashMap::new(),
-        Some(&runtime_paths),
-        /*network_policy_decider*/ None,
-        /*network_policy_audit_observer*/ None,
-    )
-    .await;
-
-    if windows_sandbox_level == WindowsSandboxLevel::RestrictedToken {
-        let error = prepared
-            .err()
-            .expect("managed networking must reject an unelevated Windows sandbox");
-        assert_eq!(error.code, -32602);
-        assert!(
-            error
-                .message
-                .contains("managed networking requires the elevated Windows sandbox backend")
-        );
-        return;
-    }
-
-    let mut prepared = prepared.expect("managed networking accepts an elevated Windows sandbox");
-    let spawn = prepared
-        .windows_sandbox_spawn_request()
-        .expect("Windows sandbox spawn request");
-    assert_eq!(spawn.windows_sandbox_level, WindowsSandboxLevel::Elevated);
-    assert!(spawn.proxy_enforced);
-    assert!(spawn.network_proxy_restricting_sid.is_some());
-    prepared
-        .network_proxy_handle
-        .take()
-        .expect("running executor proxy")
-        .shutdown()
-        .await
-        .expect("shut down executor proxy");
 }

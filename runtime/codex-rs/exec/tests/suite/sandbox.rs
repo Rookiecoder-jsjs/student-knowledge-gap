@@ -18,8 +18,7 @@ pub(super) async fn spawn_command_under_sandbox(
     use codex_core::exec::ExecParams;
     use codex_core::exec::build_exec_request;
     use codex_core::sandboxing::SandboxPermissions;
-    use codex_protocol::config_types::WindowsSandboxLevel;
-    use std::process::Stdio;
+use std::process::Stdio;
 
     let exec_request = build_exec_request(
         ExecParams {
@@ -31,14 +30,11 @@ pub(super) async fn spawn_command_under_sandbox(
             network: None,
             network_environment_id: None,
             sandbox_permissions: SandboxPermissions::UseDefault,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-            windows_sandbox_private_desktop: false,
             justification: None,
             arg0: None,
         },
         permission_profile,
         sandbox_cwd,
-        std::slice::from_ref(sandbox_cwd),
     )
     .map_err(|err| io::Error::other(err.to_string()))?;
 

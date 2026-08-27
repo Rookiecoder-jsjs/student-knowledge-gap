@@ -346,7 +346,6 @@ impl LocalProcess {
         let sandbox_type = match prepared.sandbox {
             SandboxType::None => Some(ProcessSandboxType::None),
             SandboxType::MacosSeatbelt => Some(ProcessSandboxType::MacosSeatbelt),
-            SandboxType::WindowsRestrictedToken => Some(ProcessSandboxType::WindowsRestrictedToken),
         };
 
         let start = Arc::new(ProcessStart);
@@ -368,8 +367,6 @@ impl LocalProcess {
             cwd: prepared.cwd.as_path(),
             env: &prepared.env,
             arg0: &prepared.arg0,
-            sandbox: prepared.sandbox,
-            windows_sandbox: prepared.windows_sandbox_spawn_request(),
             tty: params.tty,
             stdin_open: params.tty || params.pipe_stdin,
             inherited_fds: &[],

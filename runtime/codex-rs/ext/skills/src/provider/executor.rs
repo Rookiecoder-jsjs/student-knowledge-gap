@@ -302,17 +302,6 @@ async fn read_bounded_text(
             "failed to read executor skill resource {resource}: {err}"
         ))
     };
-    if sandbox.is_some_and(FileSystemSandboxContext::should_run_in_sandbox)
-        && path.infer_path_convention() == Some(PathConvention::Windows)
-        && sandbox.is_some_and(|context| {
-            context.windows_sandbox_level
-                == codex_protocol::config_types::WindowsSandboxLevel::Disabled
-        })
-    {
-        return Err(SkillProviderError::new(
-            "executor skill resource requires an unavailable filesystem sandbox",
-        ));
-    }
 
     let mut stream = file_system
         .read_file_stream(path, sandbox)

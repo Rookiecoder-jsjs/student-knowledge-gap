@@ -31,7 +31,6 @@ pub(crate) fn prepare_apply_patch(
         permission_profile,
         file_system_sandbox_policy,
         &action.cwd,
-        turn_context.windows_sandbox_level,
     ) {
         SafetyCheck::AutoApprove => Ok(ApplyPatchRuntimeInvocation {
             action,

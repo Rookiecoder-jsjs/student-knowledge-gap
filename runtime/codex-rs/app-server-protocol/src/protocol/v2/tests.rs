@@ -2051,7 +2051,6 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
             }]),
             allowed_approvals_reviewers: None,
             allowed_sandbox_modes: None,
-            allowed_windows_sandbox_implementations: None,
             allowed_permission_profiles: None,
             default_permissions: None,
             allowed_web_search_modes: None,
@@ -2072,7 +2071,6 @@ fn config_requirements_granular_allowed_approval_policy_is_marked_experimental()
             check_for_update_on_startup: None,
             allow_login_shell: None,
             feedback: None,
-            windows_sandbox_private_desktop: None,
         });
 
     assert_eq!(reason, Some("askForApproval.granular"));

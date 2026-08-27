@@ -9,7 +9,6 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::SandboxCommand;
-use codex_sandboxing::SandboxDirectSpawnTransformRequest;
 use codex_sandboxing::SandboxExecRequest;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxTransformRequest;
@@ -94,22 +93,19 @@ impl FileSystemSandboxRunner {
             &file_system_policy,
             network_policy,
         );
-        self.sandbox_exec_request(&permission_profile, &cwd, workspace_roots, sandbox)
+        self.sandbox_exec_request(&permission_profile, &cwd)
     }
 
     fn sandbox_exec_request(
         &self,
         permission_profile: &PermissionProfile,
         cwd: &SandboxCwd,
-        workspace_roots: &[AbsolutePathBuf],
-        sandbox_context: &FileSystemSandboxContext,
     ) -> Result<SandboxExecRequest, JSONRPCErrorError> {
         let helper = &self.runtime_paths.codex_self_exe;
         let sandbox_manager = SandboxManager::for_file_system_helpers();
         let sandbox = sandbox_manager.select_initial(
             permission_profile,
             SandboxablePreference::Require,
-            sandbox_context.windows_sandbox_level,
             /*has_managed_network_requirements*/ false,
         );
         if sandbox == SandboxType::None {
@@ -126,22 +122,14 @@ impl FileSystemSandboxRunner {
             additional_permissions: None,
         };
         sandbox_manager
-            .transform_for_direct_spawn(SandboxDirectSpawnTransformRequest {
-                workspace_roots,
-                windows_sandbox_proxy_settings_mode:
-                    codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve,
-                transform: SandboxTransformRequest {
-                    command,
-                    permissions: permission_profile,
-                    sandbox,
-                    enforce_managed_network: false,
-                    environment_id: None,
-                    network: None,
-                    sandbox_policy_cwd: &cwd.uri,
-                    windows_sandbox_level: sandbox_context.windows_sandbox_level,
-                    windows_sandbox_private_desktop: sandbox_context
-                        .windows_sandbox_private_desktop,
-                },
+            .transform(SandboxTransformRequest {
+                command,
+                permissions: permission_profile,
+                sandbox,
+                enforce_managed_network: false,
+                environment_id: None,
+                network: None,
+                sandbox_policy_cwd: &cwd.uri,
             })
             .map_err(|err| invalid_request(format!("failed to prepare fs sandbox: {err}")))
     }
@@ -541,39 +529,13 @@ mod tests {
         let network_policy = NetworkSandboxPolicy::Restricted;
         let permission_profile =
             PermissionProfile::from_runtime_permissions(&file_system_policy, network_policy);
-        let sandbox_context = sandbox_context_with_cwd(&file_system_policy, cwd.clone());
         let sandbox_cwd = SandboxCwd {
             uri: cwd,
             native: native_cwd,
         };
-        #[cfg(windows)]
-        let sandbox_context = {
-            let error = runner
-                .sandbox_exec_request(
-                    &permission_profile,
-                    &sandbox_cwd,
-                    std::slice::from_ref(&sandbox_cwd.native),
-                    &sandbox_context,
-                )
-                .expect_err("disabled Windows sandbox must not run the helper unsandboxed");
-            assert_eq!(
-                error.message,
-                "filesystem sandbox cannot be enforced on this executor"
-            );
-            crate::FileSystemSandboxContext {
-                windows_sandbox_level:
-                    codex_protocol::config_types::WindowsSandboxLevel::RestrictedToken,
-                ..sandbox_context
-            }
-        };
 
         let request = runner
-            .sandbox_exec_request(
-                &permission_profile,
-                &sandbox_cwd,
-                std::slice::from_ref(&sandbox_cwd.native),
-                &sandbox_context,
-            )
+            .sandbox_exec_request(&permission_profile, &sandbox_cwd)
             .expect("sandbox exec request");
 
         assert_eq!(request.env.get(&path_key), Some(&path));

@@ -26,7 +26,6 @@ use codex_execpolicy::MatchOptions;
 use codex_execpolicy::Policy;
 use codex_execpolicy::RuleMatch;
 use codex_features::Feature;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::exec_output::ExecToolCallOutput;
@@ -161,12 +160,7 @@ pub(super) async fn try_run_zsh_fork(
         expiration: _sandbox_expiration,
         capture_policy: _capture_policy,
         sandbox,
-        windows_sandbox_policy_cwd: sandbox_policy_cwd,
-        windows_sandbox_workspace_roots,
-        windows_sandbox_level,
-        windows_sandbox_private_desktop: _windows_sandbox_private_desktop,
         permission_profile,
-        windows_sandbox_filesystem_overrides: _windows_sandbox_filesystem_overrides,
         arg0,
         exec_server_sandbox: _,
         exec_server_enforce_managed_network: _,
@@ -194,9 +188,7 @@ pub(super) async fn try_run_zsh_fork(
         .to_abs_path()
         .map_err(|err| ToolError::Rejected(err.to_string()))?;
     // TODO(anp): Keep PathUri through the shell sandbox policy boundary.
-    let sandbox_policy_cwd = sandbox_policy_cwd
-        .to_abs_path()
-        .map_err(|err| ToolError::Rejected(err.to_string()))?;
+    let sandbox_policy_cwd = sandbox_cwd.clone();
     let command_executor = CoreShellCommandExecutor {
         command,
         cwd: sandbox_cwd,
@@ -205,10 +197,8 @@ pub(super) async fn try_run_zsh_fork(
         env: sandbox_env,
         network: sandbox_network,
         network_environment_id,
-        windows_sandbox_level,
         arg0,
         sandbox_policy_cwd,
-        windows_sandbox_workspace_roots,
     };
     let main_execve_wrapper_exe = ctx
         .session
@@ -311,7 +301,7 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         .map_err(|err| ToolError::Rejected(err.to_string()))?;
     // TODO(anp): Keep PathUri through the zsh-fork sandbox policy boundary.
     let sandbox_policy_cwd = exec_request
-        .windows_sandbox_policy_cwd
+        .cwd
         .to_abs_path()
         .map_err(|err| ToolError::Rejected(err.to_string()))?;
     let command_executor = CoreShellCommandExecutor {
@@ -322,10 +312,8 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         env: exec_request.env.clone(),
         network: exec_request.network.clone(),
         network_environment_id: exec_request.network_environment_id.clone(),
-        windows_sandbox_level: exec_request.windows_sandbox_level,
         arg0: exec_request.arg0.clone(),
         sandbox_policy_cwd,
-        windows_sandbox_workspace_roots: exec_request.windows_sandbox_workspace_roots.clone(),
     };
     let escalation_policy = CoreShellActionProvider {
         policy: Arc::clone(&exec_policy),
@@ -603,7 +591,6 @@ impl CoreShellActionProvider {
                 InterceptedExecPolicyContext {
                     approval_policy: self.approval_policy,
                     permission_profile: self.permission_profile.clone(),
-                    windows_sandbox_level: self.review_context.turn().windows_sandbox_level,
                     sandbox_permissions: self.approval_sandbox_permissions,
                     enable_shell_wrapper_parsing:
                         ENABLE_INTERCEPTED_EXEC_POLICY_SHELL_WRAPPER_PARSING,
@@ -672,7 +659,6 @@ fn evaluate_intercepted_exec_policy(
     let InterceptedExecPolicyContext {
         approval_policy,
         permission_profile,
-        windows_sandbox_level,
         sandbox_permissions,
         enable_shell_wrapper_parsing,
     } = context;
@@ -693,7 +679,6 @@ fn evaluate_intercepted_exec_policy(
             crate::exec_policy::UnmatchedCommandContext {
                 approval_policy,
                 permission_profile: &permission_profile,
-                windows_sandbox_level,
                 sandbox_permissions,
                 command_origin: crate::exec_policy::ExecPolicyCommandOrigin::Generic,
             },
@@ -713,7 +698,6 @@ fn evaluate_intercepted_exec_policy(
 struct InterceptedExecPolicyContext {
     approval_policy: AskForApproval,
     permission_profile: PermissionProfile,
-    windows_sandbox_level: WindowsSandboxLevel,
     sandbox_permissions: SandboxPermissions,
     enable_shell_wrapper_parsing: bool,
 }
@@ -746,10 +730,8 @@ struct CoreShellCommandExecutor {
     env: HashMap<String, String>,
     network: Option<codex_network_proxy::NetworkProxy>,
     network_environment_id: Option<String>,
-    windows_sandbox_level: WindowsSandboxLevel,
     arg0: Option<String>,
     sandbox_policy_cwd: AbsolutePathBuf,
-    windows_sandbox_workspace_roots: Vec<AbsolutePathBuf>,
 }
 
 struct PrepareSandboxedExecParams<'a> {
@@ -818,12 +800,7 @@ impl CoreShellCommandExecutor {
                 expiration: ExecExpiration::Cancellation(cancel_rx),
                 capture_policy: ExecCapturePolicy::ShellTool,
                 sandbox: self.sandbox,
-                windows_sandbox_policy_cwd: self.sandbox_policy_cwd.clone().into(),
-                windows_sandbox_workspace_roots: self.windows_sandbox_workspace_roots.clone(),
-                windows_sandbox_level: self.windows_sandbox_level,
-                windows_sandbox_private_desktop: false,
                 permission_profile: self.permission_profile.clone(),
-                windows_sandbox_filesystem_overrides: None,
                 arg0: self.arg0.clone(),
                 exec_server_sandbox: None,
                 exec_server_enforce_managed_network: false,
@@ -924,7 +901,6 @@ impl CoreShellCommandExecutor {
         let sandbox = sandbox_manager.select_initial(
             permission_profile,
             SandboxablePreference::Auto,
-            self.windows_sandbox_level,
             self.network.is_some(),
         );
         let cwd = PathUri::from_abs_path(workdir);
@@ -949,13 +925,10 @@ impl CoreShellCommandExecutor {
             environment_id: self.network_environment_id.as_deref(),
             network: self.network.as_ref(),
             sandbox_policy_cwd: &sandbox_policy_cwd,
-            windows_sandbox_level: self.windows_sandbox_level,
-            windows_sandbox_private_desktop: false,
         })?;
         let mut exec_request = crate::sandboxing::ExecRequest::from_sandbox_exec_request(
             exec_request,
             options,
-            self.windows_sandbox_workspace_roots.clone(),
         )?;
         if let Some(network) = exec_request.network.as_ref() {
             network

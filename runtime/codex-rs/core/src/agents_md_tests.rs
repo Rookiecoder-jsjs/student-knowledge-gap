@@ -25,7 +25,6 @@ use codex_exec_server::RemoveOptions;
 use codex_exec_server::WriteFileOptions;
 use codex_extension_api::UserInstructions;
 use codex_features::Feature;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::EnvironmentConfig;
 use codex_protocol::protocol::EnvironmentConfigState;
@@ -328,7 +327,6 @@ async fn load_agents_md(config: &TestConfig) -> Option<LoadedAgentsMd> {
         &config.config,
         config.user_instructions.clone(),
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1126,7 +1124,6 @@ async fn multiple_environment_docs_use_labeled_layout_and_preserve_source_order(
         &config.config,
         user_instructions,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1193,7 +1190,6 @@ async fn secondary_only_project_doc_uses_single_contributor_layout() {
         &config.config,
         user_instructions,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1228,7 +1224,6 @@ async fn primary_only_project_doc_preserves_legacy_layout_with_multiple_bound_en
         &config.config,
         user_instructions,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1264,7 +1259,6 @@ async fn project_doc_byte_limit_is_shared_across_environments() {
         &config.config,
         user_instructions,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1299,7 +1293,6 @@ async fn full_primary_environment_budget_excludes_later_environment_docs() {
         &config.config,
         /*user_instructions*/ None,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")
@@ -1332,7 +1325,6 @@ async fn secondary_environment_invalid_utf8_does_not_suppress_other_docs() {
         &config.config,
         /*user_instructions*/ None,
         &environments,
-        WindowsSandboxLevel::Disabled,
     )
     .await
     .expect("project instructions should load")

@@ -18,7 +18,6 @@
 use crate::config::Config;
 use crate::context::UserInstructions as ContextUserInstructions;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::tools::sandboxing::executor_windows_sandbox_level;
 use codex_config::ConfigLayerSource;
 use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;
@@ -30,7 +29,6 @@ use codex_extension_api::UserInstructions;
 use codex_file_system::FileSystemSandboxContext;
 use codex_file_system::FindUpErrorPolicy;
 use codex_file_system::find_nearest_ancestor_with_markers;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use futures::StreamExt;
@@ -58,7 +56,6 @@ pub(crate) async fn load_project_instructions(
     config: &Config,
     user_instructions: Option<UserInstructions>,
     environments: &TurnEnvironmentSnapshot,
-    windows_sandbox_level: WindowsSandboxLevel,
 ) -> io::Result<Option<LoadedAgentsMd>> {
     let mut loaded = LoadedAgentsMd::from_user_instructions(user_instructions);
     let mut remaining = config.project_doc_max_bytes;
@@ -79,10 +76,6 @@ pub(crate) async fn load_project_instructions(
                 turn_environment.cwd().clone(),
             );
             sandbox.workspace_roots = turn_environment.workspace_roots().to_vec();
-            sandbox.windows_sandbox_level =
-                executor_windows_sandbox_level(windows_sandbox_level, turn_environment.cwd());
-            sandbox.windows_sandbox_private_desktop =
-                config.permissions.windows_sandbox_private_desktop;
             sandbox
         });
         match read_agents_md(

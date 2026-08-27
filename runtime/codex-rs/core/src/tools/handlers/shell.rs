@@ -9,7 +9,6 @@ use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnEnvironment;
-use crate::shell::ShellType;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
@@ -50,7 +49,6 @@ struct RunExecLikeArgs {
     exec_params: ExecParams,
     cancellation_token: CancellationToken,
     hook_command: String,
-    shell_type: Option<ShellType>,
     additional_permissions: Option<AdditionalPermissionProfile>,
     prefix_rule: Option<Vec<String>>,
     session: Arc<crate::session::session::Session>,
@@ -67,7 +65,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         exec_params,
         cancellation_token,
         hook_command,
-        shell_type,
         additional_permissions,
         prefix_rule,
         session,
@@ -180,7 +177,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
             approval_policy: turn.approval_policy(),
             permission_profile: turn_environment.permission_profile().clone(),
             environment_policy: turn_environment.config().exec_policy.as_ref(),
-            windows_sandbox_level: turn.windows_sandbox_level,
             sandbox_permissions: if effective_additional_permissions.permissions_preapproved {
                 codex_protocol::models::SandboxPermissions::UseDefault
             } else {
@@ -194,7 +190,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
     let req = ShellRequest {
         command: exec_params.command.clone(),
         turn_environment: turn_environment.clone(),
-        shell_type,
         hook_command,
         cwd: exec_params.cwd.clone(),
         timeout_ms: exec_params.expiration.timeout_ms(),
