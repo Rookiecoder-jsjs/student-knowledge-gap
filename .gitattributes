@@ -1,0 +1,2 @@
+# 所有 shell 脚本在仓库内恒定 LF（core.autocrlf 会检出 CRLF，破坏容器内 #!/bin/sh）。
+*.sh text eol=lf

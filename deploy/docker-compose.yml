@@ -52,6 +52,8 @@ services:
     volumes:
       - sc-data:/data
       - sc-backups:/backups
+    healthcheck:
+      disable: true   # 复用镜像内置 HEALTHCHECK（指向 uvicorn :8000），本容器只跑备份循环
     restart: unless-stopped
     depends_on:
       - backend
