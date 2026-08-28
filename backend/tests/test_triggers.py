@@ -160,7 +160,7 @@ def test_commit_endpoint_works_without_trigger_config(monkeypatch, tmp_path):
                 "kps": [{"code": "P1", "name": "基础点", "grade": 7, "semester": 1,
                          "chapter": "ch1"}],
                 "relations": [],
-            }, allow_unicode=True))
+            }, allow_unicode=True), encoding="utf-8")
             kb = c.post("/kb/import", json={"yaml_path": str(kb_yaml)})
             if kb.status_code >= 300:
                 pytest.skip(f"/kb/import 形状不符（{kb.status_code}），覆盖由 test_commit 承担")
