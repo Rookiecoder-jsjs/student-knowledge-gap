@@ -27,6 +27,7 @@ export default function CommitView() {
     evidence_events: number;
     quality_report?: boolean;
     diagnoses?: number;
+    interventions?: number;
     skipped: string[];
   } | null>(null);
 

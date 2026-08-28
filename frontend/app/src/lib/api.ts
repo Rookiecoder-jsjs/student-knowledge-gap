@@ -32,6 +32,8 @@ import type {
   Weaknesses,
 } from "./types";
 
+export type { InboxItem, InboxSummary, ReportFull, UsageLedger } from "./types";
+
 export class ApiError extends Error {
   status: number;
 
