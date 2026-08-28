@@ -13,6 +13,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env(name: str, default: str) -> str:
+    """env 取值：空字符串按「未设置」处理。
+
+    .env 模板/Docker env_file 会出现 `KEY=`（空值）——若直接 `os.environ.get(K, default)`，
+    空串非缺失，会让 int()/float() 解析崩溃或语义漂移；统一回落到 default。
+    """
+    return os.environ.get(name) or default
+
+
 ALGO_VERSION = "tracking-v0.1.0"
 
 # ---------------------------------------------------------------------------
@@ -40,7 +49,7 @@ HALF_LIFE_DAYS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 # 证据门槛（DESIGN §6 护栏字段）
 # ---------------------------------------------------------------------------
-MIN_EVIDENCE_COUNT = max(1, int(os.environ.get("SC_MIN_EVIDENCE_COUNT", "2")))  # 证据题目数 < 此值 -> 数据不足（生产默认 2：期中即可用，经大规模随机模拟验证）
+MIN_EVIDENCE_COUNT = max(1, int(_env("SC_MIN_EVIDENCE_COUNT", "2")))  # 证据题目数 < 此值 -> 数据不足（生产默认 2：期中即可用，经大规模随机模拟验证）
 EVIDENCE_LOW_WATERMARK = 3  # 评估但标记 low_evidence 的下限：MIN <= count < 此值 -> 依据较少（降门槛时的诚实性护栏）
 STALE_DAYS = 90                 # 最近证据 > 90 天 → 可能已变化
 
@@ -69,15 +78,15 @@ CLASS_COMMON_WEAK_RATIO = 0.40  # 班级薄弱学生占比 ≥40% → 班级共�
 #   消除"全班达标仍按相对位置误报~25%"的结构性误报。
 # 大规模随机模拟（150人×12场×6种子）验证：strict 误报 0.234->0.208（-11%），
 # 召回 0.887 / 根源命中 0.863 不退化。设 standard 可回退至相对判据。
-WEAKNESS_MODE = os.environ.get("SC_WEAKNESS_MODE", "strict")  # standard | strict（生产默认 strict：消除 P25 结构性误报，经大规模随机模拟验证召回/根源不退化）
-WEAKNESS_P25_MARGIN = float(os.environ.get("SC_WEAKNESS_P25_MARGIN", "0.1"))
+WEAKNESS_MODE = _env("SC_WEAKNESS_MODE", "strict")  # standard | strict（生产默认 strict：消除 P25 结构性误报，经大规模随机模拟验证召回/根源不退化）
+WEAKNESS_P25_MARGIN = float(_env("SC_WEAKNESS_P25_MARGIN", "0.1"))
 
 # ---------------------------------------------------------------------------
 # 归因参数
 # ---------------------------------------------------------------------------
 PREREQ_MAX_DEPTH = 3            # 前置缺陷沿前置边下探 ≤3 层
 PREREQ_ROOT_THRESHOLD = 0.6     # 前置点掌握度低于此值视为同步低
-FORGET_PEAK_THRESHOLD = float(os.environ.get("SC_FORGET_PEAK_THRESHOLD", "0.7"))  # 历史掌握度曾 ≥此值才算"曾经掌握"（0.75->0.7 降噪敏感，V3-R2）
+FORGET_PEAK_THRESHOLD = float(_env("SC_FORGET_PEAK_THRESHOLD", "0.7"))  # 历史掌握度曾 ≥此值才算"曾经掌握"（0.75->0.7 降噪敏感，V3-R2）
 FORGET_DROP = 0.15              # 当前低于峰值 ≥0.15
 FORGET_IDLE_DAYS = 30           # 最近 30 天无证据 → 视为无练习
 
@@ -93,7 +102,7 @@ ANOMALY_WEIGHT_FACTOR = 0.5
 # （真实 0.65-0.70）压过派生底线造成误报（金标 0.166 -> 0.415）。故默认关闭，仅按需
 # 开启（SC_MASTERY_PRIOR_STRENGTH）待大规模随机模拟验证有效后再转正默认。
 MASTERY_PRIOR_STRENGTH = max(
-    0.0, float(os.environ.get("SC_MASTERY_PRIOR_STRENGTH", "0.0"))
+    0.0, float(_env("SC_MASTERY_PRIOR_STRENGTH", "0.0"))
 )
 
 # 全局薄弱抑制（effectiveness-validation-plan V3）：
@@ -118,42 +127,42 @@ CASCADE_WEIGHT_FACTOR = 0.5
 # 失分归属混合度折扣（improvement-plan §1.4-C）：
 # 标注 N 个 kp 的题，证据 weight 乘 (1/√N)^penalty，减少混合题失分对多 kp 的等量污染。
 # 单 kp 题（N=1）不打折。默认 0.0（关闭，保持现有数值）；设为 1.0 启用全折扣。
-EVIDENCE_MIX_PENALTY = float(os.environ.get("SC_EVIDENCE_MIX_PENALTY", "0.0"))
+EVIDENCE_MIX_PENALTY = float(_env("SC_EVIDENCE_MIX_PENALTY", "0.0"))
 
 # 高置信题-kp 标注抽样复核（improvement-plan §3.2）。
 # approve-tags 批量批准时，低置信(<0.9)永不批量通过；高置信题按稳定哈希抽样保留待审。
 # 默认 0 保持现有工作流；试点/生产建议 0.1（10%）。
 TAG_REVIEW_SAMPLE_RATE = max(
-    0.0, min(1.0, float(os.environ.get("SC_TAG_REVIEW_SAMPLE_RATE", "0.0")))
+    0.0, min(1.0, float(_env("SC_TAG_REVIEW_SAMPLE_RATE", "0.0")))
 )
 
 # ---------------------------------------------------------------------------
 # 运行时可用性参数（runtime-goals.md：G5/G6/G8/G12）
 # ---------------------------------------------------------------------------
 # G12：批量解析并发数（一班 40-50 张卷，默认 3 并发）
-BATCH_WORKERS = max(1, int(os.environ.get("SC_BATCH_WORKERS", "3")))
+BATCH_WORKERS = max(1, int(_env("SC_BATCH_WORKERS", "3")))
 # G6：parsing 看门狗阈值（分钟）——超过 2× LLM TIMEOUT(120s) 视为卡死
-BATCH_STALE_MINUTES = max(1, int(os.environ.get("SC_BATCH_STALE_MINUTES", "4")))
+BATCH_STALE_MINUTES = max(1, int(_env("SC_BATCH_STALE_MINUTES", "4")))
 # G6：孤儿 tempfile 清扫上限（小时）——超过此时长且未被任何 item 引用即删
-BATCH_TEMPFILE_MAX_AGE_HOURS = max(1, int(os.environ.get("SC_BATCH_TEMPFILE_MAX_AGE_HOURS", "24")))
+BATCH_TEMPFILE_MAX_AGE_HOURS = max(1, int(_env("SC_BATCH_TEMPFILE_MAX_AGE_HOURS", "24")))
 # G5：LLM 熔断阈值（连续失败次数）/ 冷却秒数
-LLM_CB_THRESHOLD = max(1, int(os.environ.get("SC_LLM_CB_THRESHOLD", "5")))
-LLM_CB_COOLDOWN_SECONDS = max(1, int(os.environ.get("SC_LLM_CB_COOLDOWN_SECONDS", "60")))
+LLM_CB_THRESHOLD = max(1, int(_env("SC_LLM_CB_THRESHOLD", "5")))
+LLM_CB_COOLDOWN_SECONDS = max(1, int(_env("SC_LLM_CB_COOLDOWN_SECONDS", "60")))
 
 # 诊断单 LLM 生成层（diagnosis-sheet-redesign.md §2.6）：总开关，默认关。
 # =1 时两张诊断单正文与班级改进意见由 LLM 基于证据包生成，模板渲染降为保底；
 # =0（或 mock provider / 熔断开启）全模板。默认关的理由：.env 已配真实 provider/key，
 # 默认开会让任何触发报告生成的测试/演示都真调 LLM 消耗额度；部署方显式置 1 开启。
-LLM_PLAN_ENABLE = os.environ.get("SC_LLM_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
+LLM_PLAN_ENABLE = _env("SC_LLM_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
 
 # 干预闭环（intervention-loop-design.md §8）：建议生成与效果验证参数。
 # ACTION_PLAN_ENABLE 默认开——纯计算层零 LLM、零外部调用，关闭仅用于试点回退
 # （关闭时提交不生成干预建议；改进单仍随诊断单走 SC_LLM_PLAN_ENABLE 路径）。
 # 效果判定阈值首期不断言标准（试点无先验）：先度量、后校准，与有效性验证纪律一致。
-ACTION_PLAN_ENABLE = os.environ.get("SC_ACTION_PLAN_ENABLE", "1").lower() in ("1", "true", "yes")
-INTERVENTION_MIN_DELTA = float(os.environ.get("SC_INTERVENTION_MIN_DELTA", "0.10"))    # improved 判定阈值（基线调整后增量）
-INTERVENTION_FLAT_FLOOR = float(os.environ.get("SC_INTERVENTION_FLAT_FLOOR", "-0.05")) # flat/declined 分界
-ACTION_GROUP_MIN = int(os.environ.get("SC_ACTION_GROUP_MIN", "3"))                     # 同根源成组最低人数
+ACTION_PLAN_ENABLE = _env("SC_ACTION_PLAN_ENABLE", "1").lower() in ("1", "true", "yes")
+INTERVENTION_MIN_DELTA = float(_env("SC_INTERVENTION_MIN_DELTA", "0.10"))    # improved 判定阈值（基线调整后增量）
+INTERVENTION_FLAT_FLOOR = float(_env("SC_INTERVENTION_FLAT_FLOOR", "-0.05")) # flat/declined 分界
+ACTION_GROUP_MIN = int(_env("SC_ACTION_GROUP_MIN", "3"))                     # 同根源成组最低人数
 
 
 @dataclass(frozen=True)
@@ -161,10 +170,10 @@ class Settings:
     """运行配置。"""
 
     # G10/G2：env 驱动 DB URL，迁 PG 只改 SC_DATABASE_URL（derive-on-read 不受影响）
-    database_url: str = os.environ.get("SC_DATABASE_URL", "sqlite:///./sc.db")
+    database_url: str = _env("SC_DATABASE_URL", "sqlite:///./sc.db")
     # 部署（容器化）：逗号分隔的允许来源；空 = 回落本地开发默认（见 main.py CORS）。
     # 生产同源经 nginx 反代不需要跨域，留空即可。
-    cors_origins: str = os.environ.get("SC_CORS_ORIGINS", "")
+    cors_origins: str = _env("SC_CORS_ORIGINS", "")
     kb_dir: str = "kb"
     output_dir: str = "output"
     allow_sync_batch: bool = False  # 批量录入 sync=true 守卫（仅测试/演示开）
@@ -172,5 +181,5 @@ class Settings:
 
 
 settings = Settings(
-    allow_sync_batch=os.environ.get("SC_ALLOW_SYNC_BATCH", "").lower() in ("1", "true", "yes")
+    allow_sync_batch=_env("SC_ALLOW_SYNC_BATCH", "").lower() in ("1", "true", "yes")
 )

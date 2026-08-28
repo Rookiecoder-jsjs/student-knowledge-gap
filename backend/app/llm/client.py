@@ -219,7 +219,7 @@ def get_client(capability: str = "text") -> BaseClient:
     """
     if _override is not None:
         return wrap_client(_override, capability)
-    provider = os.environ.get("SC_LLM_PROVIDER", "mock").lower()
+    provider = (os.environ.get("SC_LLM_PROVIDER") or "mock").lower()
     api_key = os.environ.get("SC_LLM_API_KEY") or os.environ.get("qwen_api_key", "")
     default_model = os.environ.get("SC_LLM_MODEL", "")
     cap_key = "SC_LLM_VISION_MODEL" if capability == "vision" else "SC_LLM_TEXT_MODEL"
