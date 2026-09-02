@@ -332,7 +332,7 @@ impl SandboxManager {
         // locally, but their effective permissions must still be preserved. In that case, carry
         // forward the base profile.
         let permission_profile = pending_sandboxed_request
-            .map_or(base_effective_permission_profile, |pending| {
+            .map_or(base_effective_permission_profile, |pending: PendingSandboxedExecRequest| {
                 pending.effective_permission_profile
             });
 

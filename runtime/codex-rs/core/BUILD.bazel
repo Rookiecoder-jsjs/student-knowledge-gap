@@ -13,10 +13,8 @@ codex_rust_crate(
     ),
     crate_name = "codex_core",
     extra_binaries = [
-        "//codex-rs/code-mode-host:codex-code-mode-host",
         "//codex-rs/rmcp-client:test_stdio_server",
         "//codex-rs/rmcp-client:test_streamable_http_server",
-        "//codex-rs/cli:codex",
     ],
     integration_compile_data_extra = ["src/guardian/node_repl_policy.md"],
     integration_test_timeout = "long",
