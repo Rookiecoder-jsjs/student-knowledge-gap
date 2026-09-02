@@ -18,7 +18,9 @@ import threading
 import time
 
 CODEX_HOME = "/tmp/sc-phase0/codex-home"
-APP_SERVER = "codex"  # PATH 上的 0.149.1
+# 装车批第 3 步后规范壳 = runtime 魔改壳 codex-app-server（直启，无子命令；旧 npm
+# `codex app-server` 形态由 gateway env 显式还原，验链以规范壳为准）
+APP_SERVER = "codex-app-server"
 
 
 class AppServerClient:
@@ -27,7 +29,7 @@ class AppServerClient:
     def __init__(self, tag: str):
         self.tag = tag
         self.proc = subprocess.Popen(
-            [APP_SERVER, "app-server"],
+            [APP_SERVER],
             env={**os.environ, "CODEX_HOME": CODEX_HOME, "RUST_LOG": "error"},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

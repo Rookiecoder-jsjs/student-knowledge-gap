@@ -42,3 +42,5 @@ design-system/
 
 # gateway 真实账号文件（口令哈希也不入库）
 gateway/accounts.json
+# runtime 壳二进制 staging（deploy/stage-gateway-runtime.sh 生成，可再生）
+gateway/.runtime/

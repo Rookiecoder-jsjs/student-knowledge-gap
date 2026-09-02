@@ -1,7 +1,9 @@
 # DeepSeek 接入 sc 壳的 config.toml 模板（Phase 1 §5.10；来源：DeepSeek 官方 Codex 接入指南
 # https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/codex ，2026-08-25 抓取）。
-# 占位符：{{DEEPSEEK_API_KEY}} / {{CODEX_HOME}} 由装机向导注入；models.json 与本文件同目录分发。
-# 纪律：真实部署写隔离 CODEX_HOME（绝不碰用户 ~/.codex）；本模板供 gateway v1 装机向导渲染。
+# 渲染：gateway 首启播种（gateway/codex_home.py）——$CODEX_HOME/config.toml 缺失时从本模板
+# 渲染并落 models.json；{{CODEX_HOME}}/{{DEEPSEEK_API_KEY}}/{{SC_MCP_PYTHON}}/
+# {{SC_MCP_SERVER_SCRIPT}} 替换为运行时定值（容器内路径）。管理员手写 config.toml 永不被覆盖。
+# 纪律：真实部署写隔离 CODEX_HOME（绝不碰用户 ~/.codex）。
 #
 # 实测注记（2026-08-25，codex-cli 0.149.1 + deepseek-v4-flash）：
 # 官方 models.json 的 supports_search_tool=true 会启用 deferred tool loading——MCP 工具
@@ -27,8 +29,8 @@ experimental_bearer_token = "{{DEEPSEEK_API_KEY}}"
 # sc 领域 MCP server(§5.1),经 school-authz-mcp shim 包装(§6.3):shim 校验网关注入的
 # 教师签名 token(SC_SCHOOL_AUTH_TOKEN + SC_AUTH_SECRET)后派生 SC_MCP_TEACHER_ID 注入
 # 下游——替代「裸 env 可信」的兜底路线;SC_AUTH_SECRET 未配置时 shim 透明透传(灰度安全)。
-# 下游命令路径依赖 backend python 的落位:装机向导按部署渲染(装车批第 3 步把 backend
-# python 收进 gateway 镜像后固定为容器内路径)。
+# 下游命令固定为 gateway 镜像内路径(gateway/codex_home.py 渲染;backend python 随
+# 装车批第 3 步收进镜像,sc MCP stdio 子进程与 codex 同容器,经共享 sc-data 卷读 sc.db)。
 [mcp_servers.sc]
 command = "school-authz-mcp"
 args = ["--", "{{SC_MCP_PYTHON}}", "{{SC_MCP_SERVER_SCRIPT}}"]

@@ -8,7 +8,7 @@
 
 | 场景 | 平台 | 说明 |
 |---|---|---|
-| **生产** | linux（docker 容器，arm64/amd64） | compose 单盒部署；gateway 镜像内置预编译壳 |
+| **生产** | linux（docker 容器，amd64 已验） | compose 单盒部署；gateway 镜像内置 runtime 魔改壳二进制（装车批第 3 步后） |
 | **开发** | macOS arm64 | 日常魔改与测试环境 |
 | CI | 精简为单平台矩阵 | 上游多平台矩阵不随 fork 维护；Bazel 远程构建等重特性停用 |
 
@@ -56,16 +56,35 @@ export CODEX_HOME=/tmp/sc-p1/codex-home
 cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级概览"
 ```
 
-## 发布产物形态（一校一盒 §8）
+## 发布产物形态（一校一盒 §8；装车批第 3 步：gateway 换装 runtime 魔改壳）
 
 - **backend/frontend/backup**：既有镜像不变；
-- **gateway**：`gateway/Dockerfile`——node22-slim + codex npm 预编译二进制
-  （与锚点同版本）+ FastAPI 网关 + assets 分发（DeepSeek 模板 / 人格 prompt）。
-  Phase 1 裁剪完成后，切换为 runtime/ 源码构建的魔改壳（届时改 Dockerfile 安装段，
-  多阶段构建：`just build-for-release` 产物 COPY 进 slim 运行层）；
+- **gateway**：`gateway/Dockerfile`——python:3.11-slim 基（node/npm codex 预编译壳
+  退役），COPY `just build-for-release` 产物（`codex-app-server`/`exec-server`/
+  `school-authz-mcp`）进 `/usr/local/bin/`，并以 `COPY --from=sc-backend:latest`
+  复用 backend python 环境 + `backend/app`（sc MCP stdio 子进程与 codex 同容器，
+  经共享 sc-data 卷读 sc.db）。**构建顺序：先 build backend 再 build gateway**
+  （gateway `--from` 依赖 sc-backend:latest 已存在）：
+  ```bash
+  # 1) stage runtime 壳二进制（本机无 bazel，走容器；需先开代理）
+  deploy/stage-gateway-runtime.sh
+  # 2) 构建（顺序固定）
+  docker compose -f deploy/docker-compose.yml build backend gateway
+  ```
 - `just build-for-release` 产物 = `codex-app-server` + `exec-server` +
-  `school-authz-mcp`（§6.3 新增：身份注入 MCP 连接 shim，见下）；
-- CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）。
+  `school-authz-mcp`（§6.3：身份注入 MCP 连接 shim，见下）；
+- **CODEX_HOME 首启播种**：gateway 启动时 `$CODEX_HOME/config.toml` 缺失则由
+  `gateway/codex_home.py` 从 `assets/deepseek` 模板渲染（占位符固定容器内路径）+
+  落 models.json；幂等，管理员手写配置永不覆盖；
+- CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）；
+- **arch**：staged 二进制 = x86_64-linux-gnu（glibc ≥2.28）；arm64 盒子需在 arm
+  环境重跑 staging。
+- **已知限制（版本 stamp 暂缓）**：rules_rs 0.0.96 的 cargo-bazel 不解析 workspace
+  继承版本（`version.workspace = true`），bazel 轨产物 `CARGO_PKG_VERSION` 恒
+  `0.0.0` → `codex-app-server --version` / `cli_version` / otel 字段为 0.0.0
+  （npm 壳为 cargo 构建故 0.149.1）。sc 前端/网关不展示 codex 版本，非用户可见；
+  修复需 defs.bzl rust_binary `rustc_env` 补 `CARGO_PKG_VERSION`（fork 分歧账），
+  待真正需要展示壳版本时再做。
 
 ### §6.3 新增：school-authz（身份校验 + 注入）
 
@@ -83,8 +102,10 @@ just bazel-lock-update
 ```
 
 产物 `school-authz-mcp` = stdio MCP shim，包装 CODEX_HOME config.toml
-`[mcp_servers.sc]` 指向的 sc 后端命令。部署形态见 sc 仓 DEPLOY.md
-（gateway 配 `SC_AUTH_SECRET` 后签 token、shim 校验注入；未配则透明透传旧兜底）。
+`[mcp_servers.sc]` 指向的 sc 后端命令。部署形态（装车批第 3 步落地）：shim 随
+gateway 镜像分发（/usr/local/bin），sc MCP python（backend/app 收进镜像）由
+shim 派生身份后同容器直启；gateway 配 `SC_AUTH_SECRET` 后签 token、shim 校验
+注入；未配则透明透传旧兜底（灰度安全）。逐调用教师↔班级断言仍由 sc 后端执行。
 
 ## 测试纪律（fork 版）
 

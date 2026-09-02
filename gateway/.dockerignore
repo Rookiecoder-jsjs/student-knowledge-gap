@@ -1,0 +1,6 @@
+# 构建上下文精简；注意：绝不可排除 .runtime/（runtime 壳二进制由
+# deploy/stage-gateway-runtime.sh 生成，本镜像 build 依赖它）
+__pycache__/
+*.pyc
+.pytest_cache/
+accounts.json

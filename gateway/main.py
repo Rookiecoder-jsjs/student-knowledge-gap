@@ -75,8 +75,10 @@ async def _start_monthly_watch() -> None:
 async def _stop_monthly_watch() -> None:
     _STOP[0] = True
 
-APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex")
-APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "app-server").split()
+# 装车批第 3 步后规范壳 = runtime 源码构建的 codex-app-server(gateway 镜像内
+# 直启,无子命令,args 空;旧 npm `codex app-server` 形态仅由外部 env 显式还原)
+APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex-app-server")
+APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "").split()
 CODEX_HOME = os.environ.get("SC_GATEWAY_CODEX_HOME", "/tmp/sc-p1/codex-home")
 # §5.4 触发器 v1：sc backend → gateway 内网共享密钥（双方一致才放行 /internal/*）
 INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
@@ -559,6 +561,18 @@ async def internal_trigger(req: TriggerReq):
 @app.on_event("startup")
 def _startup() -> None:
     load_accounts()
+    # 装车批第 3 步:CODEX_HOME 首启播种(幂等)——config.toml 缺失时由 deepseek
+    # 模板渲染 + 落 models.json,占位符固定为容器内路径,sc 域工具才真正可用。
+    try:
+        from gateway import codex_home as _ch
+
+        _assets = os.environ.get(
+            "SC_GATEWAY_ASSETS",
+            str(Path(__file__).resolve().parent / "assets" / "deepseek"),
+        )
+        _ch.seed_codex_home(Path(CODEX_HOME), Path(_assets))
+    except Exception:  # noqa: BLE001 —— 播种失败不阻断网关(可手工补 config.toml)
+        pass
 
 
 @app.on_event("shutdown")
