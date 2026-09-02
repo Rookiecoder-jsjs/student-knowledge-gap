@@ -232,6 +232,7 @@ sc/                        # 产品仓库 = fork 本体（D7 定名后可整体�
 - 工具调用身份传播两条路，按实施代价取舍：
   - **首选**：每线程独立的 MCP 连接注入 `X-Teacher-Token` 头 → sc MCP Server 校验后做班级级过滤（可能需要对壳的 MCP 配置做小补丁，属 §6「加」的范围）；
   - **兜底**：身份作为显式工具参数传递，MCP Server 强制校验（零核改，先跑通）；
+- **落地状态（2026-09-02）**：首选路经 §6.3 `school-authz` 落地——网关签发签名 token（HMAC-SHA256，与后端同密钥 `SC_AUTH_SECRET`）、壳侧 `school-authz-mcp` shim 校验并注入 `SC_MCP_TEACHER_ID`，替代「裸 env 可信」；兜底路线（裸 `SC_MCP_TEACHER_ID` env 注入）在 `SC_AUTH_SECRET` 未配置时保留作灰度回退。
 - sc 后端所有分析端点补齐 `teacher↔class` 归属校验（这是 G11 的本体工作，与 Agent 化共用一套实现）；
 - 单校部署消解了跨租户隔离问题——权限粒度到「校内教师↔班级」即止。
 

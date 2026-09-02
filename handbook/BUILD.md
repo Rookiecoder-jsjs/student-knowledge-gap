@@ -63,7 +63,28 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
   （与锚点同版本）+ FastAPI 网关 + assets 分发（DeepSeek 模板 / 人格 prompt）。
   Phase 1 裁剪完成后，切换为 runtime/ 源码构建的魔改壳（届时改 Dockerfile 安装段，
   多阶段构建：`just build-for-release` 产物 COPY 进 slim 运行层）；
+- `just build-for-release` 产物 = `codex-app-server` + `exec-server` +
+  `school-authz-mcp`（§6.3 新增：身份注入 MCP 连接 shim，见下）；
 - CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）。
+
+### §6.3 新增：school-authz（身份校验 + 注入）
+
+```bash
+# Cargo 轨
+cargo check -p codex-school-authz
+cargo test -p codex-school-authz        # RUST_MIN_STACK=8388608
+
+# Bazel 轨（发布用；新增 crate 必须配 BUILD.bazel——D8 义务）
+bazel build //codex-rs/school-authz:school-authz-mcp
+bazel test //codex-rs/school-authz:all
+
+# 依赖变更后同步 lockfile（义务②）
+just bazel-lock-update
+```
+
+产物 `school-authz-mcp` = stdio MCP shim，包装 CODEX_HOME config.toml
+`[mcp_servers.sc]` 指向的 sc 后端命令。部署形态见 sc 仓 DEPLOY.md
+（gateway 配 `SC_AUTH_SECRET` 后签 token、shim 校验注入；未配则透明透传旧兜底）。
 
 ## 测试纪律（fork 版）
 

@@ -3663,6 +3663,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-school-authz"
+version = "0.149.1"
+dependencies = [
+ "codex-utils-cargo-bin",
+ "hmac 0.12.1",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "codex-secrets"
 version = "0.149.1"
 dependencies = [

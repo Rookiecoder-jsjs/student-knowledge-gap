@@ -78,6 +78,7 @@ members = [
     "responses-api-proxy",
     "response-debug-context",
     "sandboxing",
+    "school-authz",
     "stdio-to-uds",
     "otel",
     "tools",
@@ -213,6 +214,7 @@ codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-rollout-trace = { path = "rollout-trace" }
 codex-sandboxing = { path = "sandboxing" }
+codex-school-authz = { path = "school-authz" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }

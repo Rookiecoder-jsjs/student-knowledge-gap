@@ -70,6 +70,9 @@ services:
       SC_GATEWAY_APP_SERVER_ARGS: app-server
       # Phase 3：触发器/通知内网密钥 + 预算护栏 + 钉钉（D4；未配置=功能关闭）
       SC_TRIGGER_KEY: ${SC_TRIGGER_KEY:-}
+      # §6.3 school-authz：与 sc 后端共享的身份签名密钥（配置后教师身份走签名
+      # token、由壳侧 shim 校验注入，替代裸 SC_MCP_TEACHER_ID env；未配置=旧兜底）
+      SC_AUTH_SECRET: ${SC_AUTH_SECRET:-}
       SC_BACKEND_URL: http://backend:8000        # 月度软限额巡查数据源（§5.7）
       SC_BUDGET_MAX_TURNS: "12"
       SC_BUDGET_MAX_TOKENS: "200000"

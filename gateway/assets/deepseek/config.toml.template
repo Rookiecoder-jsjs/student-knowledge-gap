@@ -23,3 +23,12 @@ name = "deepseek"
 base_url = "https://api.deepseek.com/"
 wire_api = "responses"
 experimental_bearer_token = "{{DEEPSEEK_API_KEY}}"
+
+# sc 领域 MCP server(§5.1),经 school-authz-mcp shim 包装(§6.3):shim 校验网关注入的
+# 教师签名 token(SC_SCHOOL_AUTH_TOKEN + SC_AUTH_SECRET)后派生 SC_MCP_TEACHER_ID 注入
+# 下游——替代「裸 env 可信」的兜底路线;SC_AUTH_SECRET 未配置时 shim 透明透传(灰度安全)。
+# 下游命令路径依赖 backend python 的落位:装机向导按部署渲染(装车批第 3 步把 backend
+# python 收进 gateway 镜像后固定为容器内路径)。
+[mcp_servers.sc]
+command = "school-authz-mcp"
+args = ["--", "{{SC_MCP_PYTHON}}", "{{SC_MCP_SERVER_SCRIPT}}"]

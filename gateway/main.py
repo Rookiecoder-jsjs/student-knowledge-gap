@@ -80,6 +80,11 @@ APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "app-server").spl
 CODEX_HOME = os.environ.get("SC_GATEWAY_CODEX_HOME", "/tmp/sc-p1/codex-home")
 # §5.4 触发器 v1：sc backend → gateway 内网共享密钥（双方一致才放行 /internal/*）
 INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
+# §6.3 school-authz：与 sc 后端共享的身份签名密钥（SC_AUTH_SECRET 配置后，教师身份
+# 由 gateway 签为 HMAC token、由壳侧 shim 校验注入，替代「裸 SC_MCP_TEACHER_ID env
+# 可信」的兜底路线；未配置=维持旧兜底，灰度安全）
+SCHOOL_AUTH_SECRET = os.environ.get("SC_AUTH_SECRET", "")
+_SCHOOL_TOKEN_TTL_S = 3600
 # 班级持久线程映射落盘（§5.6 一班一线程跨学期滚动；JSON {str(class_id): thread_id}）
 THREADS_FILE = Path(os.environ.get("SC_GATEWAY_THREADS_FILE", "/data/threads.json"))
 
@@ -170,6 +175,29 @@ def require_auth(authorization: str = Header(default="")) -> Session:
 # ---------------------------------------------------------------------------
 
 
+def _sign_school_token(teacher_id: int) -> str:
+    """签发教师身份 token（与 sc 后端 auth.py 同款：HMAC-SHA256 hex，`teacher_id.exp.sig`）。
+
+    school-authz shim 在壳侧以同一 SC_AUTH_SECRET 校验、从 token 派生 SC_MCP_TEACHER_ID。
+    gateway 每次 spawn 现签现用，TTL 仅约束被盗 token 的可用窗口。
+    """
+    exp = int(time.time()) + _SCHOOL_TOKEN_TTL_S
+    body = f"{teacher_id}.{exp}"
+    sig = hmac.new(SCHOOL_AUTH_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}"
+
+
+def _teacher_identity_env(teacher_id: int) -> dict[str, str]:
+    """G11 身份传播（§5.5）载体：注入 app-server 子进程 env 的教师身份。
+
+    SC_AUTH_SECRET 配置 → 签名 token（school-authz shim 壳侧校验、注入 SC_MCP_TEACHER_ID，
+    替代「裸 env 可信」）；未配置 → 旧兜底裸 SC_MCP_TEACHER_ID（灰度安全）。
+    """
+    if SCHOOL_AUTH_SECRET:
+        return {"SC_SCHOOL_AUTH_TOKEN": _sign_school_token(teacher_id)}
+    return {"SC_MCP_TEACHER_ID": str(teacher_id)}
+
+
 @dataclass
 class Bridge:
     """一个 app-server 子进程的异步 stdio 桥 + 订阅了其事件的 SSE 客户端集合。"""
@@ -184,10 +212,10 @@ class Bridge:
     @classmethod
     async def spawn(cls, teacher_id: int = 0) -> "Bridge":
         env = {**os.environ, "CODEX_HOME": CODEX_HOME, "RUST_LOG": "error"}
-        # G11 身份传播兜底路线（§5.5）：MCP Server（sc 脑）从环境读取教师身份，
-        # 据此做班级级过滤——教师甲看不到教师乙的班。零核改（不改壳）。
+        # G11 身份传播（§5.5）：见 _teacher_identity_env —— school-authz 签名 token
+        # 优先，SC_AUTH_SECRET 未配置时维持旧兜底裸 env 注入（灰度安全）。
         if teacher_id:
-            env["SC_MCP_TEACHER_ID"] = str(teacher_id)
+            env.update(_teacher_identity_env(teacher_id))
         proc = subprocess.Popen(
             [APP_SERVER_CMD, *APP_SERVER_ARGS],
             stdin=subprocess.PIPE,
