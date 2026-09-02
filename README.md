@@ -223,7 +223,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - 双模式：库内无带凭据教师=**开放模式**（存量行为零变化）；建首个教师账号（`python -m scripts.create_teacher --name 李老师 --username li --password s3cret --school 1 [--admin] [--grant 3,5]` 或 admin 调 `POST /auth/teachers`）即自动进入**安全模式**——全部业务端点要求 `Authorization: Bearer <token>`
 - 登录：`POST /auth/login`（口令换 token，PBKDF2 落库）；身份回查 `GET /auth/me`；授权管理 `POST /auth/teachers/{id}/classes`（admin）
 - 归属裁决单点：教师↔班级多对多授权表，HTTP 路由与 MCP 工具层共用同一断言——**教师甲看不到教师乙的班**（含收件箱草稿、干预记录、报告列表）
-- Agent 身份传播：网关按教师为 app-server 进程注入 `SC_MCP_TEACHER_ID`，MCP 工具层同一裁决（兜底路线零核改）
+- Agent 身份传播：网关按教师为 app-server 进程注入签名 token（`SC_SCHOOL_AUTH_TOKEN`），codex 经 `[mcp_servers.sc]`（远程 url → backend `/mcp`）逐请求 `Authorization: Bearer` 携带，backend 验签后 MCP 工具层按教师同一裁决（装车批第 5 批：sc MCP 迁 backend 进程，gateway 不挂 sc-data，agent 物理不可达 sc.db）
 
 **✍️ Agent 写工具（Phase 3，过审批门 §5.3）**
 - `create_report_draft`：Agent 起草学生诊断单/班级改进意见 → **draft 入收件箱**，教师在「待签发」签发或打回；类型封闭枚举、归属校验、20K 字上限

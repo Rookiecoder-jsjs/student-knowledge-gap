@@ -14,12 +14,11 @@
 cp backend/.env.example backend/.env
 
 # 2) 构建并启动（backend + frontend + backup + gateway 四服务；compose 位于 deploy/ 目录）
-#    gateway 是会话网关（agent-product-design §10.1），首次构建前置两步：
+#    gateway 是会话网关（agent-product-design §10.1），首次构建前置一步：
 #    ① stage runtime 壳二进制（需本地代理已开，见文末「会话网关 gateway」）
-#    ② 先 build backend（gateway 镜像以 `COPY --from=sc-backend:latest` 复用其 python 环境）
+#    装车批第 5 批起 gateway 自包含（独立 requirements.txt），无 backend 先建顺序。
 cd deploy
 ./stage-gateway-runtime.sh
-docker compose build backend
 docker compose up -d --build && cd ..
 
 # 3) 访问
@@ -62,7 +61,7 @@ curl -X POST http://localhost:8080/api/kb/import \
 
 | 卷 | 挂载点 | 内容 | 说明 |
 |---|---|---|---|
-| `sc-data` | `/data`（backend）/ `/sc-data`（gateway） | `sc.db` + `-wal`/`-shm` + `tmp/` | **唯一不可丢失状态**。WAL 模式下三文件同为在线状态。gateway 内的 sc MCP python 经 `/sc-data` 读同一文件 |
+| `sc-data` | `/data`（backend、backup） | `sc.db` + `-wal`/`-shm` + `tmp/` | **唯一不可丢失状态**。WAL 模式下三文件同为在线状态。装车批第 5 批起 **gateway 不再挂此卷**——sc MCP 已迁入 backend 进程，agent 物理不可达 sc.db |
 | `sc-backups` | `/backups` | `sc.db.<ts>.bak` | 备份产物，与 DB 卷物理隔离 |
 | `gw-codex-home` | `/data/codex-home` | CODEX_HOME（config.toml/models.json + rollout） | 壳侧持久状态；config.toml 首启播种、缺省不覆盖 |
 
@@ -109,14 +108,10 @@ curl -s localhost:8080/ready
 并发需求（一批 40-50 张卷的解析）由**线程**承担（`SC_BATCH_WORKERS`），不靠多进程。崩溃自愈由
 宿主 `restart: unless-stopped` 提供。**想突破单进程，必须先做文末「演进路径」的改造**，否则会踩上述四个坑。
 
-> **例外——网关侧 sc MCP python（装车批第 3 步起）**：gateway 容器内收编了
-> `backend/app/mcp_server.py`，作为 codex 壳的 stdio MCP 子进程经共享 sc-data 卷
-> 读写**同一 sc.db**——这是除 backend uvicorn 外的第二个 SQLite 访问者。安全前提：
-> ① WAL + `busy_timeout=15000` 是**跨进程**协议（db.py 每连接 pragma），一写多读、
-> 写争用串行等待，不会损坏或死锁；② 该进程只跑教师触发的 9 个 MCP 工具（7 读 +
-> 低频 2 写），写频率远低于批量/报告管线；③ backend uvicorn 的「单进程」不变量
-> （worker=1、reconcile_stale、熔断单例）不受影响——它管的是**backend 进程内部**。
-> 若未来 MCP 写吞吐显著上升，需先迁移 PG（§8 演进路径第一项）。
+> 装车批第 5 批起，sc MCP server 已**迁入本进程**：`backend/app/mcp_server.py` 的 FastMCP
+> 实例经 streamable-http 挂 `/mcp`（`app/mcp_http.py`），与 REST 共用同一 DB engine——**「第二
+> SQLite 访问者」例外消除**，单写者不变量回归纯粹。codex 壳在 gateway 容器经网络连 `/mcp`，
+> 不再有任何进程跨容器读 sc.db。
 
 ## 6. 健康与可观测
 
@@ -138,28 +133,44 @@ docker compose restart backend               # 手动重启（数据在卷中，
 docker compose build && docker compose up -d # 升级（含前端重建）
 ```
 
-## 8. 会话网关 gateway（Phase 1 §10.1；装车批第 3 步 = runtime 魔改壳）
+## 8. 会话网关 gateway（Phase 1 §10.1；装车批第 3 步 = runtime 魔改壳，第 5 步 = 容器级隔离）
 
 四服务之一：浏览器侧教师经网关（鉴权 RPC + SSE）连到 codex 壳；网关每教师 spawn 一个
-`codex-app-server` 子进程（stdio JSON-RPC），壳经 `[mcp_servers.sc]`（CODEX_HOME
-config.toml）调 sc 域工具——工具由 `school-authz-mcp` shim 校验教师签名 token 后注入
-身份、同容器直启收编的 `backend/app/mcp_server.py`。
+`codex-app-server` 子进程（stdio JSON-RPC）。壳经 `[mcp_servers.sc]`（CODEX_HOME
+config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 backend 进程（/mcp），
+教师身份逐请求经 `Authorization: Bearer`（网关按教师签发的 HMAC token）由 backend 验签；
+**gateway 容器不挂 sc-data 卷**，agent 壳物理不可达 sc.db（装车批第 5 批的收紧）。
 
-- **镜像**：`gateway/Dockerfile`——python:3.11-slim + runtime 壳二进制
-  （codex-app-server/exec-server/school-authz-mcp）+ backend python（`COPY --from=sc-backend:latest`）。
-- **构建前置**：`deploy/stage-gateway-runtime.sh`（容器化 bazel 出三二进制到
-  gateway/.runtime，需本地代理）+ `docker compose build backend`（gateway `--from` 依赖）。
-  镜像不构建于 CI（CI docker job 只 build backend/frontend + compose config）。
-- **env**：`env_file: ../backend/.env`（单一密钥源：SC_LLM_* 供 gateway 内 sc MCP python
-  写工具调 LLM、SC_AUTH_SECRET/SC_TRIGGER_KEY 与 backend 共享），`environment` 覆盖
-  `SC_GATEWAY_APP_SERVER=codex-app-server`（无子命令，args 空）、`SC_DATABASE_URL=
-  sqlite:////sc-data/sc.db`（覆盖 env_file 的 /data 路径，指向共享卷）。
+- **镜像**：`gateway/Dockerfile`——python:3.11-slim + 自包含依赖（`gateway/requirements.txt`，
+  不再 COPY backend） + runtime 壳二进制（codex-app-server/exec-server）。
+- **构建前置**：`deploy/stage-gateway-runtime.sh`（容器化 bazel 出两二进制到
+  gateway/.runtime，需本地代理）。无 backend 先建顺序。镜像不构建于 CI（CI docker job
+  只 build backend/frontend + compose config）。
+- **env**：`env_file: ../backend/.env`（网关**进程**侧要 SC_AUTH_SECRET 签教师 token、
+  SC_TRIGGER_KEY 验 /internal/*、SC_LLM_API_KEY 做 CODEX_HOME 播种）；`environment` 覆盖
+  `SC_GATEWAY_APP_SERVER=codex-app-server`（无子命令，args 空）。**agent 子进程 env 是
+  白名单**（`gateway/main.py _child_env`）——共享密钥/DB URL/LLM key 一概不进，防注入 agent
+  `env` 外泄。
 - **CODEX_HOME 首启播种**：config.toml 缺失时由 `gateway/codex_home.py` 从
-  `assets/deepseek` 模板渲染（DeepSeek key = `SC_DEEPSEEK_API_KEY` 回落 `SC_LLM_API_KEY`）
-  + 落 models.json；管理员手写永不覆盖。真实 turn 前需配好 key。
+  `assets/deepseek` 模板渲染（DeepSeek key = `SC_DEEPSEEK_API_KEY` 回落 `SC_LLM_API_KEY`；
+  `[mcp_servers.sc]` url + bearer_token_env_var）+ 落 models.json；管理员手写永不覆盖。
+  旧 stdio 形（含 school-authz-mcp）既有配置自动旋转 `.pre-mcp-remote.bak` 重渲染。
 - **教师账号**：`gateway/accounts.example.json` 模板 → `python scripts/gateway_account.py`
   生成带 teacher_id 的 accounts.json（入库于镜像 accounts.json 兜底位）。
 - 端口 `127.0.0.1:8100`（仅本机调试/健康；浏览器侧走前端 nginx 反代，见 compose 注释）。
+
+### 已知限制 / 残留风险（装车批第 5 批显式记账）
+
+1. **共享 CODEX_HOME 跨教师可读**：gw-codex-home 单卷被所有教师进程共享，教师 A 的 agent
+   可经 shell 读教师 B 的 rollout JSONL（含 B 经 MCP 工具取回的班级数据）。修 = 按驱动分
+   CODEX_HOME + 一班一线程映射重设计（线程要可被班主教师与系统双方寻址），另行批次。
+2. **DeepSeek key 在 agent 进程内**：codex 自调 LLM，config.toml 明文持 provider key——
+   注入的 agent 可外泄；按设计残留（agent 必须能调模型）。
+3. **agent 可达 backend:8000**：REST 全部 Bearer 门；子进程已无 SC_AUTH_SECRET/SC_TRIGGER_KEY，
+   不可伪造教师或内部 token；/mcp 本身逐请求验签。
+4. **自动 trigger 按提交教师身份驱动**：commit 实名教师带入 teacher_id，安全模式下自动考后
+   分析可读本班数据（第 5 批修复的既有缺口）；开放模式无教师时回落匿名。
+5. **token TTL = 7 天**：逐请求重验的必然（对齐 backend auth.py）；gateway 重部署即重签。
 
 ## 9. 演进路径（明确不在本期交付）
 

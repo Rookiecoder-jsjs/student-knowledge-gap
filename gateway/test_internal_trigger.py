@@ -34,6 +34,11 @@ class FakeBridge:
 def gw(monkeypatch, tmp_path):
     monkeypatch.setattr(gm, "INTERNAL_KEY", "test-key")
     monkeypatch.setattr(gm, "THREADS_FILE", tmp_path / "threads.json")
+    # 每测一个全新 GUARD：模块内多测共享 "th-1" 轮次计数 + test_budget 的
+    # importlib.reload 会让 gm.GUARD 配置随 import 顺序漂移——隔离后稳定。
+    import gateway.budget as _budget
+
+    monkeypatch.setattr(gm, "GUARD", _budget.BudgetGuard())
     gm._RECENT_TRIGGERS.clear()
     client = TestClient(gm.app)
     return client, tmp_path
@@ -65,7 +70,7 @@ def test_internal_key_required(gw, monkeypatch):
 
 
 def _fake_factory(fake):
-    async def factory():
+    async def factory(teacher_id=0):  # 装车批第 5 批：trigger 桥按教师分
         return fake
 
     return factory
@@ -106,3 +111,22 @@ def test_trigger_unknown_kind_400(gw, monkeypatch):
     c, _ = gw
     r = _post(c, _body(kind="weekly_digest"))
     assert r.status_code == 400
+
+
+def test_trigger_forwards_teacher_id_to_bridge(gw, monkeypatch):
+    """装车批第 5 批：载荷 teacher_id → 按该身份取 trigger 桥（安全模式实名驱动）。"""
+    c, _ = gw
+    seen: dict = {}
+
+    async def factory(teacher_id=0):
+        seen["teacher_id"] = teacher_id
+        return FakeBridge()
+
+    monkeypatch.setattr(gm, "_trigger_bridge", factory)
+    r = _post(c, _body(teacher_id=5))
+    assert r.status_code == 200 and r.json().get("accepted") is True, r.text
+    assert seen["teacher_id"] == 5
+    # 缺省 → 匿名（teacher_id=0）
+    r2 = _post(c, _body(idempotency_key="post_exam_analysis:9", exam_id=9))
+    assert r2.status_code == 200
+    assert seen["teacher_id"] == 0

@@ -76,11 +76,12 @@ def _mcp_guard(session: Session, class_id: int) -> None:
 
     读工具的过滤在 server 包装层即可（泄漏面=多余数据），写工具必须在
     纯函数层拒绝——否则任何绕过包装的调用（脚本/测试/未来入口）都不设防。
-    裁决复用 app.auth.assert_class_access（SC_MCP_TEACHER_ID 兜底路线）。
+    裁决复用 app.auth.assert_class_access（HTTP /mcp 逐请求 token → contextvar，
+    stdio 本地路径回退 SC_MCP_TEACHER_ID env）。
     """
     from app import auth as _auth
 
-    ctx = _auth.mcp_context_from_env(session)
+    ctx = _auth.mcp_context(session)
     try:
         _auth.assert_class_access(session, ctx, class_id)
     except _auth.PermissionError_ as e:

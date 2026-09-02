@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Stage runtime 壳二进制到 gateway/.runtime/ 供 gateway 镜像 build（装车批第 3 步）。
+# Stage runtime 壳二进制到 gateway/.runtime/ 供 gateway 镜像 build（装车批第 3 步起；
+# 第 5 步起只 stage codex-app-server + exec-server——school-authz-mcp shim 退役，
+# teacher 身份改由 codex MCP client 逐请求 Authorization 头发往 backend /mcp）。
 #
 # runtime/ 的 Bazel 构建走容器（本机无 bazel）：codex-bazel:ready + 缓存卷
 # codex-bazel-cache（挂 runtime/:/workspace）。产物在容器内 output base，经第二绑定
@@ -7,7 +9,8 @@
 #
 # 前置：本地代理已开（Bazel 解析阶段需拉 github v8 源码；不开必挂）。
 # 用法：  deploy/stage-gateway-runtime.sh
-# 之后：  docker compose -f deploy/docker-compose.yml build backend gateway
+# 之后：  docker compose -f deploy/docker-compose.yml build gateway
+#         （第 5 批起 gateway 自包含，无 backend 先建顺序）
 
 set -euo pipefail
 
@@ -18,17 +21,16 @@ IMAGE="${CODEX_BAZEL_IMAGE:-codex-bazel:ready}"
 CACHE_VOL="${CODEX_BAZEL_CACHE:-codex-bazel-cache}"
 JOBS="${BAZEL_JOBS:-4}"
 
-# TARGETS:与 runtime/justfile build-for-release 对齐（exec-server 备远程 exec 用）
+# TARGETS:codex-app-server(网关对接面) + exec-server(备远程 exec 用)
 read -r -d '' BUILD <<EOF || true
 set -o pipefail
 bazel build --compilation_mode=opt --jobs=${JOBS} \\
   //codex-rs/app-server:codex-app-server \\
-  //codex-rs/app-server:exec-server \\
-  //codex-rs/school-authz:school-authz-mcp
+  //codex-rs/app-server:exec-server
 cp -L bazel-bin/codex-rs/app-server/codex-app-server /out/codex-app-server
 cp -L bazel-bin/codex-rs/app-server/exec-server /out/exec-server
-cp -L bazel-bin/codex-rs/school-authz/school-authz-mcp /out/school-authz-mcp
-chmod +x /out/codex-app-server /out/exec-server /out/school-authz-mcp
+chmod +x /out/codex-app-server /out/exec-server
+rm -f /out/school-authz-mcp
 EOF
 
 mkdir -p "$OUT_DIR"

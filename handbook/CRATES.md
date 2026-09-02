@@ -87,3 +87,9 @@ TUI（唯一前门是 app-server）· exec 人类输出面 · apply_patch 默认
 | 批次 | crate | 动作 | 理由 | 日期 |
 |---|---|---|---|---|
 | §6.3 加批（执行 ✅） | school-authz | **新增**（members + workspace.deps + Cargo.lock + `BUILD.bazel`；`justfile build-for-release` 追加 `//codex-rs/school-authz:school-authz-mcp`）。lib = 签名 token 校验（与 sc 后端 auth.py 同格式同密钥 HMAC-SHA256 hex）+ `assert_class_access` 权限断言原语 + 决策表 `decide_identity_action`；bin = `school-authz-mcp` stdio MCP shim（token 有效→注入 `SC_MCP_TEACHER_ID`、无效→fail-closed、缺失→剥离身份匿名、secret 未配→透传） | §6.3 首笔差异化能力：官方壳无身份校验/注入面；替代「网关裸 SC_MCP_TEACHER_ID env、后端无条件信任」的 §5.5 兜底。token 格式复用后端 → gateway 签/shim 验/后端可验，单一密钥。零新增外部依赖 | 2026-09-02 |
+
+> **部署状态注（装车批第 5 批 / D-035）**：crate 保留在树内（编译/测试随锚点维护），但
+> `school-authz-mcp` **自第 5 批起不再 stage 进 gateway 镜像、不再被 `[mcp_servers.sc]`
+> 引用**——sc MCP 迁入 backend 进程后身份改逐请求 token 校验（`app/mcp_http.py`）。
+> 本行不是「仍随镜像分发」的误读；token 格式与决策表仍以本 crate 为 Rust 侧参考实现。
+> `justfile build-for-release` 仍建三枚（school-authz 保编译验证，无害超集）。

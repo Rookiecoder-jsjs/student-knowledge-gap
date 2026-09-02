@@ -84,7 +84,7 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 
 | crate（目录） | 一句话职责 |
 | --- | --- |
-| `school-authz` | 教师↔班级鉴权原语：签名 token 校验（HMAC-SHA256，与 sc 后端 `backend/app/auth.py` 同格式同密钥）+ `assert_class_access` 权限断言 + `school-authz-mcp` stdio shim（把校验通过的身份注入 MCP 连接，替代「裸 SC_MCP_TEACHER_ID env 可信」兜底）。首个官方壳做不到的能力，装车批差异化价值点（§6.3 / DELTA D-034）。 |
+| `school-authz` | 教师↔班级鉴权原语：签名 token 校验（HMAC-SHA256，与 sc 后端 `backend/app/auth.py` 同格式同密钥）+ `assert_class_access` 权限断言 + `school-authz-mcp` stdio shim。首个官方壳做不到的能力（§6.3 / DELTA D-034）。**部署形态已退役（装车批第 5 批 / D-035）**：sc MCP 迁 backend 进程后身份改逐请求 token 校验（`backend/app/mcp_http.py`），crate 保留作参考实现；差异能力以「backend 逐请求教师授权」形态延续 |
 
 ### 1.5 持久化 / 状态
 

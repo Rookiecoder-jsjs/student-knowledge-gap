@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, kb, org, reports
+from app import mcp_http  # /mcp 挂载 + 逐请求教师鉴权（装车批第 5 批）
 from app.db import init_db
 from app.observability import setup_logging
 
@@ -29,7 +30,13 @@ async def lifespan(app: FastAPI):
         from app.llm.audit import start_audit_worker
 
         start_audit_worker(None)  # None -> 延迟取 SessionLocal（测试可注入工厂）
-    yield
+    # 装车批第 5 批：sc MCP 迁入本进程（streamable-http 挂 /mcp，见 app.mcp_http）。
+    # 每轮 lifespan 重建 manager——规避 FastMCP session_manager.run() once-only
+    # （backend 测试每轮 with TestClient(app) 都进出 lifespan）。
+    from app import mcp_http
+
+    async with mcp_http.mcp_lifespan():
+        yield
     # ---- shutdown ----
     from app.ingestion.batch import shutdown as batch_shutdown
 
@@ -58,10 +65,11 @@ app.add_middleware(
 )
 
 # G11 全局鉴权闸（agent-product-design §5.5）：安全模式下全部业务端点要求
-# Bearer token；白名单 = 探针（/health /ready）+ 登录本身。裁决逻辑在 app.auth，
+# Bearer token；白名单 = 探针（/health /ready）+ 登录本身 + /mcp（MCP 走自己的
+# 逐请求教师 token 校验，见 app.mcp_http.mcp_auth）。裁决逻辑在 app.auth，
 # 这里只做「要不要拦」的路径判定——开放模式（无凭据账号）整层透明。
 # 班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
-_EXEMPT_PREFIXES = ("/health", "/ready", "/auth/login")
+_EXEMPT_PREFIXES = ("/health", "/ready", "/auth/login", "/mcp")
 
 
 @app.middleware("http")
@@ -88,6 +96,10 @@ async def _auth_gate(request, call_next):  # noqa: ANN001
         finally:
             db.close()
     return await call_next(request)
+
+
+# /mcp 逐请求教师鉴权（外层；/mcp 已在 _EXEMPT_PREFIXES，故 _auth_gate 让路）
+app.middleware("http")(mcp_http.mcp_auth)
 
 # 健康检查（与各域路由并列；候选2 拆分后独立于业务 router）
 # liveness 探针：只问进程存活（静态 ok），依赖可用性见下方 /ready。
@@ -144,3 +156,6 @@ app.include_router(analysis.router)
 app.include_router(intervention.router)
 app.include_router(reports.router)
 app.include_router(admin.router)
+
+# sc MCP streamable-http 端点（绝对路径 /mcp；并入 router——Mount 会剥前缀致 404）
+app.router.routes.append(mcp_http.mcp_route)

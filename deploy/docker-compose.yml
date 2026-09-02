@@ -59,12 +59,14 @@ services:
       - backend
 
   # ---- Phase 1（agent-product-design §10.1）：会话网关 + runtime 魔改壳 ----
-  # 装车批第 3 步：镜像直启 runtime Bazel 产物 codex-app-server（无子命令，args 空）；
-  # sc backend python 同镜像收编，[mcp_servers.sc] stdio 子进程经 school-authz-mcp
-  # shim 同容器可达；sc.db 走 sc-data 卷（挂 /sc-data，与 backend 同卷不同挂点，同一文件）。
-  # env_file=backend/.env：单一密钥源——SC_LLM_*（gateway 内 sc MCP python 写工具调 LLM）、
-  # SC_AUTH_SECRET/SC_TRIGGER_KEY（与 backend 共享）、SC_GATEWAY_URL（sc MCP 通知回环）；
-  # 下方 environment 覆盖网关专属值。
+  # 装车批第 3 步：镜像直启 runtime Bazel 产物 codex-app-server（无子命令，args 空）。
+  # 装车批第 5 步：sc MCP python 迁入 backend 容器（streamable-http 挂 /mcp），本
+  # 服务**不再挂 sc-data 卷**——agent 物理不可达 sc.db，直接 DB 读写路径被拓扑切断；
+  # codex 的 [mcp_servers.sc] 以 url=http://backend:8000/mcp 连入，教师身份逐请求
+  # 经 Authorization Bearer（SC_SCHOOL_AUTH_TOKEN）由 backend 验签。school-authz-mcp
+  # shim 退役。env_file=backend/.env：网关进程侧要 SC_AUTH_SECRET（签教师 token）、
+  # SC_TRIGGER_KEY（验 /internal/*）、SC_LLM_API_KEY（CODEX_HOME 播种）；SC_LLM_*/
+  # SC_AUTH_SECRET 等共享密钥不进 agent 子进程（_child_env 白名单）。
   gateway:
     build: ../gateway
     image: sc-gateway:latest
@@ -74,8 +76,6 @@ services:
       # gateway 直启 runtime 魔改壳（无子命令；空 args → main.py split() 得 []）
       SC_GATEWAY_APP_SERVER: codex-app-server
       SC_GATEWAY_APP_SERVER_ARGS: ""
-      # sc MCP python 子进程读库（覆盖 env_file 的 /data/sc.db；与 backend 同一文件）
-      SC_DATABASE_URL: "sqlite:////sc-data/sc.db"
       SC_GATEWAY_ASSETS: /app/assets/deepseek      # CODEX_HOME 首启播种模板位置
       SC_BACKEND_URL: http://backend:8000         # 月度软限额巡查数据源（§5.7）
       SC_BUDGET_MAX_TURNS: "12"
@@ -93,7 +93,6 @@ services:
       SC_RETENTION_ROLLOUT_DAYS: ${SC_RETENTION_ROLLOUT_DAYS:-0}
     volumes:
       - gw-codex-home:/data/codex-home            # CODEX_HOME 持久化（rollout/线程记忆）
-      - sc-data:/sc-data                          # sc.db 共享卷（sc MCP python 读库）
     ports:
       - "127.0.0.1:8100:8100"                    # 同 backend：仅本机调试，生产走 nginx 反代
     depends_on:

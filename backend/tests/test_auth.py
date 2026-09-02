@@ -182,13 +182,13 @@ def test_mcp_context_from_env(monkeypatch, adb):
     school, kb, c1, c2 = _seed(adb)
     jia = _teacher(adb, "甲老师", "jia", "pass123")
     monkeypatch.setenv("SC_MCP_TEACHER_ID", str(jia.id))
-    ctx = auth.mcp_context_from_env(adb)
+    ctx = auth.mcp_context(adb)
     assert ctx.teacher is not None and ctx.teacher.id == jia.id
     with pytest.raises(auth.PermissionError_):
         auth.assert_class_access(adb, ctx, c2.id)
 
     monkeypatch.setenv("SC_MCP_TEACHER_ID", "")
-    assert auth.mcp_context_from_env(adb).teacher is None
+    assert auth.mcp_context(adb).teacher is None
 
 
 # ---------------------------------------------------------------------------

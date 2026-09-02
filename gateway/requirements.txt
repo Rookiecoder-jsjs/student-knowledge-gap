@@ -1,0 +1,7 @@
+# gateway 自身依赖（装车批第 5 批起自包含：sc MCP python 迁出后不再 COPY backend
+# site-packages）。pin 与 backend/requirements.txt 对齐（fastapi/httpx/pydantic/uvicorn
+# 四处共用版本）。测试依赖（pytest/fastapi.testclient）不进镜像。
+fastapi==0.141.1
+uvicorn==0.52.1
+pydantic==2.13.4
+httpx==0.28.1

@@ -52,30 +52,36 @@ just build-for-release                 # bazel 构建 release 二进制
 export CODEX_HOME=/tmp/sc-p1/codex-home
 # 该目录需含 config.toml（DeepSeek provider + mcp_servers.sc）与 models.json
 # 模板来源：gateway/assets/deepseek/
+# 装车批第 5 批起 [mcp_servers.sc] 是远程 url（http://backend:8000/mcp，compose 内
+# 服务名）——本地非 compose 跑壳时，把该 url 改成 http://127.0.0.1:8000/mcp 并本地起
+# backend（uvicorn app.main:app，已挂 /mcp）；身份：SC_AUTH_SECRET 配置时给子进程
+# SC_SCHOOL_AUTH_TOKEN（backend issue_token 同格式签发），否则开放模式匿名。
 
 cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级概览"
 ```
 
-## 发布产物形态（一校一盒 §8；装车批第 3 步：gateway 换装 runtime 魔改壳）
+## 发布产物形态（一校一盒 §8；装车批第 3 步：gateway 换装 runtime 魔改壳；第 5 步：自包含 + 容器级隔离）
 
 - **backend/frontend/backup**：既有镜像不变；
-- **gateway**：`gateway/Dockerfile`——python:3.11-slim 基（node/npm codex 预编译壳
-  退役），COPY `just build-for-release` 产物（`codex-app-server`/`exec-server`/
-  `school-authz-mcp`）进 `/usr/local/bin/`，并以 `COPY --from=sc-backend:latest`
-  复用 backend python 环境 + `backend/app`（sc MCP stdio 子进程与 codex 同容器，
-  经共享 sc-data 卷读 sc.db）。**构建顺序：先 build backend 再 build gateway**
-  （gateway `--from` 依赖 sc-backend:latest 已存在）：
+- **gateway**：`gateway/Dockerfile`——python:3.11-slim 基 + **自包含依赖**
+  （`gateway/requirements.txt`，装车批第 5 步起不再 `COPY --from=sc-backend`，
+  无 backend 先建顺序），COPY runtime Bazel 产物（`codex-app-server`/`exec-server`）
+  进 `/usr/local/bin/`。sc MCP server 已迁入 backend 进程（/mcp），gateway 不携带
+  backend python、**不挂 sc-data 卷**——agent 物理不可达 sc.db。构建：
   ```bash
-  # 1) stage runtime 壳二进制（本机无 bazel，走容器；需先开代理）
+  # 1) stage runtime 壳二进制（本机无 bazel，走容器；需先开代理）→ 两枚
   deploy/stage-gateway-runtime.sh
-  # 2) 构建（顺序固定）
-  docker compose -f deploy/docker-compose.yml build backend gateway
+  # 2) 构建（自包含，无顺序）
+  docker compose -f deploy/docker-compose.yml build gateway
   ```
 - `just build-for-release` 产物 = `codex-app-server` + `exec-server` +
-  `school-authz-mcp`（§6.3：身份注入 MCP 连接 shim，见下）；
+  `school-authz-mcp`（school-authz-mcp 第 5 批起**不再 stage 进镜像**——crate 保留
+  作参考实现，见 §6.3）；
 - **CODEX_HOME 首启播种**：gateway 启动时 `$CODEX_HOME/config.toml` 缺失则由
-  `gateway/codex_home.py` 从 `assets/deepseek` 模板渲染（占位符固定容器内路径）+
-  落 models.json；幂等，管理员手写配置永不覆盖；
+  `gateway/codex_home.py` 从 `assets/deepseek` 模板渲染（`[mcp_servers.sc]` = 远程
+  `url=http://backend:8000/mcp` + `bearer_token_env_var=SC_SCHOOL_AUTH_TOKEN`）+
+  落 models.json；幂等，管理员手写永不覆盖；旧 stdio 形（含 school-authz-mcp）配置
+  自动旋转 `.pre-mcp-remote.bak` 重渲染；
 - CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）；
 - **arch**：staged 二进制 = x86_64-linux-gnu（glibc ≥2.28）；arm64 盒子需在 arm
   环境重跑 staging。
@@ -101,11 +107,14 @@ bazel test //codex-rs/school-authz:all
 just bazel-lock-update
 ```
 
-产物 `school-authz-mcp` = stdio MCP shim，包装 CODEX_HOME config.toml
-`[mcp_servers.sc]` 指向的 sc 后端命令。部署形态（装车批第 3 步落地）：shim 随
-gateway 镜像分发（/usr/local/bin），sc MCP python（backend/app 收进镜像）由
-shim 派生身份后同容器直启；gateway 配 `SC_AUTH_SECRET` 后签 token、shim 校验
-注入；未配则透明透传旧兜底（灰度安全）。逐调用教师↔班级断言仍由 sc 后端执行。
+产物 `school-authz-mcp` = stdio MCP shim（Rust HMAC 验签，决策表 Passthrough/
+Anonymous/SetTeacher/FailClosed）。**部署已退役（装车批第 5 批）**：sc MCP 迁入 backend
+进程后 `[mcp_servers.sc]` 为远程 url，url 与 command 互斥、shim 不再被 spawn，也不再
+stage 进 gateway 镜像。其校验职责**迁往 backend 逐请求**（`auth.verify_token` 同格式同
+密钥，`app/mcp_http.py` 中间件）；crate + 测试**保留在树内作参考实现**（token 格式与
+裁决表的唯一 Rust 侧记录），上方命令作能力文档。生产教师身份链路（第 5 批）：gateway 按
+教师签 token → codex MCP client 逐请求 `Authorization: Bearer` → backend /mcp 验签 →
+`auth.mcp_context` 按教师/班级过滤。逐调用教师↔班级断言由 sc 后端执行（不变）。
 
 ## 测试纪律（fork 版）
 

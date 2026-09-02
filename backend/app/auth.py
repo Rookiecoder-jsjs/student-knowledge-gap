@@ -25,6 +25,7 @@ import hmac
 import os
 import secrets
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -34,6 +35,16 @@ from app.models import Class, Student, Teacher, TeacherClass
 
 PBKDF2_ITERS = 60_000
 TOKEN_TTL_S = 7 * 24 * 3600  # 一周（教师口令登录，长会话合理）
+
+# HTTP /mcp 通道的逐请求教师身份（backend/app/mcp_http.py 中间件验签后写入）。
+# 工具在任意线程/任务里经 auth.mcp_context 读取；默认 None = 匿名/走 env 兜底。
+_mcp_teacher_id: ContextVar[int | None] = ContextVar("mcp_teacher_id", default=None)
+
+
+def set_mcp_teacher_id(teacher_id: int | None) -> None:
+    """把已验证的教师 id 写进当前请求上下文（无 → 匿名）。"""
+    _mcp_teacher_id.set(teacher_id)
+
 
 _secret_cache: str | None = None
 
@@ -168,15 +179,23 @@ class AccessContext:
         return self.teacher.name if self.teacher else "anonymous"
 
 
-def mcp_context_from_env(db: Session) -> AccessContext:
-    """MCP 身份传播兜底路线（§5.5）：网关为每教师进程注入 SC_MCP_TEACHER_ID。
+def mcp_context(db: Session) -> AccessContext:
+    """当前 MCP 调用的教师身份上下文。
 
-    未注入/教师不存在 → 匿名上下文（开放模式放行、安全模式由断言拒绝）。
+    优先级：HTTP /mcp 通道的**逐请求**教师 token（backend/app/mcp_http.py 中间件
+    验签后经 ``set_mcp_teacher_id`` 写入 contextvar，装车批第 5 批起为生产路径）
+    > stdio/本地兜底 env ``SC_MCP_TEACHER_ID``（本地 dev/旧测试）。两者皆无 =
+    匿名（开放模式放行、安全模式由断言拒绝）。同一进程并发服务多教师，身份
+    只能逐请求携带，进程级 env 注入已死。
     """
-    raw = os.environ.get("SC_MCP_TEACHER_ID", "").strip()
-    if not raw.isdigit():
+    teacher_id = _mcp_teacher_id.get()
+    if teacher_id is None:
+        env_raw = os.environ.get("SC_MCP_TEACHER_ID", "").strip()
+        if env_raw.isdigit():
+            teacher_id = int(env_raw)
+    if teacher_id is None:
         return AccessContext(teacher=None)
-    return AccessContext(teacher=db.get(Teacher, int(raw)))
+    return AccessContext(teacher=db.get(Teacher, teacher_id))
 
 
 def assert_class_access(db: Session, ctx: AccessContext, class_id: int) -> Class:

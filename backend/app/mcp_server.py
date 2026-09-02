@@ -57,7 +57,16 @@ _READONLY = {"readOnlyHint": True, "destructiveHint": False}
 # 产出本身是 draft/suggested 态，教师签发/确认才是终审（§5.3）。
 _WRITES = {"readOnlyHint": False, "destructiveHint": False}
 
-mcp = FastMCP("sc")
+# 装车批第 5 批：sc MCP 迁入 backend uvicorn 进程，经 streamable-http 挂 /mcp。
+# DNS-rebinding 保护默认开但 /mcp 仅 compose 内网可达（无浏览器 origin）——
+# 禁用免去对 backend/localhost/127.0.0.1 各 host 的放行维护。同一实例兼顾
+# stdio（本地 dev/测试，__main__ 入口）与 HTTP（mcp_http.py 挂载）。
+from mcp.server.transport_security import TransportSecuritySettings
+
+mcp = FastMCP(
+    "sc",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 
 def _provenance(endpoint: str, params: dict | None = None) -> dict:
@@ -117,14 +126,14 @@ def _check_class_students(session, class_id: int, student_ids: list[int]) -> Non
 
 
 def _guard_class(session, class_id: int) -> None:
-    """MCP 身份传播兜底路线（§5.5）：网关按教师注入 SC_MCP_TEACHER_ID。
+    """MCP 身份裁决（§5.5，装车批第 5 批：HTTP /mcp 逐请求 token → contextvar）。
 
     裁决走 app.auth.assert_class_access（与 HTTP 同一实现）；拒绝翻译为
     ToolInputError——模型可读、不重试同参。
     """
     from app import auth as _auth
 
-    ctx = _auth.mcp_context_from_env(session)
+    ctx = _auth.mcp_context(session)
     try:
         _auth.assert_class_access(session, ctx, class_id)
     except _auth.PermissionError_ as e:
@@ -135,7 +144,7 @@ def _filter_classes_to_allowed(session, classes: list[dict]) -> list[dict]:
     """get_class_overview 的授权过滤：教师身份在场且非 admin 时收敛列表。"""
     from app import auth as _auth
 
-    allowed = _auth.allowed_class_ids(session, _auth.mcp_context_from_env(session))
+    allowed = _auth.allowed_class_ids(session, _auth.mcp_context(session))
     if allowed is None:
         return classes
     want = set(allowed)

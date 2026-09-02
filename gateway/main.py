@@ -86,7 +86,10 @@ INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
 # 由 gateway 签为 HMAC token、由壳侧 shim 校验注入，替代「裸 SC_MCP_TEACHER_ID env
 # 可信」的兜底路线；未配置=维持旧兜底，灰度安全）
 SCHOOL_AUTH_SECRET = os.environ.get("SC_AUTH_SECRET", "")
-_SCHOOL_TOKEN_TTL_S = 3600
+# 装车批第 5 批：sc MCP 迁 backend 后为**逐请求**重验——token 须盖过常驻 bridge
+# 生命周期。对齐 backend auth.py 的一周 TTL；gateway 重部署即重签，TTL 只约束
+# dumped token 的重放窗口。
+_SCHOOL_TOKEN_TTL_S = 7 * 24 * 3600
 # 班级持久线程映射落盘（§5.6 一班一线程跨学期滚动；JSON {str(class_id): thread_id}）
 THREADS_FILE = Path(os.environ.get("SC_GATEWAY_THREADS_FILE", "/data/threads.json"))
 
@@ -190,14 +193,39 @@ def _sign_school_token(teacher_id: int) -> str:
 
 
 def _teacher_identity_env(teacher_id: int) -> dict[str, str]:
-    """G11 身份传播（§5.5）载体：注入 app-server 子进程 env 的教师身份。
+    """教师身份载体（§5.5，装车批第 5 批）：app-server 子进程 env 里的教师 token。
 
-    SC_AUTH_SECRET 配置 → 签名 token（school-authz shim 壳侧校验、注入 SC_MCP_TEACHER_ID，
-    替代「裸 env 可信」）；未配置 → 旧兜底裸 SC_MCP_TEACHER_ID（灰度安全）。
+    SC_AUTH_SECRET 配置 → 网关签发的教师 token（SC_SCHOOL_AUTH_TOKEN）；codex 的
+    MCP streamable-http 客户端按 config.toml [mcp_servers.sc] 的 bearer_token_env_var
+    以 `Authorization: Bearer` 逐请求发往 backend /mcp，backend 验签得 teacher_id——
+    身份不再靠进程级 env 裸注入（旧 school-authz shim 模型退役）。未配置
+    SC_AUTH_SECRET → {}：codex 不发头 → backend 开放模式匿名。
     """
     if SCHOOL_AUTH_SECRET:
         return {"SC_SCHOOL_AUTH_TOKEN": _sign_school_token(teacher_id)}
-    return {"SC_MCP_TEACHER_ID": str(teacher_id)}
+    return {}
+
+
+def _child_env(teacher_id: int) -> dict[str, str]:
+    """app-server 子进程 env 最小权限白名单（装车批第 5 批）。
+
+    旧实现 `{**os.environ, ...}` 全盘继承——agent（可执行任意 shell）一次 `env`
+    即得 SC_AUTH_SECRET/SC_TRIGGER_KEY/SC_DATABASE_URL/SC_LLM_*，可伪造任意教师
+    token。改为只放 codex 运行所需（CODEX_HOME/RUST_LOG/HOME/PATH/代理/TZ…）+ 该
+    教师的签名 token；一切 SC_* 共享密钥都不进子进程（gateway 进程自身仍持全集，
+    签名与 CODEX_HOME 播种在进程侧完成）。
+    """
+    passthrough = {
+        "HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+        "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+        "NO_PROXY", "no_proxy",
+    }
+    env = {k: os.environ[k] for k in passthrough if k in os.environ}
+    env["CODEX_HOME"] = CODEX_HOME
+    env["RUST_LOG"] = "error"
+    if teacher_id:
+        env.update(_teacher_identity_env(teacher_id))
+    return env
 
 
 @dataclass
@@ -213,11 +241,9 @@ class Bridge:
 
     @classmethod
     async def spawn(cls, teacher_id: int = 0) -> "Bridge":
-        env = {**os.environ, "CODEX_HOME": CODEX_HOME, "RUST_LOG": "error"}
-        # G11 身份传播（§5.5）：见 _teacher_identity_env —— school-authz 签名 token
-        # 优先，SC_AUTH_SECRET 未配置时维持旧兜底裸 env 注入（灰度安全）。
-        if teacher_id:
-            env.update(_teacher_identity_env(teacher_id))
+        # 最小权限 env（装车批第 5 批）：白名单 + 该教师的签名 token（见 _child_env）——
+        # 共享密钥/数据库 URL/LLM key 都不进 agent 进程。
+        env = _child_env(teacher_id)
         proc = subprocess.Popen(
             [APP_SERVER_CMD, *APP_SERVER_ARGS],
             stdin=subprocess.PIPE,
@@ -431,6 +457,7 @@ class TriggerReq(BaseModel):
     kind: str                      # 目前仅 post_exam_analysis
     exam_id: int
     class_id: int
+    teacher_id: int | None = None  # 触发身份（装车批第 5 批）：提交教师实名；None=匿名
     idempotency_key: str           # 同键 10 分钟内不重复发起（网关侧重试安全）
     message: str                   # 版本化模板渲染好的用户消息
     template_version: str
@@ -468,17 +495,21 @@ def _recently_fired(key: str) -> bool:
     return False
 
 
-# 触发式任务用的系统级会话（不占教师账号；与教师桥同款 app-server 进程）
-_SYSTEM_BRIDGE_USER = "__trigger__"
+# 触发式任务用的系统级 app-server 桥（不占教师账号；按身份分桥）。
+# 装车批第 5 批：trigger 按「提交教师」身份驱动（backend commit 实名教师带
+# teacher_id 入载荷）——安全模式下自动考后分析才能经 sc MCP 读本班数据（匿名在
+# /mcp 是 fail-closed 401）。teacher_id=0 = 开放模式匿名兜底。桥与教师交互桥分开，
+# 触发式长 turn 不打断浏览器会话；线程 id 全局（共享 CODEX_HOME）可跨进程 resume。
+_TRIGGER_BRIDGES: dict[int, Bridge] = {}
 
 
-async def _trigger_bridge() -> Bridge:
-    br = _BRIDGES.get(_SYSTEM_BRIDGE_USER)
+async def _trigger_bridge(teacher_id: int = 0) -> Bridge:
+    br = _TRIGGER_BRIDGES.get(teacher_id)
     if br is None or br.proc.poll() is not None:
         if br is not None:
             br.stop()
-        br = await Bridge.spawn()
-        _BRIDGES[_SYSTEM_BRIDGE_USER] = br
+        br = await Bridge.spawn(teacher_id=teacher_id)
+        _TRIGGER_BRIDGES[teacher_id] = br
     br.last_used = time.time()
     return br
 
@@ -531,7 +562,7 @@ async def internal_trigger(req: TriggerReq):
     if _recently_fired(req.idempotency_key):
         return {"accepted": False, "reason": "duplicate within TTL"}
 
-    bridge = await _trigger_bridge()
+    bridge = await _trigger_bridge(req.teacher_id or 0)
     mapping = _load_thread_map()
     tid = mapping.get(str(req.class_id))
     if not tid:
@@ -578,4 +609,6 @@ def _startup() -> None:
 @app.on_event("shutdown")
 def _shutdown() -> None:
     for br in _BRIDGES.values():
+        br.stop()
+    for br in _TRIGGER_BRIDGES.values():
         br.stop()
