@@ -79,6 +79,9 @@ async def _stop_monthly_watch() -> None:
 # 直启,无子命令,args 空;旧 npm `codex app-server` 形态仅由外部 env 显式还原)
 APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex-app-server")
 APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "").split()
+# 装车批第 6 批：CODEX_HOME 是**根**（卷挂载点）；每个驱动（教师身份）用其下
+# t<teacher_id>/ 作自己的 codex home（config/models/rollout 互不混局）。浅层收窄：
+# 同容器同 root，目录级不构成注入 agent 越级读同级目录的内核边界（见 _driver_home）。
 CODEX_HOME = os.environ.get("SC_GATEWAY_CODEX_HOME", "/tmp/sc-p1/codex-home")
 # §5.4 触发器 v1：sc backend → gateway 内网共享密钥（双方一致才放行 /internal/*）
 INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
@@ -90,8 +93,42 @@ SCHOOL_AUTH_SECRET = os.environ.get("SC_AUTH_SECRET", "")
 # 生命周期。对齐 backend auth.py 的一周 TTL；gateway 重部署即重签，TTL 只约束
 # dumped token 的重放窗口。
 _SCHOOL_TOKEN_TTL_S = 7 * 24 * 3600
-# 班级持久线程映射落盘（§5.6 一班一线程跨学期滚动；JSON {str(class_id): thread_id}）
-THREADS_FILE = Path(os.environ.get("SC_GATEWAY_THREADS_FILE", "/data/threads.json"))
+# 班级持久线程映射落盘（§5.6 一班一线程跨学期滚动）。装车批第 6 批：
+# 键 = "{class_id}.{teacher_id}"（见 _thread_key）——按教师分 home 后两教师不共享
+# 一类线程；文件默认落在 CODEX_HOME 卷内（根下 threads.json），容器重建不丢——
+# 旧默认 /data/threads.json 在容器临时层，重建即丢，与跨学期滚动矛盾。可覆盖。
+THREADS_FILE = Path(os.environ.get(
+    "SC_GATEWAY_THREADS_FILE", str(Path(CODEX_HOME) / "threads.json")))
+
+
+# 装车批第 6 批：驱动 home 与按驱动惰性播种（Bridge.spawn 前调用）。
+def _driver_home(teacher_id: int) -> Path:
+    """该驱动（教师身份）的 codex home：CODEX_HOME 根下 t<teacher_id>/。
+
+    teacher_id=0 = 匿名/开放模式驱动。目录级分离（浅层）：诚实进程各自只指向
+    自己的 home、默认路径不再混局；同容器同 root，注入 agent `ls ..` 越级读同级
+    目录仍不被内核阻止（DEPLOY.md §8 残留如实收窄，真关闭需 per-teacher UID）。
+    """
+    return Path(CODEX_HOME) / f"t{teacher_id or 0}"
+
+
+def _assets_dir() -> Path:
+    return Path(os.environ.get(
+        "SC_GATEWAY_ASSETS",
+        str(Path(__file__).resolve().parent / "assets" / "deepseek"),
+    ))
+
+
+def _seed_driver_home(teacher_id: int) -> Path:
+    """确保该驱动 home 已播种（config.toml/models.json）；幂等，失败不阻断 spawn。"""
+    home = _driver_home(teacher_id)
+    try:
+        from gateway import codex_home as _ch
+
+        _ch.seed_codex_home(home, _assets_dir(), env=os.environ)
+    except Exception as e:  # noqa: BLE001 —— 播种失败不阻断网关（可手工补 config.toml）
+        print(f"[codex-home] seed t{teacher_id} failed: {e}")
+    return home
 
 # ---------------------------------------------------------------------------
 # 账号与会话（§5.5 一期：管理员建账号 + 口令；二期钉钉 OAuth 替换此层）
@@ -207,13 +244,13 @@ def _teacher_identity_env(teacher_id: int) -> dict[str, str]:
 
 
 def _child_env(teacher_id: int) -> dict[str, str]:
-    """app-server 子进程 env 最小权限白名单（装车批第 5 批）。
+    """app-server 子进程 env 最小权限白名单（装车批第 5 批）+ 驱动 home（第 6 批）。
 
     旧实现 `{**os.environ, ...}` 全盘继承——agent（可执行任意 shell）一次 `env`
     即得 SC_AUTH_SECRET/SC_TRIGGER_KEY/SC_DATABASE_URL/SC_LLM_*，可伪造任意教师
-    token。改为只放 codex 运行所需（CODEX_HOME/RUST_LOG/HOME/PATH/代理/TZ…）+ 该
-    教师的签名 token；一切 SC_* 共享密钥都不进子进程（gateway 进程自身仍持全集，
-    签名与 CODEX_HOME 播种在进程侧完成）。
+    token。改为只放 codex 运行所需（HOME/PATH/代理/TZ…）+ 该教师的签名 token +
+    该教师的驱动 CODEX_HOME（第 6 批起指向 t<teacher_id>/ 子目录，见 _driver_home）；
+    一切 SC_* 共享密钥都不进子进程（gateway 进程自身仍持全集，签名与播种在进程侧完成）。
     """
     passthrough = {
         "HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
@@ -221,7 +258,7 @@ def _child_env(teacher_id: int) -> dict[str, str]:
         "NO_PROXY", "no_proxy",
     }
     env = {k: os.environ[k] for k in passthrough if k in os.environ}
-    env["CODEX_HOME"] = CODEX_HOME
+    env["CODEX_HOME"] = str(_driver_home(teacher_id))
     env["RUST_LOG"] = "error"
     if teacher_id:
         env.update(_teacher_identity_env(teacher_id))
@@ -242,7 +279,9 @@ class Bridge:
     @classmethod
     async def spawn(cls, teacher_id: int = 0) -> "Bridge":
         # 最小权限 env（装车批第 5 批）：白名单 + 该教师的签名 token（见 _child_env）——
-        # 共享密钥/数据库 URL/LLM key 都不进 agent 进程。
+        # 共享密钥/数据库 URL/LLM key 都不进 agent 进程。装车批第 6 批：先按驱动 home
+        # 惰性播种（config.toml/models.json 落 t<teacher_id>/），codex 以该 home 启动。
+        _seed_driver_home(teacher_id)
         env = _child_env(teacher_id)
         proc = subprocess.Popen(
             [APP_SERVER_CMD, *APP_SERVER_ARGS],
@@ -476,6 +515,17 @@ def _load_thread_map() -> dict[str, str]:
         return {}
 
 
+def _thread_key(class_id: int, teacher_id: int) -> str:
+    """持久线程映射键（装车批第 6 批）："{class_id}.{teacher_id}"。
+
+    按教师分 CODEX_HOME（t<tid>/）后两教师不再共享一类线程——同一班的不同教师
+    各自持自己的持久线程，互不越界；班主教师与系统（以同一教师身份 trigger）
+    双方以同一键寻址、落在同一驱动 home，可跨 bridge 重建 resume。teacher_id=0
+    = 匿名/开放模式驱动。
+    """
+    return f"{class_id}.{teacher_id or 0}"
+
+
 def _save_thread_map(mapping: dict[str, str]) -> None:
     THREADS_FILE.parent.mkdir(parents=True, exist_ok=True)
     THREADS_FILE.write_text(json.dumps(mapping, ensure_ascii=False, indent=1))
@@ -495,11 +545,13 @@ def _recently_fired(key: str) -> bool:
     return False
 
 
-# 触发式任务用的系统级 app-server 桥（不占教师账号；按身份分桥）。
+# 触发式任务用的 app-server 桥（不占教师账号；按身份分桥）。
 # 装车批第 5 批：trigger 按「提交教师」身份驱动（backend commit 实名教师带
 # teacher_id 入载荷）——安全模式下自动考后分析才能经 sc MCP 读本班数据（匿名在
 # /mcp 是 fail-closed 401）。teacher_id=0 = 开放模式匿名兜底。桥与教师交互桥分开，
-# 触发式长 turn 不打断浏览器会话；线程 id 全局（共享 CODEX_HOME）可跨进程 resume。
+# 触发式长 turn 不打断浏览器会话。装车批第 6 批：持久线程键 = class_id.teacher_id
+# （_thread_key），每个（班,教师）一个持久线程、落在该教师驱动 home（t<tid>/）——
+# 同教师跨 bridge 重建可 resume（同 home 同键），不同教师互不越界。
 _TRIGGER_BRIDGES: dict[int, Bridge] = {}
 
 
@@ -564,7 +616,8 @@ async def internal_trigger(req: TriggerReq):
 
     bridge = await _trigger_bridge(req.teacher_id or 0)
     mapping = _load_thread_map()
-    tid = mapping.get(str(req.class_id))
+    key = _thread_key(req.class_id, req.teacher_id or 0)
+    tid = mapping.get(key)
     if not tid:
         started = await bridge.request("thread/start", {
             "cwd": "/tmp",
@@ -573,7 +626,7 @@ async def internal_trigger(req: TriggerReq):
         tid = ((started.get("result") or {}).get("thread") or {}).get("id")
         if not tid:
             raise HTTPException(502, "thread/start returned no thread id")
-        mapping[str(req.class_id)] = tid
+        mapping[key] = tid
         _save_thread_map(mapping)
     try:
         GUARD.check_turn_start(str(tid))  # 触发式任务同样过 §5.7 双闸
@@ -592,18 +645,9 @@ async def internal_trigger(req: TriggerReq):
 @app.on_event("startup")
 def _startup() -> None:
     load_accounts()
-    # 装车批第 3 步:CODEX_HOME 首启播种(幂等)——config.toml 缺失时由 deepseek
-    # 模板渲染 + 落 models.json,占位符固定为容器内路径,sc 域工具才真正可用。
-    try:
-        from gateway import codex_home as _ch
-
-        _assets = os.environ.get(
-            "SC_GATEWAY_ASSETS",
-            str(Path(__file__).resolve().parent / "assets" / "deepseek"),
-        )
-        _ch.seed_codex_home(Path(CODEX_HOME), Path(_assets))
-    except Exception:  # noqa: BLE001 —— 播种失败不阻断网关(可手工补 config.toml)
-        pass
+    # 装车批第 6 批：CODEX_HOME 播种改**按驱动惰性**——Bridge.spawn 前
+    # _seed_driver_home(teacher_id) 为 t<teacher_id>/ 播种 config.toml + models.json，
+    # 不再启动时对根单次播种（根仅是卷挂载点，非任何驱动的 home）。
 
 
 @app.on_event("shutdown")

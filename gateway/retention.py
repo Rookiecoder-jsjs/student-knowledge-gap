@@ -4,7 +4,8 @@
 本模块负责壳侧 rollout 文件的清理半边（备份侧的压缩归档在
 backend/scripts/backup_loop.sh）：
 
-- 扫 ``$SC_GATEWAY_CODEX_HOME/sessions``（及 ``archived_sessions``）下
+- 扫 ``$SC_GATEWAY_CODEX_HOME`` 下各驱动 home 的 ``sessions``/``archived_sessions``
+  （装车批第 6 批起为 ``t*/sessions`` 等，另保留根级旧布局兜底）中
   ``rollout-*.jsonl``，mtime 早于 ``SC_RETENTION_ROLLOUT_DAYS`` 的删除；
 - **默认 0 = 永不删除**：一班一线程的持久记忆就落在 rollout 里（§5.6），
   清理超期 = 该班记忆归零、线程下次重开。这是合规选项而非默认行为，
@@ -35,10 +36,18 @@ def rollout_max_age_days() -> int:
 
 
 def _candidate_dirs(codex_home: Path) -> list[Path]:
-    return [
+    """被扫目录：根级 sessions/archived_sessions（第 6 批前旧布局兜底）+ 每个
+    按教师驱动的 t*/sessions 与 t*/archived_sessions（第 6 批起 home 按教师分）。
+    """
+    dirs = [
         codex_home / "sessions",
         codex_home / "archived_sessions",
     ]
+    for driver in codex_home.glob("t*"):
+        if driver.is_dir():
+            dirs.append(driver / "sessions")
+            dirs.append(driver / "archived_sessions")
+    return dirs
 
 
 def clean_rollouts(

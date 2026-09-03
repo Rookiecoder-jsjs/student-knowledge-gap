@@ -79,6 +79,21 @@ def test_covers_archived_sessions_and_missing_dir(monkeypatch):
         assert r.clean_rollouts(Path(td) / "nope", 30)["scanned"] == 0
 
 
+def test_covers_driver_home_t_dirs(monkeypatch):
+    """装车批第 6 批：驱动 home 按教师分（t*/）后，rollout 扫各 t* 下的 sessions。"""
+    r = _reload(monkeypatch)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        stale7 = _mk_rollout(root / "t7", 120)   # 应清
+        fresh8 = _mk_rollout(root / "t8", 3)     # 保留
+        res = r.clean_rollouts(root, 30)
+        assert res["deleted"] == 1
+        assert not stale7.exists()
+        assert fresh8.exists()
+
+
 def test_bad_env_value_falls_back_to_zero(monkeypatch):
     r = _reload(monkeypatch, SC_RETENTION_ROLLOUT_DAYS="abc")
     assert r.rollout_max_age_days() == 0

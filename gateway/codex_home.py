@@ -11,12 +11,18 @@ backend 验签后按教师过滤。gateway 容器不再挂 sc-data 卷,agent 物
 配置永不覆盖。例外:检测到**旧 stdio 形**(含 school-authz-mcp 引用,第 3/4 批
 形态)的既有配置,旋转为 `.pre-mcp-remote.bak` 后重渲染(否则 codex 会去 spawn
 一个已不再 stage/播种的 shim)。
+
+装车批第 6 批:播种由网关**按驱动 home 惰性调用**——`main.py Bridge.spawn` 前
+`_seed_driver_home(teacher_id)` 以 `CODEX_HOME/t<teacher_id>/` 为 codex_home 调本
+模块(幂等);不再是启动时对单根目录播种一次(根仅为卷挂载点)。本模块 API 不变
+(Path 参数化),天然适配每驱动一个子目录。
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Mapping
@@ -25,8 +31,16 @@ logger = logging.getLogger(__name__)
 
 _REPLACEMENTS = ("CODEX_HOME", "DEEPSEEK_API_KEY")
 
-# 旧 stdio 形 config.toml 的识别标记(装车批第 3/4 批 [mcp_servers.sc] command)
-_STALE_STDIO_MARKER = "school-authz-mcp"
+
+def _is_stale_stdio(text: str) -> bool:
+    """旧 stdio 形 config.toml 判定：存在 `command = …school-authz-mcp` 配置行。
+
+    装车批第 6 批前 marker 是裸子串 `"school-authz-mcp"`——但分发模板的**头注释**
+    本身就含该词（说明 shim 退役），渲染出的新 config 在下次播种时被误判为旧形、
+    旋转 .bak 重渲染（启动/每次 spawn 反复 churn）。收窄为只匹配实际配置行
+    （`command` 键引用 shim），注释/说明文本不再命中。
+    """
+    return re.search(r"^\s*command\s*=.*school-authz-mcp", text, re.MULTILINE) is not None
 
 
 def render_config_toml(
@@ -60,7 +74,7 @@ def seed_codex_home(
             existing = config_path.read_text(encoding="utf-8")
         except OSError:
             existing = ""
-        if _STALE_STDIO_MARKER in existing:
+        if _is_stale_stdio(existing):
             bak = codex_home / "config.toml.pre-mcp-remote.bak"
             config_path.replace(bak)
             logger.warning(

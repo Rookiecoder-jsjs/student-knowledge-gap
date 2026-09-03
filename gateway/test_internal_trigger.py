@@ -84,9 +84,9 @@ def test_trigger_creates_and_reuses_thread(gw, monkeypatch):
     r1 = _post(c, _body())
     assert r1.status_code == 200 and r1.json()["accepted"] is True
     assert r1.json()["thread_id"] == "th-1"
-    # 线程映射已落盘
+    # 线程映射已落盘（第 6 批：键 = class_id.teacher_id；缺省教师 → 0）
     saved = json.loads((tmp / "threads.json").read_text())
-    assert saved == {"3": "th-1"}
+    assert saved == {"3.0": "th-1"}
     # 第二次同班触发不再 thread/start
     gm._RECENT_TRIGGERS.clear()
     r2 = _post(c, _body(idempotency_key="post_exam_analysis:8", exam_id=8))
@@ -130,3 +130,27 @@ def test_trigger_forwards_teacher_id_to_bridge(gw, monkeypatch):
     r2 = _post(c, _body(idempotency_key="post_exam_analysis:9", exam_id=9))
     assert r2.status_code == 200
     assert seen["teacher_id"] == 0
+
+
+def test_thread_key_is_class_dot_teacher(gw, monkeypatch):
+    """装车批第 6 批：同班不同教师各持自己的持久线程（键 class_id.teacher_id）。"""
+    c, tmp = gw
+    fake = FakeBridge()
+    monkeypatch.setattr(gm, "_trigger_bridge", _fake_factory(fake))
+
+    # 教师 5 首建 → 键 3.5
+    _post(c, _body(idempotency_key="post_exam_analysis:k1", exam_id=1, teacher_id=5))
+    saved = json.loads((tmp / "threads.json").read_text())
+    assert saved == {"3.5": "th-1"}
+    # 同教师再触发 → 复用（不重复 thread/start）
+    gm._RECENT_TRIGGERS.clear()
+    _post(c, _body(idempotency_key="post_exam_analysis:k2", exam_id=2, teacher_id=5))
+    starts = [m for m, _ in fake.calls if m == "thread/start"]
+    assert len(starts) == 1
+    # 匿名（教师 0）触发同班 → 独立键 3.0（两教师不共享一类线程）
+    gm._RECENT_TRIGGERS.clear()
+    _post(c, _body(idempotency_key="post_exam_analysis:k3", exam_id=3))
+    saved = json.loads((tmp / "threads.json").read_text())
+    assert saved == {"3.5": "th-1", "3.0": "th-1"}
+    starts = [m for m, _ in fake.calls if m == "thread/start"]
+    assert len(starts) == 2

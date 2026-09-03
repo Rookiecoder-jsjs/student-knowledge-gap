@@ -77,12 +77,14 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
 - `just build-for-release` 产物 = `codex-app-server` + `exec-server` +
   `school-authz-mcp`（school-authz-mcp 第 5 批起**不再 stage 进镜像**——crate 保留
   作参考实现，见 §6.3）；
-- **CODEX_HOME 首启播种**：gateway 启动时 `$CODEX_HOME/config.toml` 缺失则由
-  `gateway/codex_home.py` 从 `assets/deepseek` 模板渲染（`[mcp_servers.sc]` = 远程
-  `url=http://backend:8000/mcp` + `bearer_token_env_var=SC_SCHOOL_AUTH_TOKEN`）+
-  落 models.json；幂等，管理员手写永不覆盖；旧 stdio 形（含 school-authz-mcp）配置
-  自动旋转 `.pre-mcp-remote.bak` 重渲染；
-- CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）；
+- **CODEX_HOME 按驱动分 + 惰性播种**（装车批第 6 批）：`$SC_GATEWAY_CODEX_HOME` 是**根**，
+  每教师驱动用其下 `t<teacher_id>/`；`Bridge.spawn` 前 `main.py _seed_driver_home` 对驱动
+  home 渲染（`[mcp_servers.sc]` = 远程 `url=http://backend:8000/mcp` +
+  `bearer_token_env_var=SC_SCHOOL_AUTH_TOKEN`）+ 落 models.json；幂等，管理员手写永不覆盖；
+  旧 stdio 形（含 school-authz-mcp）配置自动旋转 `.pre-mcp-remote.bak` 重渲染；
+- CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）：持久线程映射 `threads.json`
+  键 = `class_id.teacher_id`（`main.py _thread_key`），落卷内根下、容器重建不丢；同教师
+  跨 bridge 重建 resume，不同教师互不越界（目录级隔离，注入 agent 越级读仍可——DEPLOY §8）。
 - **arch**：staged 二进制 = x86_64-linux-gnu（glibc ≥2.28）；arm64 盒子需在 arm
   环境重跑 staging。
 - **已知限制（版本 stamp 暂缓）**：rules_rs 0.0.96 的 cargo-bazel 不解析 workspace

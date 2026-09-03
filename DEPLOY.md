@@ -63,7 +63,7 @@ curl -X POST http://localhost:8080/api/kb/import \
 |---|---|---|---|
 | `sc-data` | `/data`（backend、backup） | `sc.db` + `-wal`/`-shm` + `tmp/` | **唯一不可丢失状态**。WAL 模式下三文件同为在线状态。装车批第 5 批起 **gateway 不再挂此卷**——sc MCP 已迁入 backend 进程，agent 物理不可达 sc.db |
 | `sc-backups` | `/backups` | `sc.db.<ts>.bak` | 备份产物，与 DB 卷物理隔离 |
-| `gw-codex-home` | `/data/codex-home` | CODEX_HOME（config.toml/models.json + rollout） | 壳侧持久状态；config.toml 首启播种、缺省不覆盖 |
+| `gw-codex-home` | `/data/codex-home` | CODEX_HOME **根**（含 `threads.json`）；每个教师驱动一个 `t<teacher_id>/` 子目录 = 其 config.toml/models.json + rollout（装车批第 6 批起） | 壳侧持久状态；按驱动惰性播种、缺省不覆盖；`threads.json` 落卷内，容器重建不丢 |
 
 - `kb/`（kb.yaml）只是**导入源**，导入后 DB 才是知识库真源；改图谱走 `/kb` 编辑或重新导入。
 - `output/` 仅脚本演示产物，不入卷、不参与运行时。
@@ -147,23 +147,34 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
   gateway/.runtime，需本地代理）。无 backend 先建顺序。镜像不构建于 CI（CI docker job
   只 build backend/frontend + compose config）。
 - **env**：`env_file: ../backend/.env`（网关**进程**侧要 SC_AUTH_SECRET 签教师 token、
-  SC_TRIGGER_KEY 验 /internal/*、SC_LLM_API_KEY 做 CODEX_HOME 播种）；`environment` 覆盖
+  SC_TRIGGER_KEY 验 /internal/*、SC_LLM_API_KEY 供播种取 key）；`environment` 覆盖
   `SC_GATEWAY_APP_SERVER=codex-app-server`（无子命令，args 空）。**agent 子进程 env 是
   白名单**（`gateway/main.py _child_env`）——共享密钥/DB URL/LLM key 一概不进，防注入 agent
   `env` 外泄。
-- **CODEX_HOME 首启播种**：config.toml 缺失时由 `gateway/codex_home.py` 从
-  `assets/deepseek` 模板渲染（DeepSeek key = `SC_DEEPSEEK_API_KEY` 回落 `SC_LLM_API_KEY`；
-  `[mcp_servers.sc]` url + bearer_token_env_var）+ 落 models.json；管理员手写永不覆盖。
-  旧 stdio 形（含 school-authz-mcp）既有配置自动旋转 `.pre-mcp-remote.bak` 重渲染。
+- **CODEX_HOME 按驱动分（装车批第 6 批）**：`/data/codex-home` 是**根**；每个驱动（教师
+  身份）用其下 `t<teacher_id>/` 作 codex home。`Bridge.spawn` 前惰性播种该 home（
+  `gateway/codex_home.py` 渲染 `assets/deepseek` 模板：DeepSeek key = `SC_DEEPSEEK_API_KEY`
+  回落 `SC_LLM_API_KEY`；`[mcp_servers.sc]` url + bearer_token_env_var）+ 落 models.json；
+  管理员手写永不覆盖，旧 stdio 形（含 school-authz-mcp）自动旋转 `.pre-mcp-remote.bak`
+  重渲染。**持久线程映射** `threads.json`（键 `class_id.teacher_id`，见下）落卷内根下——
+  容器重建不丢。
+- **触发式持久线程**（§5.6）：`threads.json` 键 = `"{class_id}.{teacher_id}"`（`main.py
+  _thread_key`）——按教师分 home 后两教师不共享一类线程，班主教师与系统（同教师身份
+  trigger）以同一键寻址、同 home 可 resume；不同教师互不越界。**升级说明**：自第 5 批
+  旧布局升级，旧根级 sessions/config 原地不动（drivers 只用 `t*/`）、旧裸 `class_id`
+  键不再命中——持久线程记忆随键改版重置（试点未装机，接受；retention 保留根级兜底扫）。
 - **教师账号**：`gateway/accounts.example.json` 模板 → `python scripts/gateway_account.py`
   生成带 teacher_id 的 accounts.json（入库于镜像 accounts.json 兜底位）。
 - 端口 `127.0.0.1:8100`（仅本机调试/健康；浏览器侧走前端 nginx 反代，见 compose 注释）。
 
 ### 已知限制 / 残留风险（装车批第 5 批显式记账）
 
-1. **共享 CODEX_HOME 跨教师可读**：gw-codex-home 单卷被所有教师进程共享，教师 A 的 agent
-   可经 shell 读教师 B 的 rollout JSONL（含 B 经 MCP 工具取回的班级数据）。修 = 按驱动分
-   CODEX_HOME + 一班一线程映射重设计（线程要可被班主教师与系统双方寻址），另行批次。
+1. **注入 agent 越级读同级教师目录仍可（收窄不关闭）**：装车批第 6 批已把 home 按教师分
+   `t<tid>/`、线程映射按 `class_id.teacher_id` 寻址且随卷持久——诚实/默认路径不再混局、
+   容器重建不丢映射。但同容器内 codex 子进程仍以 root 运行，被注入的 agent `ls
+   /data/codex-home` 即可见并读走**同级教师**的 rollout JSONL（含其经 MCP 取回的班级
+   数据）——目录级不构成内核边界。真关闭需 per-teacher UID + 0700 home 或独立容器
+   （另行批次）。
 2. **DeepSeek key 在 agent 进程内**：codex 自调 LLM，config.toml 明文持 provider key——
    注入的 agent 可外泄；按设计残留（agent 必须能调模型）。
 3. **agent 可达 backend:8000**：REST 全部 Bearer 门；子进程已无 SC_AUTH_SECRET/SC_TRIGGER_KEY，
