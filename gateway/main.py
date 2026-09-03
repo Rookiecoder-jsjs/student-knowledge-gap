@@ -623,7 +623,9 @@ async def internal_trigger(req: TriggerReq):
             "cwd": "/tmp",
             "approvalPolicy": "never",
         })
-        tid = ((started.get("result") or {}).get("thread") or {}).get("id")
+        # codex app-server 的 thread/start result 即 thread 对象本身
+        # （{"thread": {…}}）；真实返回经 Bridge.request 剥掉 JSON-RPC 信封。
+        tid = ((started or {}).get("thread") or {}).get("id")
         if not tid:
             raise HTTPException(502, "thread/start returned no thread id")
         mapping[key] = tid

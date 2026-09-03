@@ -26,8 +26,9 @@ class FakeBridge:
     async def request(self, method, params, timeout=180.0):
         self.calls.append((method, params))
         if method == "thread/start":
-            return {"result": {"thread": {"id": self.tid}}}
-        return {"result": {"ok": True}}
+            # 真实形状：Bridge.request 已剥 JSON-RPC 信封，result 即 thread 对象。
+            return {"thread": {"id": self.tid}}
+        return {"ok": True}
 
 
 @pytest.fixture()
