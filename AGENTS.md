@@ -1,4 +1,4 @@
-# Claude.md
+# AGENTS.md
 
 ## CodeGraph 同步规则
 - 全新仓库必须在仓库根目录执行 `codegraph init` 初始化 CodeGraph 仓库。
