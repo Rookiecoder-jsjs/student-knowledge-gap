@@ -1,7 +1,8 @@
 # DeepSeek 接入 sc 壳的 config.toml 模板（Phase 1 §5.10；来源：DeepSeek 官方 Codex 接入指南
 # https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/codex ，2026-08-25 抓取）。
 # 渲染：gateway 首启播种（gateway/codex_home.py）——$CODEX_HOME/config.toml 缺失时从本模板
-# 渲染并落 models.json；{{CODEX_HOME}}/{{DEEPSEEK_API_KEY}} 替换为运行时定值。管理员手写
+# 渲染并落 models.json；模板中 CODEX_HOME 与 DEEPSEEK_API_KEY 两个占位符在渲染时
+# 替换为运行时定值。管理员手写
 # config.toml 永不被覆盖（旧 stdio 形含 school-authz-mcp 的配置由 codex_home.py 旋转重渲染）。
 # 纪律：真实部署写隔离 CODEX_HOME（绝不碰用户 ~/.codex）。
 #
@@ -29,10 +30,13 @@ experimental_bearer_token = "{{DEEPSEEK_API_KEY}}"
 # sc 领域 MCP server(§5.1)，装车批第 5 批起为**远程** streamable-http 端点：sc MCP
 # python 迁入 backend 容器（同一 uvicorn 进程挂 /mcp，DB 单写者不变量回归），gateway
 # 容器不再挂 sc-data 卷——agent 物理不可达 sc.db，直接读写路径被拓扑切断。身份逐请求：
-# codex 读 env SC_SCHOOL_AUTH_TOKEN（gateway 按教师注入的 HMAC token）发
-# `Authorization: Bearer`，backend 验签得 teacher_id 后按教师/班级过滤。
-# 旧 school-authz-mcp stdio shim（第 3/4 批）退役：url 与 command 互斥，校验职责迁 backend。
-# SC_AUTH_SECRET 未配置（开放模式）→ 网关不注入 token → codex 不发头 → backend 匿名放行。
+# 下行 MCP_BEARER_LINE 占位符由播种方按模式渲染——SC_AUTH_SECRET 已配置（安全模式）：
+# 渲染为 `bearer_token_env_var = "SC_SCHOOL_AUTH_TOKEN"`，gateway 按教师注入 env，
+# codex 以 `Authorization: Bearer` 发往 backend，backend 验签得 teacher_id 后按教师/
+# 班级过滤；SC_AUTH_SECRET 未配置（开放模式）：渲染为空 = 键整行省略，codex 不发头
+# → backend 匿名。省略是匿名**唯一**形态：codex MCP client 对「引用到但 env 未设的
+# bearer 键」fail-closed 拒启整 server（0.149 实测），不要留空或带键。旧
+# school-authz-mcp stdio shim（第 3/4 批）退役：url 与 command 互斥，校验职责迁 backend。
 [mcp_servers.sc]
 url = "http://backend:8000/mcp"
-bearer_token_env_var = "SC_SCHOOL_AUTH_TOKEN"
+{{MCP_BEARER_LINE}}

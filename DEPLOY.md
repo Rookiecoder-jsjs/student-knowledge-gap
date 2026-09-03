@@ -154,7 +154,11 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
 - **CODEX_HOME 按驱动分（装车批第 6 批）**：`/data/codex-home` 是**根**；每个驱动（教师
   身份）用其下 `t<teacher_id>/` 作 codex home。`Bridge.spawn` 前惰性播种该 home（
   `gateway/codex_home.py` 渲染 `assets/deepseek` 模板：DeepSeek key = `SC_DEEPSEEK_API_KEY`
-  回落 `SC_LLM_API_KEY`；`[mcp_servers.sc]` url + bearer_token_env_var）+ 落 models.json；
+  回落 `SC_LLM_API_KEY`；`[mcp_servers.sc]` 远程 url + **条件** bearer_token_env_var——
+  SC_AUTH_SECRET 配置（安全模式）才渲染该键行，未配（开放模式）整键省略 = codex 匿名
+  （codex 对「引用到未设 env 的 bearer 键」fail-closed 拒启 sc MCP，省略是匿名唯一形态）+
+  落 models.json；**模式翻转不自愈**：改配 SC_AUTH_SECRET 后需删 `t<tid>/config.toml`
+  让下次 spawn 重播种；
   管理员手写永不覆盖，旧 stdio 形（含 school-authz-mcp）自动旋转 `.pre-mcp-remote.bak`
   重渲染。**持久线程映射** `threads.json`（键 `class_id.teacher_id`，见下）落卷内根下——
   容器重建不丢。

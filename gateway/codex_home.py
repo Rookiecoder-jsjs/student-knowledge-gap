@@ -2,15 +2,21 @@
 
 背景:config.toml(deepseek provider + [mcp_servers.sc])渲染方自 gateway 启动时
 自举(幂等)。装车批第 5 步后 sc MCP server 迁入 backend 容器(streamable-http 挂
-/mcp),[mcp_servers.sc] 不再是「同容器 stdio 子进程 + school-authz-mcp shim」,
-而是远程 `url = http://backend:8000/mcp` + `bearer_token_env_var`——codex 把网关
-注入的教师 token(SC_SCHOOL_AUTH_TOKEN)以 Authorization 头逐请求发往 backend,
-backend 验签后按教师过滤。gateway 容器不再挂 sc-data 卷,agent 物理不可达 sc.db。
+/mcp),[mcp_servers.sc] 是远程 `url = http://backend:8000/mcp` + **条件**
+`bearer_token_env_var`:SC_AUTH_SECRET 配置(安全模式)才渲染该键行——gateway 把
+按教师签的 token(SC_SCHOOL_AUTH_TOKEN)注入子进程 env,codex 以 Authorization
+头逐请求发往 backend,backend 验签后按教师过滤;SC_AUTH_SECRET 未配(开放模式)
+→ 键整行省略 = codex 匿名不发头。省略是匿名**唯一**形态:codex 的 MCP client
+对「引用到但 env 未设的 bearer 键」fail-closed 拒启整 server(0.149 容器实测),
+留空/带键在 open 模式下都会让 sc MCP 起不来。gateway 容器不再挂 sc-data 卷,
+agent 物理不可达 sc.db。
 
 幂等纪律:仅当 $CODEX_HOME/config.toml **缺失**时写入——管理员手写/后续改装的
 配置永不覆盖。例外:检测到**旧 stdio 形**(含 school-authz-mcp 引用,第 3/4 批
 形态)的既有配置,旋转为 `.pre-mcp-remote.bak` 后重渲染(否则 codex 会去 spawn
-一个已不再 stage/播种的 shim)。
+一个已不再 stage/播种的 shim)。**模式翻转不自愈**:SC_AUTH_SECRET 在网关侧开关
+后,已播种 config 的 bearer 键形态不变(幂等不覆盖),需删 `t<tid>/config.toml`
+让下次 spawn 重播种。
 
 装车批第 6 批:播种由网关**按驱动 home 惰性调用**——`main.py Bridge.spawn` 前
 `_seed_driver_home(teacher_id)` 以 `CODEX_HOME/t<teacher_id>/` 为 codex_home 调本
@@ -29,8 +35,6 @@ from typing import Mapping
 
 logger = logging.getLogger(__name__)
 
-_REPLACEMENTS = ("CODEX_HOME", "DEEPSEEK_API_KEY")
-
 
 def _is_stale_stdio(text: str) -> bool:
     """旧 stdio 形 config.toml 判定：存在 `command = …school-authz-mcp` 配置行。
@@ -48,10 +52,21 @@ def render_config_toml(
     *,
     codex_home: str,
     api_key: str,
+    mcp_bearer_line: str = "",
 ) -> str:
-    """把模板占位符替换为运行时定值(缺占位符原样通过,不改模板语义)。"""
-    for key, value in zip(_REPLACEMENTS, (codex_home, api_key), strict=True):
-        template = template.replace(f"{{{{{key}}}}}", value)
+    """把模板占位符替换为运行时定值(缺占位符原样通过,不改模板语义)。
+
+    mcp_bearer_line: 渲染进 [mcp_servers.sc] 的 bearer 键行——安全模式传
+    `bearer_token_env_var = "SC_SCHOOL_AUTH_TOKEN"`;默认空串 = 整键省略(codex
+    匿名)。模式判定在 seed_codex_home(读 env SC_AUTH_SECRET)。
+    """
+    replacements = {
+        "CODEX_HOME": codex_home,
+        "DEEPSEEK_API_KEY": api_key,
+        "MCP_BEARER_LINE": mcp_bearer_line,
+    }
+    for key, value in replacements.items():
+        template = template.replace("{{" + key + "}}", value)
     return template
 
 
@@ -65,7 +80,8 @@ def seed_codex_home(
     返回 True=本次执行了播种(含旧形迁移);False=跳过(已有非旧形 config /
     资产缺失)。key 来源优先 SC_DEEPSEEK_API_KEY,回落 SC_LLM_API_KEY(与 backend
     共享的密钥),均缺则空 key 照渲染(壳可 initialize,首次真实 turn 前运维补 key
-    或重播种)。
+    或重播种)。bearer 键行是否渲染由 env SC_AUTH_SECRET 决定(与网关侧
+    `_teacher_identity_env` 同源):配置→安全模式带键;未配→整键省略(开放匿名)。
     """
     env = os.environ if env is None else env
     config_path = codex_home / "config.toml"
@@ -90,11 +106,16 @@ def seed_codex_home(
         return False
 
     api_key = env.get("SC_DEEPSEEK_API_KEY") or env.get("SC_LLM_API_KEY") or ""
+    secured = bool(env.get("SC_AUTH_SECRET"))
+    mcp_bearer_line = (
+        'bearer_token_env_var = "SC_SCHOOL_AUTH_TOKEN"' if secured else ""
+    )
     codex_home.mkdir(parents=True, exist_ok=True)
     rendered = render_config_toml(
         template_path.read_text(encoding="utf-8"),
         codex_home=str(codex_home),
         api_key=api_key,
+        mcp_bearer_line=mcp_bearer_line,
     )
     config_path.write_text(rendered, encoding="utf-8")
     models_src = assets_dir / "models.json"
@@ -106,10 +127,11 @@ def seed_codex_home(
             "[codex-home] SC_DEEPSEEK_API_KEY/SC_LLM_API_KEY 均未配置,config.toml "
             "已用空 key 渲染——壳可启动,真实 turn 前请配置并重启网关"
         )
-    if not env.get("SC_AUTH_SECRET"):
+    if not secured:
         logger.warning(
-            "[codex-home] SC_AUTH_SECRET 未配置——sc MCP 无教师身份头(codex 不发 "
-            "Authorization),开放模式匿名可读;安全模式(school-authz 收紧)下域工具 "
-            "将被 backend 以 401 拒绝。生产请配置 SC_AUTH_SECRET 并重启网关"
+            "[codex-home] SC_AUTH_SECRET 未配置——[mcp_servers.sc] 已省略 "
+            "bearer_token_env_var,sc MCP 以匿名(无 Authorization 头)访问 backend;"
+            "若 backend 端反而配置了 SC_AUTH_SECRET,域工具将被 401 拒绝。生产请 "
+            "配置 SC_AUTH_SECRET 并重启网关"
         )
     return True
