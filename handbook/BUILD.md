@@ -83,6 +83,9 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
   `bearer_token_env_var`——SC_AUTH_SECRET 配置才渲染该键行，未配整键省略 = 开放匿名）
   + 落 models.json；幂等，管理员手写永不覆盖；
   旧 stdio 形（含 school-authz-mcp）配置自动旋转 `.pre-mcp-remote.bak` 重渲染；
+  **per-teacher UID**（装车批第 7 批）：驱动 home 收归 uid `20000+teacher_id`（目录
+  0700/文件 0600），spawn 经 `setpriv` 降权（python:3.11-slim 自带 util-linux，Dockerfile
+  零改；非 root 开发环境裸启降级 + 告警）；CODEX_HOME 根 0711、`threads.json` 0600；
 - CODEX_HOME 卷持久化 rollout 与线程记忆（§5.6 一班一线程）：持久线程映射 `threads.json`
   键 = `class_id.teacher_id`（`main.py _thread_key`），落卷内根下、容器重建不丢；同教师
   跨 bridge 重建 resume，不同教师互不越界（目录级隔离，注入 agent 越级读仍可——DEPLOY §8）。

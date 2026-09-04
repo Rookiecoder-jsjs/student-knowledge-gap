@@ -160,7 +160,13 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
   落 models.json；**模式翻转不自愈**：改配 SC_AUTH_SECRET 后需删 `t<tid>/config.toml`
   让下次 spawn 重播种；
   管理员手写永不覆盖，旧 stdio 形（含 school-authz-mcp）自动旋转 `.pre-mcp-remote.bak`
-  重渲染。**持久线程映射** `threads.json`（键 `class_id.teacher_id`，见下）落卷内根下——
+  重渲染。**装车批第 7 批 per-teacher UID**：home 及其内容收归教师专用 uid（
+  `20000+teacher_id`，目录 0700/文件 0600），`Bridge.spawn` 经 `setpriv --reuid` 降权
+  启动 codex（`HOME`/`TMPDIR` 一并收进驱动 home；非 root 开发环境裸启降级 + 大声告警）；
+  CODEX_HOME 根 0711（可穿越不可列，隐藏同级教师存在）、`threads.json` 0600（仅网关
+  可读）——跨教师读 rollout/config/进程 env 由内核拒绝（§8 已知限制 #1 文件/进程面
+  关闭）。升级路径：第 6 批既有根属主内容在首次 spawn 时递归收编。
+  **持久线程映射** `threads.json`（键 `class_id.teacher_id`，见下）落卷内根下——
   容器重建不丢。
 - **触发式持久线程**（§5.6）：`threads.json` 键 = `"{class_id}.{teacher_id}"`（`main.py
   _thread_key`）——按教师分 home 后两教师不共享一类线程，班主教师与系统（同教师身份
@@ -173,12 +179,16 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
 
 ### 已知限制 / 残留风险（装车批第 5 批显式记账）
 
-1. **注入 agent 越级读同级教师目录仍可（收窄不关闭）**：装车批第 6 批已把 home 按教师分
-   `t<tid>/`、线程映射按 `class_id.teacher_id` 寻址且随卷持久——诚实/默认路径不再混局、
-   容器重建不丢映射。但同容器内 codex 子进程仍以 root 运行，被注入的 agent `ls
-   /data/codex-home` 即可见并读走**同级教师**的 rollout JSONL（含其经 MCP 取回的班级
-   数据）——目录级不构成内核边界。真关闭需 per-teacher UID + 0700 home 或独立容器
-   （另行批次）。
+1. **跨教师文件/进程读取已内核级关闭（装车批第 7 批）**：每教师驱动以专用 uid
+   （`20000+teacher_id`）运行、home 0700/文件 0600、`setpriv` 降权 spawn——注入 agent
+   读同级教师 rollout/config、读他人 `/proc/*/environ`、ptrace 他人进程，均被内核拒绝
+   （容器 e2e 实证）；CODEX_HOME 根 0711 连同级教师目录的存在性都不可列。**仍共享的**：
+   网络面（同 netns）——agent 可达 backend:8000 与外网：security 模式下 /mcp 无有效
+   教师 token 即 401；开放模式下匿名放行属开放模式的定义（residual #2/#3 照旧）；/tmp
+   （1777）跨 uid 可写粘滞共享——敏感默认落点已收编进 0700 的 HOME/TMPDIR，agent 主动
+   外传数据等同网络面残留（主动 exfiltration,非被动可读）。降级路径：非 root 运行网关
+   （开发环境）或镜像缺 setpriv 时裸启 + 告警,边界退化为第 6 批目录纪律——生产镜像自带
+   setpriv（util-linux），root 容器为唯一受支持部署形态。
 2. **DeepSeek key 在 agent 进程内**：codex 自调 LLM，config.toml 明文持 provider key——
    注入的 agent 可外泄；按设计残留（agent 必须能调模型）。
 3. **agent 可达 backend:8000**：REST 全部 Bearer 门；子进程已无 SC_AUTH_SECRET/SC_TRIGGER_KEY，

@@ -29,6 +29,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -80,8 +81,8 @@ async def _stop_monthly_watch() -> None:
 APP_SERVER_CMD = os.environ.get("SC_GATEWAY_APP_SERVER", "codex-app-server")
 APP_SERVER_ARGS = os.environ.get("SC_GATEWAY_APP_SERVER_ARGS", "").split()
 # 装车批第 6 批：CODEX_HOME 是**根**（卷挂载点）；每个驱动（教师身份）用其下
-# t<teacher_id>/ 作自己的 codex home（config/models/rollout 互不混局）。浅层收窄：
-# 同容器同 root，目录级不构成注入 agent 越级读同级目录的内核边界（见 _driver_home）。
+# t<teacher_id>/ 作自己的 codex home（config/models/rollout 互不混局）。第 7 批：
+# home 收归 per-teacher UID + 0700（_apply_uid_isolation），目录纪律升级为内核边界。
 CODEX_HOME = os.environ.get("SC_GATEWAY_CODEX_HOME", "/tmp/sc-p1/codex-home")
 # §5.4 触发器 v1：sc backend → gateway 内网共享密钥（双方一致才放行 /internal/*）
 INTERNAL_KEY = os.environ.get("SC_TRIGGER_KEY", "")
@@ -105,9 +106,9 @@ THREADS_FILE = Path(os.environ.get(
 def _driver_home(teacher_id: int) -> Path:
     """该驱动（教师身份）的 codex home：CODEX_HOME 根下 t<teacher_id>/。
 
-    teacher_id=0 = 匿名/开放模式驱动。目录级分离（浅层）：诚实进程各自只指向
-    自己的 home、默认路径不再混局；同容器同 root，注入 agent `ls ..` 越级读同级
-    目录仍不被内核阻止（DEPLOY.md §8 残留如实收窄，真关闭需 per-teacher UID）。
+    teacher_id=0 = 匿名/开放模式驱动。第 6 批目录级分离；第 7 批起 home 经
+    _apply_uid_isolation 收归教师专用 UID + 0700——跨教师读 rollout/config 由
+    内核拒绝（DEPLOY.md §8 residual #1 文件/进程面关闭）。
     """
     return Path(CODEX_HOME) / f"t{teacher_id or 0}"
 
@@ -129,6 +130,87 @@ def _seed_driver_home(teacher_id: int) -> Path:
     except Exception as e:  # noqa: BLE001 —— 播种失败不阻断网关（可手工补 config.toml）
         print(f"[codex-home] seed t{teacher_id} failed: {e}")
     return home
+
+
+# ---------------------------------------------------------------------------
+# per-teacher UID 内核边界（装车批第 7 批，DEPLOY §8 residual #1 真关闭——文件/进程面）
+# ---------------------------------------------------------------------------
+
+_UID_BASE = 20000
+
+
+def _teacher_uid(teacher_id: int) -> int:
+    """教师驱动的专用 uid（= 私有 gid）：20000 + teacher_id。
+
+    容器内无系统用户占用该段；teacher_id 来自网关账号表（小整数），不与基础
+    设施 uid 冲突。teacher 0（匿名/开放模式驱动）= 20000。
+    """
+    return _UID_BASE + (teacher_id or 0)
+
+
+def _can_drop_uid() -> bool:
+    """当前进程是否具备降权 spawn 条件：Linux root + setpriv 可用（util-linux）。"""
+    return (
+        hasattr(os, "geteuid")
+        and os.geteuid() == 0
+        and shutil.which("setpriv") is not None
+    )
+
+
+def _spawn_argv(teacher_id: int) -> list[str]:
+    """app-server 启动 argv：root 下经 setpriv 降到教师专用 uid，否则裸启（降级）。
+
+    降级只发生在非 root 开发环境（Windows/容器外调试）或镜像缺 setpriv——后者
+    属部署缺陷，大声告警而非静默（目录纪律仍在，内核边界缺失，residual #1 未
+    关闭）。setpriv 而非 preexec_fn：uvicorn 多线程下 preexec_fn 有死锁风险。
+    """
+    if _can_drop_uid():
+        uid = _teacher_uid(teacher_id)
+        return [
+            "setpriv", f"--reuid={uid}", f"--regid={uid}", "--clear-groups",
+            APP_SERVER_CMD, *APP_SERVER_ARGS,
+        ]
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        print("[spawn-uid] root 但 setpriv 不可用——降级 root spawn，residual #1 "
+              "未关闭！请检查镜像（util-linux）")
+    return [APP_SERVER_CMD, *APP_SERVER_ARGS]
+
+
+def _apply_uid_isolation(teacher_id: int) -> None:
+    """驱动 home 收归教师专用 uid + 0700（内核边界的落盘侧；root/Linux 才生效）。
+
+    递归处理既有根属主内容（第 6 批部署原地升级即收口）；tmp/ 子目录接住子进程
+    默认临时文件（_child_env 的 TMPDIR）。CODEX_HOME 根改 0711（可穿越不可列，
+    隐藏同级教师存在），threads.json 0600（线程映射仅网关 root 可读）。非 root
+    开发环境只建 tmp/，目录纪律由 _driver_home 保证。
+    """
+    home = _driver_home(teacher_id)
+    try:
+        (home / "tmp").mkdir(parents=True, exist_ok=True)  # home 由播种建
+    except OSError:
+        pass
+    if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+        return
+    uid = _teacher_uid(teacher_id)
+    if not home.exists():
+        return  # 播种负责建目录；此处兜底不硬造
+    root_dir = home.parent
+    try:
+        os.chmod(root_dir, 0o711)
+        threads = root_dir / "threads.json"
+        if threads.exists():
+            os.chmod(threads, 0o600)
+        for dirpath, _dirnames, filenames in os.walk(home):
+            d = Path(dirpath)
+            os.chmod(d, 0o700)
+            os.chown(d, uid, uid)
+            for name in filenames:
+                f = d / name
+                os.chmod(f, 0o600)
+                os.chown(f, uid, uid)
+        print(f"[spawn-uid] t{teacher_id} -> uid {uid}（0700，内核边界就位）")
+    except OSError as e:
+        print(f"[spawn-uid] t{teacher_id} 隔离失败（容器缺 CAP_CHOWN?）: {e}")
 
 # ---------------------------------------------------------------------------
 # 账号与会话（§5.5 一期：管理员建账号 + 口令；二期钉钉 OAuth 替换此层）
@@ -248,17 +330,22 @@ def _child_env(teacher_id: int) -> dict[str, str]:
 
     旧实现 `{**os.environ, ...}` 全盘继承——agent（可执行任意 shell）一次 `env`
     即得 SC_AUTH_SECRET/SC_TRIGGER_KEY/SC_DATABASE_URL/SC_LLM_*，可伪造任意教师
-    token。改为只放 codex 运行所需（HOME/PATH/代理/TZ…）+ 该教师的签名 token +
-    该教师的驱动 CODEX_HOME（第 6 批起指向 t<teacher_id>/ 子目录，见 _driver_home）；
-    一切 SC_* 共享密钥都不进子进程（gateway 进程自身仍持全集，签名与播种在进程侧完成）。
+    token。改为只放 codex 运行所需（PATH/代理/TZ…）+ 该教师的签名 token + 该教师
+    的驱动 CODEX_HOME（第 6 批起指向 t<teacher_id>/ 子目录，见 _driver_home）；
+    第 7 批：HOME/TMPDIR 也收进驱动 home（0700 属主 = 教师 uid），不再继承网关
+    进程的 HOME（原为 /root）。一切 SC_* 共享密钥都不进子进程。
     """
     passthrough = {
-        "HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+        "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
         "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
         "NO_PROXY", "no_proxy",
     }
     env = {k: os.environ[k] for k in passthrough if k in os.environ}
     env["CODEX_HOME"] = str(_driver_home(teacher_id))
+    # 第 7 批：HOME/TMPDIR 收进驱动 home（0700 属主 = 教师 uid），临时文件默认落
+    # 内核边界内；tmp/ 目录由 _apply_uid_isolation 兜底创建。
+    env["HOME"] = str(_driver_home(teacher_id))
+    env["TMPDIR"] = str(_driver_home(teacher_id) / "tmp")
     env["RUST_LOG"] = "error"
     if teacher_id:
         env.update(_teacher_identity_env(teacher_id))
@@ -280,11 +367,13 @@ class Bridge:
     async def spawn(cls, teacher_id: int = 0) -> "Bridge":
         # 最小权限 env（装车批第 5 批）：白名单 + 该教师的签名 token（见 _child_env）——
         # 共享密钥/数据库 URL/LLM key 都不进 agent 进程。装车批第 6 批：先按驱动 home
-        # 惰性播种（config.toml/models.json 落 t<teacher_id>/），codex 以该 home 启动。
+        # 惰性播种（config.toml/models.json 落 t<teacher_id>/）。装车批第 7 批：home
+        # 收归教师专用 uid + 0700、spawn 经 setpriv 降权——跨教师读由内核拒绝。
         _seed_driver_home(teacher_id)
+        _apply_uid_isolation(teacher_id)
         env = _child_env(teacher_id)
         proc = subprocess.Popen(
-            [APP_SERVER_CMD, *APP_SERVER_ARGS],
+            _spawn_argv(teacher_id),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
