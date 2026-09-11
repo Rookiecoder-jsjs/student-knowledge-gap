@@ -21,12 +21,15 @@ export default function Students() {
     () => listInterventions({ class_id: cid }).catch(() => ({ total: 0, items: [] })),
     [cid]
   );
-  const byStudent = new Map<number, { suggested: number; done: number }>();
+  const byStudent = new Map<number, { suggested: number; done: number; awaiting: number }>();
   for (const row of iv.data?.items ?? []) {
     if (row.student_id == null) continue;
-    const slot = byStudent.get(row.student_id) ?? { suggested: 0, done: 0 };
+    const slot = byStudent.get(row.student_id) ?? { suggested: 0, done: 0, awaiting: 0 };
     if (row.status === "suggested") slot.suggested += 1;
     if (row.status === "done") slot.done += 1;
+    // 行级折叠状态（闭环一期 P1）：待复测/持平/未闭合都算「进行中」
+    if (row.loop_state && row.loop_state !== "已建议" && row.loop_state !== "已跳过"
+        && row.loop_state !== "已闭合" && row.loop_state !== "达标") slot.awaiting += 1;
     byStudent.set(row.student_id, slot);
   }
 
@@ -56,7 +59,7 @@ export default function Students() {
     <Page accent={ACCENTS.student}>
       <PageHeader
         title="学生诊断"
-        desc="按名单原序展示；诊断单先看进步，再看待加强项"
+        desc={`按名单原序展示；诊断单先看进步，再看待加强项${flags.isHomeroom(cid) ? " · 你是本班班主任（可开通本班学生自服务账号）" : ""}`}
       />
 
       {loading && <Skeleton rows={5} />}
@@ -86,13 +89,15 @@ export default function Students() {
                     <Badge tone={stat.suggested > 0 ? "warn" : "neutral"}>
                       {stat.suggested > 0
                         ? `${stat.suggested} 条行动待确认`
-                        : `${stat.done} 项干预已执行`}
+                        : stat.awaiting > 0
+                          ? `${stat.awaiting} 项干预进行中`
+                          : `${stat.done} 项干预已执行`}
                     </Badge>
                   )}
                 </p>
               </div>
               <span className="flex items-center gap-2">
-                {flags.adminLogin && (
+                {flags.canEnableStudent(cid) && (
                   <Button
                     variant="ghost"
                     onClick={() => {
@@ -101,7 +106,7 @@ export default function Students() {
                       setPw("");
                       setUname(s.username ?? "");
                     }}
-                    title={s.has_account ? "重置学生自服务账号口令" : "开通学生自服务账号"}
+                    title={s.has_account ? "重置学生自服务账号口令" : "开通学生自服务账号（admin 或本班班主任）"}
                   >
                     <Key size={14} />
                     {s.has_account ? "重置口令" : "开通账号"}
@@ -146,7 +151,7 @@ export default function Students() {
         </Reveal>
       )}
 
-      {/* 开通/重置学生自服务账号（frontend-ends-design §D；仅 admin 会话） */}
+      {/* 开通/重置学生自服务账号（frontend-ends-design §D + rbac-scopes-design §8：admin 或本班班主任） */}
       <Modal
         open={enableFor !== null}
         onClose={() => setEnableFor(null)}

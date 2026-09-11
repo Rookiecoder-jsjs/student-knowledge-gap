@@ -15,13 +15,19 @@ import { ACCENTS } from "../lib/theme";
  *   逐线程经 `thread/settings/update` 覆盖；选择记忆在 localStorage。
  * - 渲染按 FINDINGS F5/F8 实测形状：item/completed 里 agentMessage 文本在
  *   item.text，mcpToolCall 带 server/tool 字段；事件按 threadId 过滤。
+ * - 流式（2026-09-11，runtime v2 协议实测形状）：item/started 建流式项 →
+ *   item/agentMessage/delta 增量并入（itemId 对位）→ item/completed 以权威
+ *   文本收口（无流式项时退回追加，SSE 重连安全）；thread/tokenUsage/updated
+ *   驱动页脚用量徽标（total=本会话累计，last=上一轮）。
+ * - 工具调用进行中先上「正在查询」行（item/started），完成态原摘要不变。
  * - 工具调用只显示摘要行（Phase 2 边界保留）。
  */
 
+/** key = codex item id（item/started · completed · delta 三事件同源），流式项据此对位合并。 */
 type ChatItem =
   | { kind: "user"; text: string }
-  | { kind: "assistant"; text: string }
-  | { kind: "tool"; server: string; tool: string; readOnly: boolean }
+  | { kind: "assistant"; text: string; streaming?: boolean; key?: string }
+  | { kind: "tool"; server: string; tool: string; readOnly: boolean; done: boolean; key?: string }
   | { kind: "notice"; text: string };
 
 const GW_KEY = "sc.gateway.base";
@@ -84,6 +90,12 @@ const EFFORT_LABELS: Record<string, string> = {
   max: "最深",
 };
 
+/** token 用量短标：万级以下原样（千分位），万级起 k 缩写（12345 → 12.3k）。 */
+function fmtTokens(n: number): string {
+  if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
+  return n.toLocaleString("en-US");
+}
+
 /** 空态建议（点击填入输入框）。 */
 const SUGGESTIONS = [
   "我们班最近情况怎么样？",
@@ -119,6 +131,7 @@ function turnsToItems(turns: HistoryTurn[]): ChatItem[] {
           server: String(it.server ?? ""),
           tool: String(it.tool ?? ""),
           readOnly: Boolean(it.readOnlyHint),
+          done: true, // 历史回填都是终态
         });
       } else if (it.type === "error") {
         out.push({ kind: "notice", text: `出错：${String(it.text ?? "")}` });
@@ -149,6 +162,8 @@ export default function Assistant() {
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  // token 用量（thread/tokenUsage/updated；total=本会话累计，last=上一轮）
+  const [usage, setUsage] = useState<{ total: number; last: number } | null>(null);
 
   const currentModel = models.find((m) => m.id === modelId) ?? models[0] ?? null;
   const efforts = currentModel?.supportedReasoningEfforts ?? [];
@@ -307,26 +322,111 @@ export default function Assistant() {
         (params.threadId as string) ?? (params.thread as { id?: string } | undefined)?.id ?? null;
       if (evThread && threadIdRef.current && evThread !== threadIdRef.current) return;
 
-      if (ev.method === "item/completed") {
+      // 流式生命周期（key=codex item id）：started 建流式项 → delta 增量并入 →
+      // completed 以权威文本收口。completed 兼容无 started 项（SSE 重连丢事件）：
+      // 退回旧追加路径，不会重复（对位以 item id 为准）。
+      if (ev.method === "item/started") {
         const item = params.item as Record<string, unknown> | undefined;
         if (!item) return;
         const t = item.type ?? item.item_type;
+        const id = String(item.id ?? "");
+        // userMessage 不在此渲染：发送方已本地先行上屏，started 再画会重复
+        if (t === "agentMessage") {
+          setItems((prev) =>
+            prev.some((it) => it.kind === "assistant" && it.key === id)
+              ? prev
+              : [...prev, { kind: "assistant", text: "", streaming: true, key: id }],
+          );
+        } else if (t === "mcpToolCall") {
+          setItems((prev) =>
+            prev.some((it) => it.kind === "tool" && it.key === id)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    kind: "tool",
+                    server: String(item.server ?? ""),
+                    tool: String(item.tool ?? ""),
+                    readOnly: Boolean(item.readOnlyHint),
+                    done: false,
+                    key: id,
+                  },
+                ],
+          );
+        }
+      } else if (ev.method === "item/agentMessage/delta") {
+        const itemId = String(params.itemId ?? "");
+        const delta = String(params.delta ?? "");
+        if (!delta) return;
+        setItems((prev) => {
+          let idx = itemId
+            ? prev.findIndex((it) => it.kind === "assistant" && it.key === itemId)
+            : -1;
+          if (idx < 0 && !itemId) {
+            // 协议上 delta 必带 itemId；缺了就并入最后一个流式项兜底
+            for (let i = prev.length - 1; i >= 0; i -= 1) {
+              const it = prev[i];
+              if (it.kind === "assistant" && it.streaming) {
+                idx = i;
+                break;
+              }
+            }
+          }
+          if (idx < 0) {
+            // started 缺失（重连等）：以 delta 自带 itemId 立项
+            return [...prev, { kind: "assistant", text: delta, streaming: true, key: itemId }];
+          }
+          const cur = prev[idx];
+          if (cur.kind !== "assistant") return prev;
+          const next = [...prev];
+          next[idx] = { ...cur, text: cur.text + delta };
+          return next;
+        });
+      } else if (ev.method === "item/completed") {
+        const item = params.item as Record<string, unknown> | undefined;
+        if (!item) return;
+        const t = item.type ?? item.item_type;
+        const id = String(item.id ?? "");
         if (t === "agentMessage") {
           const text = String(item.text ?? "");
-          if (text) setItems((prev) => [...prev, { kind: "assistant", text }]);
+          setItems((prev) => {
+            const idx = prev.findIndex((it) => it.kind === "assistant" && it.key === id);
+            if (idx < 0) {
+              return text ? [...prev, { kind: "assistant", text }] : prev;
+            }
+            const cur = prev[idx];
+            if (cur.kind !== "assistant") return prev;
+            const next = [...prev];
+            // 完成文本权威；空完成文本退回保留已流式收到的部分
+            next[idx] = { kind: "assistant", text: text || cur.text, key: id };
+            return next;
+          });
         } else if (t === "mcpToolCall") {
-          setItems((prev) => [
-            ...prev,
-            {
-              kind: "tool",
-              server: String(item.server ?? ""),
-              tool: String(item.tool ?? ""),
-              readOnly: Boolean(item.readOnlyHint),
-            },
-          ]);
+          const row: ChatItem = {
+            kind: "tool",
+            server: String(item.server ?? ""),
+            tool: String(item.tool ?? ""),
+            readOnly: Boolean(item.readOnlyHint),
+            done: true,
+            key: id,
+          };
+          setItems((prev) => {
+            const idx = prev.findIndex((it) => it.kind === "tool" && it.key === id);
+            if (idx < 0) return [...prev, row];
+            const next = [...prev];
+            next[idx] = row;
+            return next;
+          });
         } else if (t === "error" || item.error) {
           setItems((prev) => [...prev, { kind: "notice", text: `出错：${String(item.message ?? "")}` }]);
         }
+      } else if (ev.method === "thread/tokenUsage/updated") {
+        // 形状（runtime v2 thread.rs）：tokenUsage.{total,last}.totalTokens
+        const tu = params.tokenUsage as
+          | { total?: { totalTokens?: number }; last?: { totalTokens?: number } }
+          | undefined;
+        const total = tu?.total?.totalTokens ?? 0;
+        if (total) setUsage({ total, last: tu?.last?.totalTokens ?? 0 });
       } else if (ev.method === "warning") {
         setItems((prev) => [...prev, { kind: "notice", text: String(params.message ?? "警告") }]);
       } else if (ev.method === "turn/completed") {
@@ -430,10 +530,14 @@ export default function Assistant() {
     setShowHistory(false);
     setItems([]);
     setBusy(false);
+    setUsage(null); // 新会话无累计；用量随下一个 tokenUsage 通知重建
   };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // 流式增量期间用瞬时跟随——smooth 动画被高频重置会抖动
+    const last = items[items.length - 1];
+    const streaming = last !== undefined && last.kind === "assistant" && Boolean(last.streaming);
+    bottomRef.current?.scrollIntoView({ behavior: streaming ? "auto" : "smooth" });
   }, [items]);
 
   /** 会话历史列表（lg 侧栏与移动端抽屉共用；面板头由各壳自配）。 */
@@ -602,22 +706,47 @@ export default function Assistant() {
                     </div>
                   </div>
                 );
-              if (it.kind === "assistant")
+              if (it.kind === "assistant") {
+                // 流式且尚无正文：气泡内打点，先占位后填字
+                const waiting = it.streaming && !it.text;
                 return (
                   <div
-                    key={i}
+                    key={it.key ?? i}
                     className="max-w-[85%] rounded-xl rounded-bl-sm bg-surface-2 px-4 py-2.5 text-sm leading-relaxed"
                   >
-                    <ChatMarkdown content={it.text} />
+                    {waiting ? (
+                      <span className="flex items-center gap-1 py-0.5" aria-label="正在输出">
+                        {[0, 1, 2].map((d) => (
+                          <span
+                            key={d}
+                            className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent/60"
+                            style={{ animationDelay: `${d * 150}ms` }}
+                          />
+                        ))}
+                      </span>
+                    ) : (
+                      <ChatMarkdown content={it.text} />
+                    )}
                   </div>
                 );
+              }
               if (it.kind === "tool")
                 return (
-                  <div key={i} className="flex items-center gap-2 pl-1 text-xs text-ink-faint">
+                  <div
+                    key={it.key ?? i}
+                    className="flex items-center gap-2 pl-1 text-xs text-ink-faint"
+                  >
                     <Badge tone={it.readOnly ? "neutral" : "warn"}>
                       {it.server}/{it.tool}
                     </Badge>
-                    <span>{it.readOnly ? "查询了班级数据" : "执行了操作"}</span>
+                    {it.done ? (
+                      <span>{it.readOnly ? "查询了班级数据" : "执行了操作"}</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent/60" aria-hidden />
+                        {it.readOnly ? "正在查询班级数据…" : "正在执行操作…"}
+                      </span>
+                    )}
                   </div>
                 );
               return (
@@ -664,6 +793,12 @@ export default function Assistant() {
                 </Button>
               )}
             </div>
+            {/* token 用量徽标（thread/tokenUsage/updated 驱动；流式回合内实时增长） */}
+            {usage && (
+              <p className="mt-1.5 text-right text-[11px] tabular-nums text-ink-faint">
+                本会话 {fmtTokens(usage.total)} tokens · 上轮 {fmtTokens(usage.last)}
+              </p>
+            )}
           </div>
         </Card>
       </div>

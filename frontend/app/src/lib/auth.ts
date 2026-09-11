@@ -7,10 +7,19 @@ export interface ClassRef {
   name: string;
 }
 
+/** 学科管理员授权（学科×年级；rbac-scopes-design §9）。 */
+export interface SubjectScope {
+  subject: string;
+  grade: number;
+}
+
 export interface Session {
   role: SessionRole;
   teacher?: { id: number; name: string; admin: boolean; kb_editor?: boolean };
   classes?: ClassRef[];
+  subject_scopes?: SubjectScope[];
+  /** 担任班主任的班级 id 集。 */
+  homeroom_class_ids?: number[];
   student?: {
     id: number;
     name_or_alias: string;
@@ -58,6 +67,8 @@ function normalize(body: Record<string, unknown>): Session {
     role: body.role === "admin" ? "admin" : "teacher",
     teacher: body.teacher as Session["teacher"],
     classes: (body.classes as ClassRef[]) ?? [],
+    subject_scopes: (body.subject_scopes as Session["subject_scopes"]) ?? [],
+    homeroom_class_ids: (body.homeroom_class_ids as number[]) ?? [],
   };
 }
 

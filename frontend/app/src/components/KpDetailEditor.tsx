@@ -1,6 +1,6 @@
-import { ArrowClockwise, Plus, Trash } from "@phosphor-icons/react";
+import { ArrowClockwise, CaretDown, CaretRight, Plus, Trash } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { Badge, Button, Card, Input, Modal } from "./ui";
+import { Badge, Button, Input, Modal } from "./ui";
 import {
   ApiError,
   createRelation,
@@ -25,10 +25,16 @@ const inputCls =
 const selectCls =
   "rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent";
 
-/** 知识点详情编辑面板：属性 + 〔v0.2〕preview + 归档/恢复/硬删 + 关系增删。
-
-readOnly（frontend-ends-design §B）：无内容层写权的教师只读——隐藏停用/删除/保存/
-添加关系等写控件，属性控件禁用；仍可点关系跳转浏览。
+/**
+ * 知识点详情卡（2026-09-11 按使用频率重构，frontend-ends-design §知识库）：
+ *
+ * - 阅读态（默认）：描述 + 关键属性 + 关系 chips（可点跳转）——覆盖最高频的
+ *   「查这个知识点讲什么」；普通教师停留在这里，不再面对一张禁用的表单。
+ * - 编辑态（有内容层写权时经「编辑知识点」进入）：常用四字段（名称/描述/章节/
+ *   重要度）+ 保存；引擎参数（学期/认知层次/难度/及格线——改动触发影响预览）、
+ *   关系增删、停用/恢复/彻底删除全部收进「高级」折叠区——建库参数与图谱工程
+ *   面默认不可见。
+ * readOnly：永远阅读态、无编辑入口（后端 require_kb_editor 兜底）。
  */
 export function KpDetailEditor({
   detail,
@@ -43,6 +49,8 @@ export function KpDetailEditor({
   onSelect: (id: number) => void;
   readOnly?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
   const [form, setForm] = useState({
     name: detail.name,
     description: detail.description,
@@ -60,7 +68,7 @@ export function KpDetailEditor({
   const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [hardDeleteConfirm, setHardDeleteConfirm] = useState(false);
 
-  // detail 变化（reload / 切换 kp）时重置表单
+  // detail 变化（reload / 切换 kp）时重置表单并回到阅读态
   useEffect(() => {
     setForm({
       name: detail.name,
@@ -72,6 +80,8 @@ export function KpDetailEditor({
       mastery_floor: detail.mastery_floor,
       importance: detail.importance,
     });
+    setEditing(false);
+    setAdvanced(false);
     setPreview(null);
     setMsg(null);
     setErr(null);
@@ -226,33 +236,127 @@ export function KpDetailEditor({
   }
 
   const relTargets = kps.filter((k) => k.id !== detail.id && !k.archived);
+  // 关系 chips 的删除钮只在「编辑态 + 高级区展开」出现——阅读态保持纯浏览
+  const canDeleteRel = editing && advanced && !readOnly;
 
-  return (
-    <Card className="space-y-4 p-6">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+  const relGroups = [
+    {
+      title: "直接前置知识",
+      items: detail.direct_prerequisites.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        extra: `权重 ${p.weight.toFixed(2)}`,
+        relId: undefined as number | undefined,
+      })),
+    },
+    {
+      title: "后续知识（以本点为前置）",
+      items: detail.successors.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        extra: REL_LABEL[p.type] ?? p.type,
+        relId: p.relation_id,
+      })),
+    },
+    {
+      title: "所属分类",
+      items: detail.containers.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        extra: REL_LABEL[p.type] ?? p.type,
+        relId: p.relation_id,
+      })),
+    },
+    ...(detail.contained.length > 0
+      ? [
+          {
+            title: "包含的小节",
+            items: detail.contained.map((p) => ({
+              id: p.id,
+              code: p.code,
+              name: p.name,
+              extra: REL_LABEL[p.type] ?? p.type,
+              relId: p.relation_id,
+            })),
+          },
+        ]
+      : []),
+  ];
+
+  /* ---------------- 阅读态：描述 + 关键属性 + 关系 chips ---------------- */
+  if (!editing) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-ink-faint">{detail.code}</span>
           {detail.archived && <Badge tone="warn">已停用</Badge>}
           {isContainer && <Badge tone="neutral">分类节点</Badge>}
+          <Badge tone="accent">{detail.importance}</Badge>
         </div>
-        <div className="flex items-center gap-1.5">
-          {!readOnly &&
-            !isContainer &&
-            (detail.archived ? (
-              <Button variant="ghost" onClick={doRestore} disabled={busy}>
-                恢复
-              </Button>
-            ) : (
-              <Button variant="ghost" onClick={() => doArchive(false)} disabled={busy}>
-                停用
-              </Button>
-            ))}
-          {!readOnly && !isContainer && !detail.archived && (
-            <Button variant="danger" onClick={() => setHardDeleteConfirm(true)} disabled={busy}>
-              彻底删除
+
+        {err && <p className="text-xs text-danger">{err}</p>}
+        {msg && <p className="text-xs text-accent-deep">{msg}</p>}
+
+        {detail.description ? (
+          <p className="text-sm leading-relaxed text-ink-soft">{detail.description}</p>
+        ) : (
+          <p className="text-xs text-ink-faint">暂无描述。</p>
+        )}
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg bg-surface-2/60 p-3 text-xs">
+          <p className="text-ink-faint">
+            章节<span className="ml-2 font-medium text-ink">{detail.chapter || "—"}</span>
+          </p>
+          <p className="text-ink-faint">
+            认知层次
+            <span className="ml-2 font-medium text-ink">
+              {detail.cog_levels_expected.join("、") || "—"}
+            </span>
+          </p>
+          <p className="text-ink-faint">
+            及格线<span className="ml-2 font-medium text-ink tabular-nums">{detail.mastery_floor}</span>
+          </p>
+          <p className="text-ink-faint">
+            预估难度
+            <span className="ml-2 font-medium text-ink tabular-nums">{detail.difficulty_prior}</span>
+          </p>
+        </div>
+
+        {relGroups.map((g) => (
+          <RelSection
+            key={g.title}
+            title={g.title}
+            items={g.items}
+            onSelect={onSelect}
+            onDelete={canDeleteRel ? doDeleteRel : undefined}
+            busy={busy}
+          />
+        ))}
+
+        <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
+          {!readOnly ? (
+            <Button variant="secondary" onClick={() => setEditing(true)}>
+              编辑知识点
             </Button>
+          ) : (
+            <span className="text-xs text-ink-faint">只读 · 由授权教师与管理员维护</span>
           )}
+          <span className="text-xs text-ink-faint">版本 #{detail.kb_version_id}</span>
         </div>
+      </div>
+    );
+  }
+
+  /* ---------------- 编辑态：常用字段 + 高级折叠区 ---------------- */
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-xs text-ink-faint">{detail.code}</span>
+        {detail.archived && <Badge tone="warn">已停用</Badge>}
+        <Badge tone="neutral">编辑中</Badge>
       </div>
 
       {err && <p className="text-xs text-danger">{err}</p>}
@@ -276,75 +380,55 @@ export function KpDetailEditor({
         </div>
       )}
 
-      {/* 属性表单（readOnly：fieldset 整体禁用） */}
-      <fieldset disabled={busy || readOnly} className="contents">
-      <div className="grid grid-cols-2 gap-3">
-        <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">名称</span>
-          <Input value={form.name} onChange={(e) => update("name", e.target.value)} disabled={busy} />
-        </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">描述</span>
-          <textarea
-            value={form.description}
-            onChange={(e) => update("description", e.target.value)}
-            disabled={busy}
-            rows={2}
-            className={inputCls}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">章节</span>
-          <Input value={form.chapter} onChange={(e) => update("chapter", e.target.value)} disabled={busy} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">学期（1上/2下/0不限）</span>
-          <Input
-            type="number"
-            value={form.semester}
-            onChange={(e) => update("semester", Number(e.target.value))}
-            disabled={busy}
-          />
-        </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">认知层次（顿号分隔）</span>
-          <Input value={form.cog} onChange={(e) => update("cog", e.target.value)} disabled={busy} />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">预估难度</span>
-          <Input
-            type="number"
-            step="0.05"
-            value={form.difficulty_prior}
-            onChange={(e) => update("difficulty_prior", Number(e.target.value))}
-            disabled={busy}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">及格线</span>
-          <Input
-            type="number"
-            step="0.05"
-            value={form.mastery_floor}
-            onChange={(e) => update("mastery_floor", Number(e.target.value))}
-            disabled={busy}
-          />
-        </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm">
-          <span className="text-xs text-ink-faint">重要度（报告排序与全局薄弱加权依据）</span>
-          <select
-            value={form.importance}
-            onChange={(e) => update("importance", e.target.value)}
-            disabled={busy}
-            className={inputCls}
-          >
-            <option value="基础">基础（地基性，优先补强）</option>
-            <option value="核心">核心（章节主干）</option>
-            <option value="拓展">拓展（独立/高阶）</option>
-          </select>
-        </label>
-      </div>
+      {/* 常用字段：老师会改的四件事 */}
+      <fieldset disabled={busy} className="contents">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="col-span-2 flex flex-col gap-1 text-sm">
+            <span className="text-xs text-ink-faint">名称</span>
+            <Input value={form.name} onChange={(e) => update("name", e.target.value)} disabled={busy} />
+          </label>
+          <label className="col-span-2 flex flex-col gap-1 text-sm">
+            <span className="text-xs text-ink-faint">描述</span>
+            <textarea
+              value={form.description}
+              onChange={(e) => update("description", e.target.value)}
+              disabled={busy}
+              rows={2}
+              className={inputCls}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs text-ink-faint">章节</span>
+            <Input value={form.chapter} onChange={(e) => update("chapter", e.target.value)} disabled={busy} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-xs text-ink-faint">重要度</span>
+            <select
+              value={form.importance}
+              onChange={(e) => update("importance", e.target.value)}
+              disabled={busy}
+              className={inputCls}
+            >
+              <option value="基础">基础（地基性，优先补强）</option>
+              <option value="核心">核心（章节主干）</option>
+              <option value="拓展">拓展（独立/高阶）</option>
+            </select>
+          </label>
+        </div>
       </fieldset>
+
+      <div className="flex items-center gap-2">
+        <Button variant="primary" onClick={doSave} disabled={busy}>
+          <ArrowClockwise size={15} />
+          {preview ? "确认保存" : "保存"}
+        </Button>
+        <Button variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
+          取消
+        </Button>
+        <span className="text-xs text-ink-faint">
+          {hiLeverChanged && !preview ? "关键参数改动将先预览影响" : `code 不可改（${detail.code}）`}
+        </span>
+      </div>
 
       {/* 〔v0.2〕preview 影响数 */}
       {preview && (
@@ -360,118 +444,122 @@ export function KpDetailEditor({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        {!readOnly && (
-          <>
-            <Button variant="primary" onClick={doSave} disabled={busy}>
-              <ArrowClockwise size={15} />
-              {preview ? "确认保存" : "保存"}
-            </Button>
-            <span className="text-xs text-ink-faint">
-              {hiLeverChanged && !preview ? "关键参数改动将先预览影响" : "code 不可改（稳定标识）"}
-            </span>
-          </>
-        )}
-        {readOnly && (
-          <span className="text-xs text-ink-faint">只读 · 由管理员维护</span>
+      {/* 高级折叠区：引擎参数 · 关系增删 · 危险操作——建库面默认收起 */}
+      <div className="rounded-lg border border-line">
+        <button
+          type="button"
+          onClick={() => setAdvanced((v) => !v)}
+          aria-expanded={advanced}
+          className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink-soft transition-colors hover:text-ink"
+        >
+          {advanced ? <CaretDown size={13} /> : <CaretRight size={13} />}
+          高级：诊断引擎参数 · 关系管理 · 停用/删除
+        </button>
+        {advanced && (
+          <div className="space-y-4 border-t border-line p-3">
+            <fieldset disabled={busy} className="contents">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-xs text-ink-faint">学期（1上/2下/0不限）</span>
+                  <Input
+                    type="number"
+                    value={form.semester}
+                    onChange={(e) => update("semester", Number(e.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+                <label className="col-span-2 flex flex-col gap-1 text-sm">
+                  <span className="text-xs text-ink-faint">认知层次（顿号分隔）</span>
+                  <Input value={form.cog} onChange={(e) => update("cog", e.target.value)} disabled={busy} />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-xs text-ink-faint">预估难度</span>
+                  <Input
+                    type="number"
+                    step="0.05"
+                    value={form.difficulty_prior}
+                    onChange={(e) => update("difficulty_prior", Number(e.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-xs text-ink-faint">及格线</span>
+                  <Input
+                    type="number"
+                    step="0.05"
+                    value={form.mastery_floor}
+                    onChange={(e) => update("mastery_floor", Number(e.target.value))}
+                    disabled={busy}
+                  />
+                </label>
+              </div>
+            </fieldset>
+
+            <p className="text-xs text-ink-faint">
+              关系增删：在上方关系卡片上点 × 删除（仅高级区展开时可见），或在下面新增。
+            </p>
+            <div className="rounded-md border border-line-strong bg-surface-2 p-3">
+              <p className="mb-2 text-xs font-semibold text-ink-soft">添加关系</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={relType} onChange={(e) => setRelType(e.target.value)} className={selectCls}>
+                  {RELATION_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {REL_LABEL[t]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={relDir}
+                  onChange={(e) => setRelDir(e.target.value as "out" | "in")}
+                  className={selectCls}
+                >
+                  <option value="out">本点 → 目标</option>
+                  <option value="in">目标 → 本点</option>
+                </select>
+                <select
+                  value={relTarget}
+                  onChange={(e) => setRelTarget(e.target.value)}
+                  className={`min-w-[12rem] flex-1 ${selectCls}`}
+                >
+                  <option value="">选择知识点…</option>
+                  {relTargets.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.code} · {k.name}
+                    </option>
+                  ))}
+                </select>
+                <Button variant="secondary" onClick={doAddRel} disabled={busy || !relTarget}>
+                  <Plus size={14} /> 添加
+                </Button>
+              </div>
+            </div>
+
+            {/* 危险区 */}
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-danger/20 bg-danger-soft/50 p-3">
+              {!isContainer &&
+                (detail.archived ? (
+                  <Button variant="ghost" onClick={doRestore} disabled={busy}>
+                    恢复
+                  </Button>
+                ) : (
+                  <Button variant="ghost" onClick={() => doArchive(false)} disabled={busy}>
+                    停用
+                  </Button>
+                ))}
+              {!isContainer && !detail.archived && (
+                <Button variant="danger" onClick={() => setHardDeleteConfirm(true)} disabled={busy}>
+                  彻底删除
+                </Button>
+              )}
+              <span className="text-xs text-ink-faint">
+                {isContainer ? "分类节点不可停用/删除" : "停用可恢复；彻底删除不可恢复"}
+              </span>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* 关系 */}
-      <RelSection
-        title="直接前置知识"
-        items={detail.direct_prerequisites.map((p) => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          extra: `权重 ${p.weight.toFixed(2)}`,
-        }))}
-        onSelect={onSelect}
-      />
-      <RelSection
-        title="后续知识（以本点为前置）"
-        items={detail.successors.map((p) => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          extra: REL_LABEL[p.type] ?? p.type,
-          relId: p.relation_id,
-        }))}
-        onSelect={onSelect}
-        onDelete={readOnly ? undefined : doDeleteRel}
-        busy={busy}
-      />
-      <RelSection
-        title="所属分类"
-        items={detail.containers.map((p) => ({
-          id: p.id,
-          code: p.code,
-          name: p.name,
-          extra: REL_LABEL[p.type] ?? p.type,
-          relId: p.relation_id,
-        }))}
-        onSelect={onSelect}
-        onDelete={readOnly ? undefined : doDeleteRel}
-        busy={busy}
-      />
-      {detail.contained.length > 0 && (
-        <RelSection
-          title="包含的小节"
-          items={detail.contained.map((p) => ({
-            id: p.id,
-            code: p.code,
-            name: p.name,
-            extra: REL_LABEL[p.type] ?? p.type,
-            relId: p.relation_id,
-          }))}
-          onSelect={onSelect}
-          onDelete={readOnly ? undefined : doDeleteRel}
-          busy={busy}
-        />
-      )}
-
-      {/* 添加关系（readOnly 隐藏：仅 admin 可写关系） */}
-      {!readOnly && (
-      <div className="rounded-md border border-line-strong bg-surface-2 p-3">
-        <p className="mb-2 text-xs font-semibold text-ink-soft">添加关系</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <select value={relType} onChange={(e) => setRelType(e.target.value)} className={selectCls}>
-            {RELATION_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {REL_LABEL[t]}
-              </option>
-            ))}
-          </select>
-          <select
-            value={relDir}
-            onChange={(e) => setRelDir(e.target.value as "out" | "in")}
-            className={selectCls}
-          >
-            <option value="out">本点 → 目标</option>
-            <option value="in">目标 → 本点</option>
-          </select>
-          <select
-            value={relTarget}
-            onChange={(e) => setRelTarget(e.target.value)}
-            className={`min-w-[12rem] flex-1 ${selectCls}`}
-          >
-            <option value="">选择知识点…</option>
-            {relTargets.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.code} · {k.name}
-              </option>
-            ))}
-          </select>
-          <Button variant="secondary" onClick={doAddRel} disabled={busy || !relTarget}>
-            <Plus size={14} /> 添加
-          </Button>
-        </div>
-      </div>
-      )}
-
-      <p className="text-xs text-ink-faint">
-        知识库版本 #{detail.kb_version_id}
-      </p>
+      <p className="text-xs text-ink-faint">知识库版本 #{detail.kb_version_id}</p>
 
       {/* 硬删确认：统一 Modal（修 P2-3，替代 window.confirm） */}
       <Modal
@@ -496,7 +584,7 @@ export function KpDetailEditor({
           若只想从分析中移除，建议改用「停用」（可恢复，且保留题目标注）。
         </p>
       </Modal>
-    </Card>
+    </div>
   );
 }
 
