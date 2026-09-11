@@ -38,6 +38,10 @@ services:
     depends_on:
       backend:
         condition: service_healthy               # backend 就绪后才接流量
+      gateway:
+        # nginx 在启动时解析 proxy_pass 的静态主机名（/rpc、/threads/ → gateway:8100），
+        # 网关容器未创建则解析失败、nginx 起不来——显式声明顺序，不靠 compose 巧合。
+        condition: service_started
     restart: unless-stopped
     stop_grace_period: 30s
 

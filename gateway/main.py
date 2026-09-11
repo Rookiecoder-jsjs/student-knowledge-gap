@@ -202,10 +202,19 @@ def _apply_uid_isolation(teacher_id: int) -> None:
             os.chmod(threads, 0o600)
         for dirpath, _dirnames, filenames in os.walk(home):
             d = Path(dirpath)
+            if d.is_symlink():
+                continue
             os.chmod(d, 0o700)
             os.chown(d, uid, uid)
             for name in filenames:
                 f = d / name
+                # 符号链接必须跳过：chmod/chown 默认穿透链接本体。魔改壳会在
+                # $TMPDIR/arg0/ 下建指向 /usr/local/bin/codex-app-server 的
+                # apply_patch/codex-execve-wrapper/applypatch 链接——不跳过则
+                # 每次 spawn 的隔离遍历都把壳二进制改成 600/20001，下一次
+                # spawn 即 EACCES 自毁（2026-09-10 实锤，AI 教研员全断根因）。
+                if f.is_symlink():
+                    continue
                 os.chmod(f, 0o600)
                 os.chown(f, uid, uid)
         print(f"[spawn-uid] t{teacher_id} -> uid {uid}（0700，内核边界就位）")
@@ -285,13 +294,59 @@ def login(req: LoginReq):
     }
 
 
+def _verify_backend_token(token: str) -> int:
+    """校验 sc backend 签发的教师 token（共享 SC_AUTH_SECRET），返回 teacher_id。
+
+    auth-roles-design 统一登录：AI 教研员会话 = 教师在 sc 工作台登录的同一次 token。
+    接受新四段 ``t.{id}.{exp}.{sig}`` 与旧三段 ``{id}.{exp}.{sig}``；student token
+    （kind=s）在此层拒绝——教研员仅教师/admin。
+    """
+    if not SCHOOL_AUTH_SECRET:
+        raise ValueError("SC_AUTH_SECRET 未配置，无法校验后端 token")
+    parts = token.split(".")
+    if len(parts) == 4:
+        kind, uid_raw, exp_raw, sig = parts
+        body = f"{kind}.{uid_raw}.{exp_raw}"
+        if kind != "t":
+            raise ValueError("非教师 token")
+    elif len(parts) == 3:
+        body = f"{parts[0]}.{parts[1]}"
+        uid_raw, exp_raw, sig = parts[0], parts[1], parts[2]
+    else:
+        raise ValueError("token 格式非法")
+    expect = hmac.new(SCHOOL_AUTH_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expect, sig):
+        raise ValueError("token 无效")
+    try:
+        teacher_id, exp = int(uid_raw), int(exp_raw)
+    except ValueError as e:
+        raise ValueError("token 格式非法") from e
+    if exp < time.time():
+        raise ValueError("token 已过期")
+    return teacher_id
+
+
 def require_auth(authorization: str = Header(default="")) -> Session:
+    """统一鉴权：优先本地会话 token（accounts.json 遗留），其次 sc backend 签发
+    的教师 token（auth-roles-design 主路径，教师工作台登录即同一 token）。
+
+    backend token → teacher_id 合成 username（``t{teacher_id}``）——Bridge 按
+    教师身份寻址，与 trigger/持久线程键（class_id.teacher_id）一致，跨登录名一致。
+    """
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "缺少 Bearer token")
-    sess = _SESSIONS.get(authorization[7:])
-    if sess is None:
-        raise HTTPException(401, "会话无效或已过期")
-    return sess
+    token = authorization[7:]
+    sess = _SESSIONS.get(token)
+    if sess is not None:
+        return sess
+    try:
+        teacher_id = _verify_backend_token(token)
+    except ValueError as e:
+        raise HTTPException(401, str(e))
+    return Session(
+        token=token, username=f"t{teacher_id}", teacher_id=teacher_id,
+        created_at=time.time(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,13 +355,14 @@ def require_auth(authorization: str = Header(default="")) -> Session:
 
 
 def _sign_school_token(teacher_id: int) -> str:
-    """签发教师身份 token（与 sc 后端 auth.py 同款：HMAC-SHA256 hex，`teacher_id.exp.sig`）。
+    """签发教师身份 token（与 sc 后端 auth.py 同款：HMAC-SHA256 hex，`t.{id}.{exp}.{sig}`）。
 
-    school-authz shim 在壳侧以同一 SC_AUTH_SECRET 校验、从 token 派生 SC_MCP_TEACHER_ID。
-    gateway 每次 spawn 现签现用，TTL 仅约束被盗 token 的可用窗口。
+    auth-roles-design：token 携带身份种类 kind（t=教师/admin，s=学生）。school-authz
+    只面向教师——学生账号进 AI 教研员在 gateway 层即 403（_verify_backend_token）。
+    网关每次 spawn 现签现用，TTL 仅约束被盗 token 的可用窗口。
     """
     exp = int(time.time()) + _SCHOOL_TOKEN_TTL_S
-    body = f"{teacher_id}.{exp}"
+    body = f"t.{teacher_id}.{exp}"
     sig = hmac.new(SCHOOL_AUTH_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
@@ -385,6 +441,9 @@ class Bridge:
         self._reader = asyncio.create_task(self._read_loop())
         await self.request("initialize", {
             "clientInfo": {"name": "sc-gateway", "title": "sc session gateway", "version": "1.0"},
+            # 实验面能力位：thread/settings/update（模型/思考强度逐线程覆盖，AI 教研员
+            # 端设置选择器）等被 experimentalApi 门控——壳为本仓魔改产物，直接开启。
+            "capabilities": {"experimentalApi": True},
         })
         return self
 
@@ -736,6 +795,15 @@ async def internal_trigger(req: TriggerReq):
 @app.on_event("startup")
 def _startup() -> None:
     load_accounts()
+    # 壳二进制可执行自检：镜像层本应 chmod +x，但可写层可能被运维动作改没
+    # （实例：UID 隔离人工验证残留 chown/chmod，spawn 变成每请求静默等满
+    # timeout）。此处大声报一次，别让故障以「SSE 无事件」的哑形态存在。
+    import shutil as _shutil
+
+    bin_path = _shutil.which(APP_SERVER_CMD)
+    if bin_path and not os.access(bin_path, os.X_OK):
+        print(f"[startup] 告警：{bin_path} 无执行位——spawn 必失败，请 chmod +x "
+              f"或重建镜像（README：镜像层本有 chmod +x，可写层被改需就地修复）")
     # 装车批第 6 批：CODEX_HOME 播种改**按驱动惰性**——Bridge.spawn 前
     # _seed_driver_home(teacher_id) 为 t<teacher_id>/ 播种 config.toml + models.json，
     # 不再启动时对根单次播种（根仅是卷挂载点，非任何驱动的 home）。

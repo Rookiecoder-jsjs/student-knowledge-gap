@@ -63,8 +63,11 @@ def test_child_env_adds_token_for_teacher(monkeypatch):
     _seed_secrets(monkeypatch)
     env = gm._child_env(7)
     assert env["CODEX_HOME"] == _home(7)
-    assert env["SC_SCHOOL_AUTH_TOKEN"].split(".")[0] == "7"
-    assert env["SC_SCHOOL_AUTH_TOKEN"].count(".") == 2
+    # auth-roles-design：token 带身份种类 kind（`t.{id}.{exp}.{sig}`）
+    parts = env["SC_SCHOOL_AUTH_TOKEN"].split(".")
+    assert parts[0] == "t"
+    assert parts[1] == "7"
+    assert len(parts) == 4
 
 
 def test_child_env_no_token_without_secret(monkeypatch):
@@ -120,7 +123,8 @@ def test_bridge_spawn_passes_whitelist_env(monkeypatch):
     for k in FORBIDDEN:
         assert k not in env, f"{k} 经 Bridge.spawn 泄漏给 Popen"
     assert env["CODEX_HOME"] == _home(7)
-    assert env["SC_SCHOOL_AUTH_TOKEN"].split(".")[0] == "7"
+    parts = env["SC_SCHOOL_AUTH_TOKEN"].split(".")
+    assert parts[0] == "t" and parts[1] == "7" and len(parts) == 4
 
 
 def test_driver_home_path(monkeypatch):

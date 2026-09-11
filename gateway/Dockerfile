@@ -27,10 +27,24 @@ RUN pip install --no-cache-dir -r requirements.txt
 # runtime 魔改壳二进制（bazel 产物；.runtime/ 由 deploy/stage-gateway-runtime.sh
 # 生成，已 gitignore——fresh clone 后首次 build 前先跑该脚本）
 COPY .runtime/codex-app-server .runtime/exec-server /usr/local/bin/
-RUN chmod +x /usr/local/bin/codex-app-server /usr/local/bin/exec-server \
-    && apt-get update \
+# strip 纪律（2026-09-10 实锤）：
+# 1) 新版 binutils 的 strip 原地重写输出 mode 600、不修正属主——Windows 宿主构建
+#    上下文的属主 SID 会被 COPY 映射为任意 uid（实例 Administrator → 20001）；
+# 2) desktop-containerd 的 overlay 上，strip 原地重写 + 事后 chmod 的大文件仍会
+#    出现「stat 755 但 exec EACCES」的 inode 元数据腐坏。
+#   故统一走 strip -o 产新文件 → rm 原文件 → cp 全新落位 → chmod/chown：
+#   产物必为干净 inode，可执行不靠事后补救。
+RUN apt-get update \
     && apt-get install -y --no-install-recommends binutils \
-    && strip --strip-unneeded /usr/local/bin/codex-app-server /usr/local/bin/exec-server \
+    && strip --strip-unneeded -o /tmp/codex-app-server.stripped /usr/local/bin/codex-app-server \
+    && rm /usr/local/bin/codex-app-server \
+    && cp /tmp/codex-app-server.stripped /usr/local/bin/codex-app-server \
+    && strip --strip-unneeded -o /tmp/exec-server.stripped /usr/local/bin/exec-server \
+    && rm /usr/local/bin/exec-server \
+    && cp /tmp/exec-server.stripped /usr/local/bin/exec-server \
+    && rm -f /tmp/codex-app-server.stripped /tmp/exec-server.stripped \
+    && chmod 755 /usr/local/bin/codex-app-server /usr/local/bin/exec-server \
+    && chown root:root /usr/local/bin/codex-app-server /usr/local/bin/exec-server \
     && apt-get purge -y binutils \
     && rm -rf /var/lib/apt/lists/*
 
