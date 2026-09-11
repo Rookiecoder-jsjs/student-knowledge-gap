@@ -526,18 +526,48 @@ class Bridge:
             self.proc.kill()
 
 
-_BRIDGES: dict[str, Bridge] = {}  # username -> bridge
+_BRIDGES: dict[str, Bridge] = {}  # username | "trigger.<tid>" -> bridge
+
+# 首建单飞（2026-09-11 实锤缺陷）：页面加载时 SSE 与首个 RPC 并发到达，旧实现
+# check-then-act 各 spawn 一个桥——SSE 订阅落在败者桥、事件全广播给胜者桥的空
+# 订阅集，浏览器侧表现为「永不流式、token 用量不出、busy 挂死」（RPC 结果正常
+# 返回，事件通道却空转，keepalive 还在）。in-flight future 合并并发首建：同键
+# 并发只 spawn 一次，其余等待同一结果。
+_SPAWNING: dict[str, asyncio.Future] = {}
+
+
+async def _get_or_spawn_bridge(key: str, teacher_id: int) -> Bridge:
+    br = _BRIDGES.get(key)
+    if br is not None and br.proc.poll() is None:
+        br.last_used = time.time()
+        return br
+    if br is not None:  # 死桥：回收后重建（重建同样过单飞，防并发重复 spawn）
+        br.stop()
+        _BRIDGES.pop(key, None)
+    inflight = _SPAWNING.get(key)
+    if inflight is not None:
+        br = await asyncio.shield(inflight)  # shield：个别等待者取消不杀伤同伴
+        br.last_used = time.time()
+        return br
+    loop = asyncio.get_running_loop()
+    fut: asyncio.Future = loop.create_future()
+    _SPAWNING[key] = fut
+    try:
+        br = await Bridge.spawn(teacher_id=teacher_id)
+    except BaseException as e:  # 含 CancelledError：等待者拿到异常后可重试
+        fut.set_exception(e)
+        raise
+    else:
+        _BRIDGES[key] = br
+        fut.set_result(br)
+    finally:
+        _SPAWNING.pop(key, None)
+    br.last_used = time.time()
+    return br
 
 
 async def get_bridge(username: str, teacher_id: int = 0) -> Bridge:
-    br = _BRIDGES.get(username)
-    if br is None or br.proc.poll() is not None:
-        if br is not None:
-            br.stop()
-        br = await Bridge.spawn(teacher_id=teacher_id)
-        _BRIDGES[username] = br
-    br.last_used = time.time()
-    return br
+    return await _get_or_spawn_bridge(username, teacher_id)
 
 
 # ---------------------------------------------------------------------------
@@ -696,22 +726,15 @@ def _recently_fired(key: str) -> bool:
 # 触发式任务用的 app-server 桥（不占教师账号；按身份分桥）。
 # 装车批第 5 批：trigger 按「提交教师」身份驱动（backend commit 实名教师带
 # teacher_id 入载荷）——安全模式下自动考后分析才能经 sc MCP 读本班数据（匿名在
-# /mcp 是 fail-closed 401）。teacher_id=0 = 开放模式匿名兜底。桥与教师交互桥分开，
-# 触发式长 turn 不打断浏览器会话。装车批第 6 批：持久线程键 = class_id.teacher_id
-# （_thread_key），每个（班,教师）一个持久线程、落在该教师驱动 home（t<tid>/）——
-# 同教师跨 bridge 重建可 resume（同 home 同键），不同教师互不越界。
-_TRIGGER_BRIDGES: dict[int, Bridge] = {}
+# /mcp 是 fail-closed 401）。teacher_id=0 = 开放模式匿名兜底。桥与教师交互桥分开
+# （trigger.<tid> 键空间隔离），触发式长 turn 不打断浏览器会话。装车批第 6 批：
+# 持久线程键 = class_id.teacher_id（_thread_key），每个（班,教师）一个持久线程、
+# 落在该教师驱动 home（t<tid>/）——同教师跨 bridge 重建可 resume（同 home 同键），
+# 不同教师互不越界。首建走单飞（_get_or_spawn_bridge），并发触发不重复 spawn。
 
 
 async def _trigger_bridge(teacher_id: int = 0) -> Bridge:
-    br = _TRIGGER_BRIDGES.get(teacher_id)
-    if br is None or br.proc.poll() is not None:
-        if br is not None:
-            br.stop()
-        br = await Bridge.spawn(teacher_id=teacher_id)
-        _TRIGGER_BRIDGES[teacher_id] = br
-    br.last_used = time.time()
-    return br
+    return await _get_or_spawn_bridge(f"trigger.{teacher_id or 0}", teacher_id or 0)
 
 
 class NotifyReq(BaseModel):
@@ -812,6 +835,4 @@ def _startup() -> None:
 @app.on_event("shutdown")
 def _shutdown() -> None:
     for br in _BRIDGES.values():
-        br.stop()
-    for br in _TRIGGER_BRIDGES.values():
         br.stop()
