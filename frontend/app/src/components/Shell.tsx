@@ -1,11 +1,14 @@
 import {
   BookOpen,
   Buildings,
+  ChartBar,
   ChatCircleDots,
   Exam,
   House,
   Student,
   Tray,
+  TreeStructure,
+  UserGear,
 } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -13,7 +16,7 @@ import { inboxSummary, listClasses, type InboxSummary as InboxSummaryData } from
 import { LAST_CLASS_KEY } from "../lib/auth";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
-import { roleFlags, setBackTarget } from "../lib/portal";
+import { roleFlags } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
 import { AccountCluster } from "./TopBar";
 import { Sidebar, type SideNavGroup, type SideNavItem } from "./SideNav";
@@ -96,12 +99,6 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [routed, routedOk]);
 
-  // 校务台返回链（进出修订 2026-09-12）：教学壳内每换一页刷新 /admin 的返回
-  // 目标，「← 教学工作台」据此从哪来回哪；无记录时 AdminShell 回落班级概览。
-  useEffect(() => {
-    setBackTarget("/admin", location.pathname);
-  }, [location.pathname]);
-
   // 手动计算激活态：考试模块也涵盖 /quality 直达入口
   const path = location.pathname;
   // 无可用班级时（cid=0）班级簇不指向 /c/0，退回班级选择页
@@ -158,8 +155,9 @@ export function Shell({ children }: { children: ReactNode }) {
       </span>
     ) : undefined;
 
-  // 侧栏三组（side-nav-redesign §1）：激活项颜色即位置。
-  // 工具组可见性照旧由角色旗标派生（isStaff/assistantVisible/adminOrOpen）。
+  // 侧栏分组（side-nav-redesign §1 + §5）：激活项颜色即位置。
+  // 组可见性由角色旗标派生：isStaff/assistantVisible（工具组）、
+  // adminLogin（全局管理组——仅超管登录）。
   const groups: SideNavGroup[] = [
     {
       label: "班级",
@@ -214,18 +212,36 @@ export function Shell({ children }: { children: ReactNode }) {
         ] satisfies SideNavItem[]
       ),
     },
-    ...(flags.adminOrOpen
+    // 全局管理（side-nav §5，2026-09-12 设计反馈）：原独立校务台（AdminShell）
+    // 并入侧栏，仅超管登录可见——开放模式与学科管理员不再有校级入口。
+    ...(flags.adminLogin
       ? [
           {
-            label: "管理",
+            label: "全局管理",
             items: [
               {
-                id: "/admin",
-                to: "/admin",
-                label: "校务台",
-                icon: Buildings,
+                id: "/admin/usage",
+                to: "/admin/usage",
+                label: "用量",
+                icon: ChartBar,
                 accent: ACCENTS.dashboard,
-                active: path.startsWith("/admin"),
+                active: path.startsWith("/admin/usage"),
+              },
+              {
+                id: "/admin/accounts",
+                to: "/admin/accounts",
+                label: "账号管理",
+                icon: UserGear,
+                accent: ACCENTS.dashboard,
+                active: path.startsWith("/admin/accounts"),
+              },
+              {
+                id: "/admin/kb",
+                to: "/admin/kb",
+                label: "知识点管理",
+                icon: TreeStructure,
+                accent: ACCENTS.knowledge,
+                active: path.startsWith("/admin/kb"),
               },
             ] satisfies SideNavItem[],
           },

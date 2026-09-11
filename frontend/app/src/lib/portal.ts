@@ -39,16 +39,13 @@ export function roleFlags(s: Session | null | undefined) {
       (x) => x.subject === subject && (grade == null || x.grade === grade)
     );
   };
-  // KB 总面板（校务台）：admin/开放 ∨ 有学科授权 ∨ kb_editor（rbac-scopes-design §6）
-  const kbPanelVisible =
-    adminOrOpen || scopes.length > 0 || s?.teacher?.kb_editor === true;
   const isHomeroom = (classId: number): boolean => homeroomIds.includes(classId);
   /** 学生账号开通/重置（rbac-scopes-design §8）：admin/开放 ∨ 本班班主任。 */
   const canEnableStudent = (classId: number): boolean =>
     adminOrOpen || homeroomIds.includes(classId);
   return {
     open, role, isStaff, adminLogin, adminOrOpen, kbContentEditable, kbVersionEditable,
-    assistantVisible, scopes, homeroomIds, kbWrite, kbGovern, kbPanelVisible,
+    assistantVisible, scopes, homeroomIds, kbWrite, kbGovern,
     isHomeroom, canEnableStudent,
   };
 }
@@ -95,8 +92,8 @@ export function getBackTarget(dest: string, fallback: string): string {
  * - 教学树深链（/c/*，含学生视角预览）一律原地保持：/c/ 非法 id 由 Shell
  *   守卫兜底；admin 全校可见，浏览器实测渲染 /c 深链无碍；
  * - /portal/* 是学生命名空间：教师/校管 URL 残留一律弹回自己的落地区；
- * - admin（含带班超管）：无深链 → 直落校务台——管理员主身份语义，不再按
- *   「有没有班」区分纯校管/带班（校务台进出修订 2026-09-12）；
+ * - admin（含带班超管）：无深链 → 直落 /admin（全局管理·账号管理，side-nav
+ *   §5——管理员主身份语义，不再按「有没有班」区分）；
  * - 教师：无深链（/）→ 直落上次班级（sc.lastClassId 在授权列表内才生效；
  *   显式退出会清该键，401 过期重登保留，见 AuthContext.logout）；
  * - 教师撞 /admin/*（路由未挂载）→ 一步到位回 /，不让 `*` 守卫再弹一次。
@@ -109,12 +106,9 @@ export function landingFor(s: Session | null, pathname: string): string | null {
   if (s.role === "admin") return "/admin";
   if (pathname.startsWith("/portal")) return "/";
   if (s.role === "teacher" && pathname.startsWith("/admin")) {
-    // 学科管理员 / kb_editor 可达校务台知识库面板（rbac-scopes-design §6）；
-    // 其余 /admin/*（账号/用量）教师一步弹回教学端
-    const kbPanelOk =
-      pathname.startsWith("/admin/kb") &&
-      ((s.subject_scopes?.length ?? 0) > 0 || s.teacher?.kb_editor === true);
-    return kbPanelOk ? null : "/";
+    // 全局管理仅超管（side-nav §5）：教师/学科管理员撞 /admin/* 一步弹回教学端
+    //（学科管理员的 KB 内容编辑走 /kb 自页，不再有校级面板入口）
+    return "/";
   }
   if (pathname === "/" || pathname === "") {
     let remembered = 0;

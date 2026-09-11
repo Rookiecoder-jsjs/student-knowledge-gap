@@ -2,7 +2,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { ExamWorkspace } from "./components/ExamWorkspace";
-import { AdminShell } from "./components/AdminShell";
 import { Shell } from "./components/Shell";
 import { ApiError, listClasses } from "./lib/api";
 import { useAuth } from "./lib/AuthContext";
@@ -114,11 +113,11 @@ function StudentPortalPreview() {
   );
 }
 
-/** 校务台落地（分区重设计）：admin 登录 → 账号页；开放模式（匿名演示）→ 用量页。 */
+/** 全局管理落地（side-nav §5）：admin 登录 → 账号管理；其余弹回班级概览。
+ * 原独立校务台已并入教学壳侧栏（仅超管可见），开放模式不再有校级入口。 */
 function AdminHome() {
   const flags = useRoleFlags();
   if (flags.adminLogin) return <Navigate to="/admin/accounts" replace />;
-  if (flags.adminOrOpen) return <Navigate to="/admin/usage" replace />;
   return <Navigate to="/" replace />;
 }
 
@@ -165,20 +164,20 @@ function TeacherRoutes() {
         <Route path="/c/:classId/students/:studentId/diagnosis" element={<Shell><Animated><Diagnosis /></Animated></Shell>} />
         <Route path="/c/:classId/students/:studentId/mastery" element={<Shell><Animated><Mastery /></Animated></Shell>} />
 
-        {/* 校务台（分区重设计 2026-09-10）：独立壳，与教学 Shell 平级。
-            admin 登录或开放模式（演示信任域）挂载；纯校管默认落这里 */}
-        {flags.adminOrOpen && (
+        {/* 全局管理（side-nav §5，2026-09-12 设计反馈）：原独立校务台三页并入
+            教学 Shell——侧栏「全局管理」组直达，仅超管登录挂载（adminLogin）；
+            学科管理员的 KB 编辑走 /kb 自页，不再有校级面板入口 */}
+        {flags.adminLogin && (
           <Route path="/admin" element={<AdminHome />} />
         )}
         {flags.adminLogin && (
-          <Route path="/admin/accounts" element={<AdminShell><Animated><Accounts /></Animated></AdminShell>} />
+          <Route path="/admin/usage" element={<Shell><Animated><Usage /></Animated></Shell>} />
         )}
-        {/* KB 总面板（rbac-scopes-design §6）：admin/开放 ∨ 学科管理员 ∨ kb_editor */}
-        {flags.kbPanelVisible && (
-          <Route path="/admin/kb" element={<AdminShell><Animated><KbPanel /></Animated></AdminShell>} />
+        {flags.adminLogin && (
+          <Route path="/admin/accounts" element={<Shell><Animated><Accounts /></Animated></Shell>} />
         )}
-        {flags.adminOrOpen && (
-          <Route path="/admin/usage" element={<AdminShell><Animated><Usage /></Animated></AdminShell>} />
+        {flags.adminLogin && (
+          <Route path="/admin/kb" element={<Shell><Animated><KbPanel /></Animated></Shell>} />
         )}
 
         {/* 学生门户预览（超级账号，admin-only）：挂教学树学生语境（独立壳，不套 Shell） */}

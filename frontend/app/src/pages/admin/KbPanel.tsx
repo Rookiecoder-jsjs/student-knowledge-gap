@@ -62,12 +62,8 @@ export default function KbPanel() {
   return (
     <Page accent={ACCENTS.knowledge}>
       <PageHeader
-        title="知识库总览"
-        desc={
-          flags.adminOrOpen
-            ? "全校各学科知识库版本；「启用」= 该学科全校口径切换"
-            : "你管理的学科知识库；「启用」= 该学科全校口径切换"
-        }
+        title="知识点管理"
+        desc="全校各学科知识库版本；「启用」= 该学科全校口径切换"
         actions={
           <Button
             onClick={() => {

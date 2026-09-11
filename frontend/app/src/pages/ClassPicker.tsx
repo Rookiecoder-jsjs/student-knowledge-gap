@@ -1,20 +1,17 @@
 import {
   ArrowRight,
   BookOpen,
-  Buildings,
   ClipboardText,
   PlusCircle,
   TreeStructure,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
-import { useEffect } from "react";
 import { AccountCluster, TOOL_LINK, TopBar } from "../components/TopBar";
 import { ErrorState, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { listClassesOverview } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
-import { roleFlags, setBackTarget } from "../lib/portal";
 import type { ClassOverview } from "../lib/types";
 
 /** 一级页面·班级概览：横向对比所有班级的待办 / 最近考试 / 教学进度，点击进入单班工作台。
@@ -23,13 +20,7 @@ import type { ClassOverview } from "../lib/types";
 export default function ClassPicker() {
   const nav = useNavigate();
   const { session } = useAuth();
-  const flags = roleFlags(session);
   const { data, loading, error, reload } = useAsync(() => listClassesOverview(), []);
-
-  // 校务台返回链（进出修订 2026-09-12）：从班级概览进校务台，退出时也回这里
-  useEffect(() => {
-    setBackTarget("/admin", "/");
-  }, []);
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -38,16 +29,11 @@ export default function ClassPicker() {
         subtitle="教师工作台"
         right={
           <>
+            {/* 全局管理（side-nav §5）已并入教学壳侧栏（仅超管），转场页不再放校级入口 */}
             <Link to="/kb" className={TOOL_LINK}>
               <BookOpen size={15} />
               <span className="hidden sm:inline">知识库</span>
             </Link>
-            {flags.adminOrOpen && (
-              <Link to="/admin" className={TOOL_LINK}>
-                <Buildings size={15} />
-                <span className="hidden sm:inline">校务台</span>
-              </Link>
-            )}
             {session && <AccountCluster session={session} name={session.teacher?.name ?? ""} />}
           </>
         }
