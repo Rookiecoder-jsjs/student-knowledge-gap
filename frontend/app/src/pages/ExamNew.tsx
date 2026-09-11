@@ -1,6 +1,6 @@
 import { Camera, Sparkle, Table, WarningCircle } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, Card, Field, Input, Page, PageHeader } from "../components/ui";
 import { createExam, listKps, photoTemplate, suggestQuestionTags } from "../lib/api";
 import { ACCENTS } from "../lib/theme";
@@ -13,6 +13,7 @@ export default function ExamNew() {
   const { classId } = useParams();
   const cid = Number(classId);
   const nav = useNavigate();
+
   const [tab, setTab] = useState<"photo" | "manual">("photo");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -146,6 +147,12 @@ export default function ExamNew() {
 
   return (
     <Page accent={ACCENTS.exam}>
+      <Link
+        to={`/c/${cid}/exams`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
+      >
+        ← 返回考试列表
+      </Link>
       <PageHeader title="新建考试" desc="拍照路径由 AI 解析题目并初步标注知识点，建卷后需在审核台确认" />
 
       {/* 分段控件：tab 语义（修 P1-2） */}

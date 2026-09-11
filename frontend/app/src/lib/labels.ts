@@ -53,10 +53,24 @@ const INTERVENTION_STATUS_LABEL: Record<string, string> = {
 };
 
 const EFFECT_LABEL: Record<string, string> = {
-  "awaiting_retest": "等待复测",
+  "awaiting_retest": "等待验证",
   "improved": "有提升",
   "flat": "暂无明显变化",
   "declined": "有所回落",
+};
+
+const LOOP_STATE_LABEL: Record<string, string> = {
+  "未学到": "还没学到",
+  "证据不足": "证据不足",
+  "达标": "掌握达标",
+  "薄弱待干预": "待安排干预",
+  "已建议": "已建议行动",
+  "待复测": "干预中 · 待验证",
+  "自报待检验": "已自报 · 待检验",
+  "已闭合": "已见效",
+  "持平复评": "复评持平",
+  "未闭合": "需再加码",
+  "已跳过": "已跳过",
 };
 /** 未知值原样返回，便于后续新增枚举不致报错。 */
 function translate(map: Record<string, string>, value: string | null | undefined): string {
@@ -72,3 +86,4 @@ export const versionStatusLabel = (s: string | null | undefined) => translate(VE
 export const kindLabel = (k: string) => translate(KIND_LABEL, k);
 export const interventionStatusLabel = (s: string) => translate(INTERVENTION_STATUS_LABEL, s);
 export const effectLabel = (e: string) => translate(EFFECT_LABEL, e);
+export const loopStateLabel = (s: string | null | undefined) => translate(LOOP_STATE_LABEL, s);

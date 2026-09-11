@@ -180,6 +180,8 @@ export const createKp = (body: {
   difficulty_prior?: number;
   mastery_floor?: number;
   importance?: string;
+  /** 显式目标版本（图形化建库向导写入 draft）；缺省 = active（旧行为） */
+  kb_version_id?: number;
 }) => request<KpNode>("/kb/kps", json(body));
 
 export const updateKp = (
@@ -241,10 +243,23 @@ export interface KbCompatibility {
   }[];
 }
 
-export const forkKbVersion = () =>
-  request<{ id: number; status: string; forked_from: number }>("/kb/versions", {
-    method: "POST",
-  });
+export const forkKbVersion = (sourceVersionId?: number) =>
+  request<{ id: number; status: string; forked_from: number }>(
+    `/kb/versions${sourceVersionId ? `?source_version_id=${sourceVersionId}` : ""}`,
+    { method: "POST" }
+  );
+
+/** 图形化建库第一步：创建空白草稿版本（多学科；grade 落版本年级）。内容随后经 createKp 逐条写入。 */
+export const createKbVersion = (body: {
+  subject: string;
+  grade?: number | null;
+  textbook_edition: string;
+  version: string;
+}) =>
+  request<{ id: number; subject: string; grade: number | null; version: string; status: string }>(
+    "/kb/versions/create",
+    json(body)
+  );
 
 export const kbCompatibility = (versionId: number) =>
   request<KbCompatibility>(`/kb/versions/${versionId}/compatibility`);
@@ -273,6 +288,17 @@ export const patchKbVersion = (
 
 export const exportKbUrl = (kbVersionId?: number) =>
   `${BASE}/kb/export${kbVersionId ? `?kb_version_id=${kbVersionId}` : ""}`;
+
+/** 带鉴权的 YAML 导出下载。不能用 window.open 直开导出 URL——裸请求带不上
+ * Authorization 头，安全模式下被 G11 全局闸 401（2026-09-11 用户实报的
+ * 「点导出跳到 /api/kb/export」即此）。fetch→blob→<a download> 走正常头。 */
+export const downloadKbYaml = async (kbVersionId?: number) => {
+  const res = await fetch(exportKbUrl(kbVersionId), {
+    headers: { Authorization: `Bearer ${getToken() ?? ""}` },
+  });
+  if (!res.ok) throw new Error(`导出失败（HTTP ${res.status}）`);
+  return res.blob();
+};
 
 // ---- 初始化 ----------------------------------------------------------------
 
@@ -506,16 +532,10 @@ export const reportFull = (reportId: number) =>
   request<ReportFull>(`/reports/${reportId}/full`);
 
 export const issueReport = (reportId: number) =>
-  request<ReportTransition>(`/reports/${reportId}/issue`, {
-    method: "POST",
-    body: JSON.stringify({ note: null }),
-  });
+  request<ReportTransition>(`/reports/${reportId}/issue`, json({ note: null }));
 
 export const rejectReport = (reportId: number, note: string) =>
-  request<ReportTransition>(`/reports/${reportId}/reject`, {
-    method: "POST",
-    body: JSON.stringify({ note }),
-  });
+  request<ReportTransition>(`/reports/${reportId}/reject`, json({ note }));
 
 // 用量台账（§5.9）
 export const adminUsage = (month: string) =>
@@ -552,6 +572,42 @@ export const meActionPlan = () =>
     "/me/action-plan"
   );
 
+// ---- 我的学习（study-loop-design：/me 唯一可写面——方案生成 + 自报）----
+
+export interface StudyRecordListItem {
+  id: number;
+  kp_code: string;
+  kp_name: string;
+  generated_at: string;
+  self_marked_at: string | null;
+  loop_state?: string | null;
+}
+
+export interface StudyPlanView {
+  id: number;
+  kp_code: string;
+  kp_name: string;
+  plan_markdown: string;
+  plan_writer: { model?: string; prompt_version?: string; template?: boolean } | null;
+  generated_at: string;
+  self_marked_at: string | null;
+  loop_state?: string | null;
+}
+
+export const meStudyRecords = () =>
+  request<{ student_id: number; records: StudyRecordListItem[] }>("/me/study-records");
+
+/** get-or-generate：首次查看生成并缓存；幂等复用不重调 LLM。 */
+export const meStudyPlan = (kpCode: string) =>
+  request<StudyPlanView>(`/me/study-plan?kp_code=${encodeURIComponent(kpCode)}`);
+
+/** 自报「我学会了」：软闭合——只推进干预状态机，掌握度不动。 */
+export const meSelfMark = (recordId: number) =>
+  request<{ id: number; self_marked_at: string; row_done: boolean }>(
+    `/me/study-records/${recordId}/self-mark`,
+    json({})
+  );
+
 // ---- 学生门户预览（frontend-ends-design 超级账号：admin 只读镜像，形状与 /me/* 一致）----
 
 export const portalProfile = (studentId: number) =>
@@ -580,6 +636,17 @@ export const portalActionPlan = (studentId: number) =>
     `/admin/students/${studentId}/portal/action-plan`
   );
 
+// 预览镜像（study-loop-design）：只读——无记录 404，绝不触发生成
+export const portalStudyRecords = (studentId: number) =>
+  request<{ student_id: number; records: StudyRecordListItem[] }>(
+    `/admin/students/${studentId}/portal/study-records`
+  );
+
+export const portalStudyPlan = (studentId: number, kpCode: string) =>
+  request<StudyPlanView>(
+    `/admin/students/${studentId}/portal/study-plan?kp_code=${encodeURIComponent(kpCode)}`
+  );
+
 // ---- 管理端（frontend-ends-design §C/§D：账号管理面；admin-only）----
 
 export interface TeacherAccountRow {
@@ -589,6 +656,10 @@ export interface TeacherAccountRow {
   admin: boolean;
   kb_editor: boolean;
   classes: { class_id: number; name: string }[];
+  /** 学科管理员授权（学科×年级；rbac-scopes-design §7）。 */
+  subject_scopes: { subject: string; grade: number }[];
+  /** 担任班主任的班级 id 集。 */
+  homeroom_class_ids: number[];
 }
 
 export const listTeachers = () =>
@@ -603,10 +674,39 @@ export const createTeacher = (body: {
   kb_editor?: boolean;
 }) => request<{ teacher_id: number }>("/auth/teachers", json(body));
 
-export const grantTeacherClasses = (teacherId: number, class_ids: number[]) =>
+export const grantTeacherClasses = (
+  teacherId: number,
+  class_ids: number[],
+  subject?: string | null
+) =>
   request<{ teacher_id: number; added: number }>(
     `/auth/teachers/${teacherId}/classes`,
-    json({ class_ids })
+    json({ class_ids, subject: subject ?? null })
+  );
+
+/** 学科管理员授权（学科×年级，覆盖式；rbac-scopes-design §7）。 */
+export const setSubjectScopes = (
+  teacherId: number,
+  scopes: { subject: string; grade: number }[]
+) =>
+  request<{ teacher_id: number; subject_scopes: { subject: string; grade: number }[] }>(
+    `/auth/teachers/${teacherId}/subject-scopes`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scopes }),
+    }
+  );
+
+/** 指派/取消班主任（teacherId=null 取消；rbac-scopes-design §3）。 */
+export const setHomeroom = (classId: number, teacherId: number | null) =>
+  request<{ class_id: number; homeroom_teacher_id: number | null }>(
+    `/auth/classes/${classId}/homeroom`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teacher_id: teacherId }),
+    }
   );
 
 /** 授予/撤销知识库编辑权（两层写权：内容层资格；版本治理仍 admin）。 */
@@ -653,19 +753,24 @@ export const listInterventions = (params: {
   );
 };
 
-export const confirmIntervention = (id: number) =>
-  request<{ id: number; status: string; done_at: string }>(
-    `/interventions/${id}/confirm`,
-    { method: "POST", body: JSON.stringify({ note: null }) }
+/** withGroup：小组代表行批量落事实（同 group_ref 各行各自确认，操作层一次）。
+ * note：确认注记——班级行「派发AI学习方案」用它落系统语义。 */
+export const confirmIntervention = (id: number, withGroup = false, note?: string) =>
+  request<{ id: number; status: string; done_at: string; confirmed?: number }>(
+    `/interventions/${id}/confirm${withGroup ? "?with_group=true" : ""}`,
+    json({ note: note ?? null })
   );
 
-export const skipIntervention = (id: number, note?: string) =>
-  request<{ id: number; status: string }>(`/interventions/${id}/skip`, {
-    method: "POST",
-    body: JSON.stringify({ note: note ?? null }),
-  });
+export const skipIntervention = (id: number, withGroup = false, note?: string) =>
+  request<{ id: number; status: string; skipped?: number }>(
+    `/interventions/${id}/skip${withGroup ? "?with_group=true" : ""}`,
+    json({ note: note ?? null })
+  );
 
 export const interventionSummaryOf = (classId: number) =>
   request<InterventionSummary>(
     `/interventions/summary?class_id=${classId}`
   );
+
+// 定向复测（progress-loop-design P2）已于 2026-09-11 软退役：retestBlueprint /
+// linkRetest 端点与建卷入口移除，验证语义由软闭合+自然考试被动验证接管。

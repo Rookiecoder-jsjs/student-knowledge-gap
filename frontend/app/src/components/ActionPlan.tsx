@@ -1,4 +1,4 @@
-import { Check, X } from "@phosphor-icons/react";
+import { Check, PaperPlaneTilt, X } from "@phosphor-icons/react";
 import { useState } from "react";
 import {
   confirmIntervention,
@@ -8,6 +8,7 @@ import {
   effectLabel,
   interventionStatusLabel,
   kindLabel,
+  loopStateLabel,
 } from "../lib/labels";
 import type { InterventionRow, InterventionSummary } from "../lib/types";
 import { Badge, Button, EmptyState } from "./ui";
@@ -35,6 +36,21 @@ export function StatusChip({ status }: { status: string }) {
   return <Badge tone={tone}>{interventionStatusLabel(status)}</Badge>;
 }
 
+/** 进度生命周期 chip（闭环一期 P1 + study-loop-design）：自报待检验/待复测=warn ·
+ * 已闭合=accent · 未闭合=danger · 其余 neutral。只认折叠函数产出的封闭状态集。 */
+export function LoopStateChip({ state }: { state: string | null | undefined }) {
+  if (!state) return null;
+  const tone =
+    state === "已闭合"
+      ? "accent"
+      : state === "未闭合"
+        ? "danger"
+        : state === "待复测" || state === "持平复评" || state === "自报待检验"
+          ? "warn"
+          : "neutral";
+  return <Badge tone={tone}>{loopStateLabel(state)}</Badge>;
+}
+
 /** scope 标签：全班/小组(N 人)/个体。 */
 function ScopeTag({ row }: { row: InterventionRow }) {
   if (row.scope === "class") return <span className="text-ink-faint">全班</span>;
@@ -48,9 +64,15 @@ function ScopeTag({ row }: { row: InterventionRow }) {
 }
 
 /**
- * 行动明细面板（三层杠杆序由后端保证）：行内一键确认/跳过。
- * 密度 compact 用于嵌入卡片；确认/跳过即时生效并回调刷新。
+ * 行动明细面板（三层杠杆序由后端保证）：行内一键派发/确认/跳过。
+ * rows 是后端裁剪好的**待办队列**（≤10 条：仅挂起、覆盖抑制、小组按组
+ * 一行）——这里是纯渲染，不自行分页/展开；完整事实走学生页干预记录。
+ * 小组代表行按组批量落事实（操作层一次、事实层逐行）。
+ * 集体行（班级/小组）额外提供「派发AI方案」：一键把学习安排转为学生门户
+ * 自学（study-loop-design 混合派发），学生各自按归因生成方案、各自自报。
  */
+const DISPATCH_NOTE = "已派发AI学习方案（学生门户自学）";
+
 export function ActionPlanPanel({
   rows,
   onChanged,
@@ -63,12 +85,18 @@ export function ActionPlanPanel({
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const act = async (id: number, op: "confirm" | "skip") => {
-    setBusyId(id);
+  const act = async (
+    row: InterventionRow,
+    op: "confirm" | "skip" | "dispatch"
+  ) => {
+    setBusyId(row.id);
     setError(null);
     try {
-      if (op === "confirm") await confirmIntervention(id);
-      else await skipIntervention(id);
+      const batch = row.scope === "group";
+      if (op === "skip") await skipIntervention(row.id, batch);
+      else if (op === "dispatch")
+        await confirmIntervention(row.id, batch, DISPATCH_NOTE);
+      else await confirmIntervention(row.id, batch);
       onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -98,6 +126,10 @@ export function ActionPlanPanel({
               <span className="font-medium text-ink">{row.kp_name}</span>
               <Badge tone="neutral">{kindLabel(row.kind)}</Badge>
               <StatusChip status={row.status} />
+              {/* 已建议 与状态 chip 同义，不重复渲染 */}
+              {row.loop_state && row.loop_state !== "已建议" && (
+                <LoopStateChip state={row.loop_state} />
+              )}
             </p>
             <p className="mt-0.5 text-xs text-ink-faint">
               <ScopeTag row={row} />
@@ -106,11 +138,11 @@ export function ActionPlanPanel({
             </p>
           </div>
           {row.status === "suggested" && (
-            <div className="flex shrink-0 items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
               <Button
                 variant="secondary"
                 disabled={busyId === row.id}
-                onClick={() => act(row.id, "skip")}
+                onClick={() => act(row, "skip")}
                 aria-label={`跳过「${row.kp_name}」的${kindLabel(row.kind)}建议`}
                 className="px-2.5 py-1.5 text-xs"
               >
@@ -118,14 +150,26 @@ export function ActionPlanPanel({
                 跳过
               </Button>
               <Button
+                variant="secondary"
                 disabled={busyId === row.id}
-                onClick={() => act(row.id, "confirm")}
-                aria-label={`确认已执行「${row.kp_name}」的${kindLabel(row.kind)}建议`}
+                onClick={() => act(row, "confirm")}
+                aria-label={`确认已线下执行「${row.kp_name}」的${kindLabel(row.kind)}建议`}
                 className="px-2.5 py-1.5 text-xs"
               >
                 <Check size={13} />
-                已执行
+                线下已讲
               </Button>
+              {(row.scope === "class" || row.scope === "group") && (
+                <Button
+                  disabled={busyId === row.id}
+                  onClick={() => act(row, "dispatch")}
+                  aria-label={`派发「${row.kp_name}」的AI学习方案，学生门户自学`}
+                  className="px-2.5 py-1.5 text-xs"
+                >
+                  <PaperPlaneTilt size={13} />
+                  派发AI方案
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -134,7 +178,7 @@ export function ActionPlanPanel({
   );
 }
 
-/** 闭环摘要条：待确认 N · 采纳率 · 干预提升率 · 待复测 M（措辞成长框架）。 */
+/** 闭环摘要条：待确认 N · 采纳率 · 干预提升率 · 待验证 M（措辞成长框架）。 */
 export function InterventionSummaryStrip({
   summary,
 }: {
@@ -159,13 +203,19 @@ export function InterventionSummaryStrip({
         干预提升率{" "}
         <b className="tabular-nums text-accent-deep">
           {summary.intervention_lift_rate === null
-            ? "待复测验证"
+            ? "待考试验证"
             : pct(summary.intervention_lift_rate)}
         </b>
       </span>
       <span>
-        等待复测 <b className="tabular-nums text-ink">{summary.effects.awaiting_retest}</b> 项
+        待验证 <b className="tabular-nums text-ink">{summary.effects.awaiting_retest}</b> 项
       </span>
+      {summary.self_reported != null && summary.self_reported > 0 && (
+        <span>
+          自报待检验{" "}
+          <b className="tabular-nums text-ink">{summary.self_reported}</b> 项
+        </span>
+      )}
     </div>
   );
 }

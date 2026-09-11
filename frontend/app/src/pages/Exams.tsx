@@ -146,7 +146,10 @@ function ExamList({
                   <Card interactive className="h-full p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-ink">{e.name}</p>
+                        <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-ink">
+                          {e.name}
+                          {e.subject && <Badge tone="neutral">{e.subject}</Badge>}
+                        </p>
                         <p className="mt-0.5 text-xs text-ink-faint tabular-nums">
                           {e.exam_date} · {e.type} · {e.question_count} 题
                         </p>
@@ -285,13 +288,16 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
         </Card>
       )}
 
-      {/* 区块三：行动明细（干预闭环唯一全量版面；行内一键确认/跳过） */}
+      {/* 区块三：行动明细（待办队列——后端折叠排序，仅挂起建议 ≤10 条；
+          行内一键确认/跳过，小组代表行按组批量落事实） */}
       <Card className="p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-semibold">行动明细</p>
           <p className="text-xs text-ink-faint">
             {s.actions.pending_confirm > 0
-              ? `${s.actions.pending_confirm} 条待确认`
+              ? s.actions.pending_confirm > s.actions.rows.length
+                ? `待确认 ${s.actions.pending_confirm} 条 · 系统已按杠杆排序，先做这 ${s.actions.rows.length} 条`
+                : `${s.actions.pending_confirm} 条待确认`
               : "暂无待确认建议"}
           </p>
         </div>
@@ -300,7 +306,7 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
         </div>
       </Card>
 
-      {/* 区块四：闭环条（采纳率 · 干预提升率 · 待复测） */}
+      {/* 区块四：闭环条（采纳率 · 干预提升率 · 待验证）——定向复测入口已随复测小卷软退役移除 */}
       <InterventionSummaryStrip summary={s.intervention_summary} />
 
       {/* 区块五：往期考试报告存档 */}

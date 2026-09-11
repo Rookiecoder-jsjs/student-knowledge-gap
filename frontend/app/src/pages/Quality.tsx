@@ -53,7 +53,7 @@ export default function Quality() {
               </option>
               {(exams.data?.exams ?? []).map((e) => (
                 <option key={e.exam_id} value={e.exam_id}>
-                  {e.name}（{e.exam_date}）
+                  {e.name}（{e.exam_date}{e.subject ? ` · ${e.subject}` : ""}）
                 </option>
               ))}
             </select>

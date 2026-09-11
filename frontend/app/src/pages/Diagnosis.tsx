@@ -1,8 +1,9 @@
 import { CaretDown, CaretRight, HandPalm, Printer } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ActionPlanPanel,
+  LoopStateChip,
 } from "../components/ActionPlan";
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
@@ -94,6 +95,12 @@ export default function Diagnosis() {
 
   return (
     <Page accent={ACCENTS.student}>
+      <Link
+        to={`/c/${cid}/students`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
+      >
+        ← 返回学生列表
+      </Link>
       <PageHeader
         title={
           student
@@ -184,8 +191,10 @@ export default function Diagnosis() {
           )}
         </section>
 
-        {/* 右：结构化薄弱点与归因（诊断单视图） / 干预记录（两视图共用） */}
-        <section className="space-y-6">
+        {/* 右：结构化薄弱点与归因（诊断单视图） / 干预记录（两视图共用）。
+            lg+ 右栏吸附随屏（self-start 摆脱 grid 拉伸 + max-h + 内部滚动），
+            列表条数不再把整页拉到与正文等高；print 还原平铺，打印以左栏正文为准。 */}
+        <section className="space-y-6 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:pr-1 print:static print:max-h-none print:overflow-visible">
           <div>
             <SectionTitle count={weak.data?.weak.length ?? 0}>待加强知识点</SectionTitle>
             {weak.loading && <Skeleton rows={3} />}
@@ -220,6 +229,8 @@ export default function Diagnosis() {
                       <Badge>变化趋势 {trajLabel(w.trajectory)}</Badge>
                       {w.class_common && <Badge tone="warn">班级共性</Badge>}
                       {w.stale && <Badge tone="warn">可能已变化</Badge>}
+                      {/* 干预进度（闭环一期 P1）：与行动明细同源折叠 */}
+                      {w.loop_state && <LoopStateChip state={w.loop_state} />}
                     </p>
                     </Card>
                   </StaggerItem>

@@ -8,6 +8,9 @@ export interface ClassSummary {
   school_id: number;
   student_count: number;
   exam_count: number;
+  /** 班主任（rbac-scopes-design §3）：null=未指派。 */
+  homeroom_teacher_id?: number | null;
+  homeroom_teacher_name?: string | null;
 }
 
 export interface ClassOverviewLatestExam {
@@ -56,6 +59,8 @@ export interface ExamSummary {
   exam_date: string;
   type: string;
   source: string;
+  /** 考试学科（rbac-scopes-design 承重墙；null=存量未标注）。 */
+  subject: string | null;
   question_count: number;
   response_counts: Record<string, number>;
   unreviewed_tags: number;
@@ -147,6 +152,8 @@ export interface WeakItem {
   trajectory: string;
   stale: boolean;
   class_common: boolean;
+  /** 干预进度生命周期（闭环一期 P1；app/pipeline/progress.py 折叠派生）。 */
+  loop_state?: string | null;
 }
 
 export interface Weaknesses {
@@ -254,6 +261,7 @@ export interface BatchJobSummary {
 export interface KpVersion {
   id: number;
   subject: string;
+  grade: number | null;
   textbook_edition: string;
   version: string;
   status: string;
@@ -350,10 +358,16 @@ export interface InterventionRow {
   kp_code: string;
   kp_name: string;
   note: string | null;
+  /** 干预进度生命周期（闭环一期 P1）：学生行为折叠判决，集体行为三态视图。 */
+  loop_state?: string | null;
+  /** 历史关联的诊断复测卷（闭环一期 P2；2026-09-11 软退役——只读保留，无新写入）。 */
+  retest_exam_id?: number | null;
   suggested_at: string | null;
   done_at: string | null;
   taught?: boolean;
   group_size?: number;
+  /** 小组行共享的组引用；队列按组折叠成一行，确认/跳过按组批量落事实。 */
+  group_ref?: string | null;
   student_id?: number;
   alias?: string | null;
 }
@@ -372,12 +386,16 @@ export interface InterventionSummary {
   };
   intervention_lift_rate: number | null;
   evaluable_count: number;
+  /** 学生自报闭环量（study-loop-design）：已自报待下一场考试被动验证的 (学生, 知识点) 数。 */
+  self_reported?: number;
 }
 
 export interface ActionPlanView {
   class_id: number;
   exam_id: number | null;
+  /** 全量积压口径（挂起建议总数）——诚实展示，不随队列裁剪变小。 */
   pending_confirm: number;
+  /** 待办队列：后端折叠排序后的前 10 条（仅挂起、班级行覆盖抑制、小组按组一行）。 */
   rows: InterventionRow[];
   counts: { class: number; group: number; student: number };
 }

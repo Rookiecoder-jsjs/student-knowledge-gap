@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BookOpen,
   ChartLine,
   ClipboardText,
   Student,
@@ -8,7 +9,8 @@ import {
 import { useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AccountCluster, TopBar, TopBarNav } from "../components/TopBar";
-import { Badge, Card, EmptyState, ErrorState, Skeleton } from "../components/ui";
+import { LoopStateChip } from "../components/ActionPlan";
+import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "../components/ui";
 import { ReportMarkdown } from "../components/Markdown";
 import {
   meActionPlan,
@@ -16,25 +18,31 @@ import {
   meProfile,
   meReportFull,
   meReports,
+  meSelfMark,
+  meStudyPlan,
+  meStudyRecords,
   meWeaknesses,
   portalActionPlan,
   portalMastery,
   portalProfile,
   portalReportFull,
   portalReports,
+  portalStudyPlan,
+  portalStudyRecords,
   portalWeaknesses,
 } from "../lib/api";
+import type { StudyRecordListItem } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
 import type { MasteryItem, WeakItem } from "../lib/types";
 import { ACCENTS } from "../lib/theme";
 
 /**
- * 学生自服务门户（auth-roles-design §6 + frontend-ends-design 学生端）：只读 /me 面——
- * 我的薄弱/掌握/已签发报告/改进单。按 URL 路由驱动（/portal 系列），报告可深链。
+ * 学生自服务门户（auth-roles-design §6 + frontend-ends-design 学生端）：/me 面——
+ * 我的薄弱/掌握/已签发报告/改进单/我的学习。按 URL 路由驱动（/portal 系列），报告可深链。
  *
  * 两种主体来源共用同一套渲染（超级账号设计）：
- * - ``self``：学生本人，读 /me/*；
+ * - ``self``：学生本人，读 /me/*（学习 tab 含唯一可写操作：方案生成 + 自报）；
  * - ``preview``：admin 预览指定学生，读 /admin/students/{id}/portal/*——后端镜像
  *   端点与 /me 同源同形状（同样只读、同样只发 issued），是端边界内的「查看」而非
  *   切换身份。
@@ -61,10 +69,11 @@ function portalCall<T>(
     : own();
 }
 
-type Tab = "weak" | "mastery" | "reports" | "plan";
+type Tab = "weak" | "mastery" | "reports" | "plan" | "study";
 
 const TABS: { key: Tab; label: string; icon: typeof Warning; seg: string }[] = [
   { key: "weak", label: "我的薄弱点", icon: Warning, seg: "" },
+  { key: "study", label: "我的学习", icon: BookOpen, seg: "/study" },
   { key: "mastery", label: "我的掌握度", icon: ChartLine, seg: "/mastery" },
   { key: "reports", label: "我的报告", icon: ClipboardText, seg: "/reports" },
   { key: "plan", label: "我的改进单", icon: Student, seg: "/plan" },
@@ -72,10 +81,16 @@ const TABS: { key: Tab; label: string; icon: typeof Warning; seg: string }[] = [
 
 function tabFromPath(path: string, base: string): Tab {
   const rest = path.startsWith(base) ? path.slice(base.length) : "";
+  if (rest.startsWith("/study")) return "study";
   if (rest.startsWith("/mastery")) return "mastery";
   if (rest.startsWith("/reports")) return "reports";
   if (rest.startsWith("/plan")) return "plan";
   return "weak";
+}
+
+/** 学习 tab 路由基座（薄弱卡「开始学习」深链用）：self → /portal/study，preview → 教学树。 */
+function studyBase(source: PortalSource): string {
+  return source.kind === "preview" ? `${source.base ?? ""}/study` : "/portal/study";
 }
 
 export default function StudentPortal({ source }: { source: PortalSource }) {
@@ -160,6 +175,7 @@ export default function StudentPortal({ source }: { source: PortalSource }) {
             </p>
           )}
           {tab === "weak" && <WeakTab source={source} />}
+          {tab === "study" && <StudyTab source={source} />}
           {tab === "mastery" && <MasteryTab source={source} />}
           {tab === "reports" && (
             <ReportsTab source={source} deepReportId={Number(sp.get("report_id")) || null} />
@@ -209,13 +225,208 @@ function WeakTab({ source }: { source: PortalSource }) {
                 <Badge>{w.code}</Badge>
                 {w.class_common && <Badge tone="warn">班级共性</Badge>}
                 {w.stale && <Badge tone="danger">久未更新</Badge>}
+                {/* 干预进度（闭环一期 P1）：发现薄弱 → 老师已安排 → 待复测 → 已见效 */}
+                {w.loop_state && <LoopStateChip state={w.loop_state} />}
               </div>
               <p className="mt-1 text-xs text-ink-faint">{w.criterion}</p>
             </div>
             {w.mastery != null && <Pct value={w.mastery} />}
           </div>
+          {/* 自学入口（study-loop-design）：修复段学生自驱——AI 按该生错因生成方案 */}
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <span className="text-[11px] text-ink-faint">
+              生成针对你的讲解与变式练习，学完自行标记进度
+            </span>
+            <Link
+              to={`${studyBase(source)}?kp_code=${encodeURIComponent(w.code)}`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent-deep transition-colors hover:bg-accent/20"
+            >
+              <BookOpen size={13} />
+              开始学习
+            </Link>
+          </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+/**
+ * 我的学习（study-loop-design）：方案列表 + 方案详情（?kp_code= 深链）。
+ * self 可生成（首次查看 get-or-generate）与自报「我学会了」；preview 严格只读
+ * （无记录显示空态，绝不触发生成；无自报按钮）。
+ */
+function StudyTab({ source }: { source: PortalSource }) {
+  const [sp] = useSearchParams();
+  const kpCode = sp.get("kp_code");
+  return kpCode ? (
+    <StudyPlanDetail source={source} kpCode={kpCode} />
+  ) : (
+    <StudyList source={source} />
+  );
+}
+
+function StudyList({ source }: { source: PortalSource }) {
+  const { data, loading, error, reload } = useAsync(
+    () => portalCall(source, meStudyRecords, portalStudyRecords),
+    [source.kind, source.studentId]
+  );
+  const records = data?.records ?? [];
+  const doing = records.filter((r: StudyRecordListItem) => !r.self_marked_at);
+  const marked = records.filter((r: StudyRecordListItem) => r.self_marked_at);
+
+  const row = (r: StudyRecordListItem) => (
+    <Card key={r.id} className="p-0">
+      <Link
+        to={`${studyBase(source)}?kp_code=${encodeURIComponent(r.kp_code)}`}
+        className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-2/60"
+      >
+        <div>
+          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            {r.kp_name}
+            <Badge>{r.kp_code}</Badge>
+            {r.loop_state && <LoopStateChip state={r.loop_state} />}
+          </p>
+          <p className="mt-0.5 text-[11px] text-ink-faint">
+            方案生成于 {r.generated_at?.replace("T", " ").slice(0, 16)}
+            {r.self_marked_at
+              ? ` · 自报于 ${r.self_marked_at.replace("T", " ").slice(0, 16)}`
+              : ""}
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1 text-xs text-accent">
+          <BookOpen size={13} />
+          查看
+        </span>
+      </Link>
+    </Card>
+  );
+
+  return (
+    <div className="space-y-3">
+      <SectionTitle>我的学习</SectionTitle>
+      {loading && <Skeleton rows={3} />}
+      {error && <ErrorState message={error} onRetry={reload} />}
+      {data && records.length === 0 && (
+        <EmptyState
+          title="还没有学习方案"
+          hint="去「我的薄弱点」挑一个知识点点「开始学习」，AI 会生成针对你的讲解与练习。"
+        />
+      )}
+      {doing.length > 0 && (
+        <>
+          <p className="text-xs font-medium text-ink-soft">学习中（学完记得自报进度）</p>
+          {doing.map(row)}
+        </>
+      )}
+      {marked.length > 0 && (
+        <>
+          <p className="mt-4 text-xs font-medium text-ink-soft">
+            已自报 · 待下一场考试检验
+          </p>
+          {marked.map(row)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StudyPlanDetail({
+  source,
+  kpCode,
+}: {
+  source: PortalSource;
+  kpCode: string;
+}) {
+  const isPreview = source.kind === "preview";
+  const plan = useAsync(
+    () =>
+      portalCall(
+        source,
+        () => meStudyPlan(kpCode),
+        (sid) => portalStudyPlan(sid, kpCode)
+      ),
+    [source.kind, source.studentId, kpCode]
+  );
+  const [busy, setBusy] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+  // 预览 404（学生尚未生成方案，后端 LookupError 文案）转为空态而非错误
+  const notFound = isPreview && (plan.error ?? "").includes("还没有生成过学习方案");
+
+  const doMark = async () => {
+    if (!plan.data || plan.data.self_marked_at) return;
+    setBusy(true);
+    setMarkError(null);
+    try {
+      await meSelfMark(plan.data.id);
+      await plan.reload();
+    } catch (e) {
+      setMarkError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <SectionTitle>学习方案{plan.data ? ` · ${plan.data.kp_name}` : ""}</SectionTitle>
+        <Link
+          to={studyBase(source)}
+          className="shrink-0 text-xs text-accent hover:underline"
+        >
+          ← 返回列表
+        </Link>
+      </div>
+      {plan.loading && <Skeleton rows={6} />}
+      {plan.error && !notFound && <ErrorState message={plan.error} onRetry={plan.reload} />}
+      {notFound && (
+        <EmptyState
+          title="该知识点还没有学习方案"
+          hint="学生在本人门户打开该知识点的「开始学习」后，这里会显示同一份方案（只读）。"
+        />
+      )}
+      {plan.data && (
+        <Card className="p-6">
+          {plan.data.plan_writer && !plan.data.plan_writer.template && (
+            <p className="mb-3 text-[11px] text-ink-faint">
+              AI 生成{plan.data.plan_writer.model ? ` · ${plan.data.plan_writer.model}` : ""}
+              ，数字与判定以系统计算为准
+            </p>
+          )}
+          <ReportMarkdown content={plan.data.plan_markdown} />
+          <div className="mt-5 border-t border-line pt-4">
+            {plan.data.self_marked_at ? (
+              <p className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                {plan.data.loop_state && <LoopStateChip state={plan.data.loop_state} />}
+                <span>
+                  自报于 {plan.data.self_marked_at.replace("T", " ").slice(0, 16)} ·
+                  下一场考试该点的表现会自动验证
+                </span>
+              </p>
+            ) : isPreview ? (
+              <p className="text-xs text-ink-faint">
+                管理员预览只读：自报操作请以学生本人登录后进行。
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button disabled={busy} onClick={doMark}>
+                  <BookOpen size={14} />
+                  我学会了
+                </Button>
+                <span className="text-xs text-ink-faint">
+                  请先完成上面的练习再自报——下一场考试见真章
+                </span>
+              </div>
+            )}
+            {markError && (
+              <p className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
+                {markError}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

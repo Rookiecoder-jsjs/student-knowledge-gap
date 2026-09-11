@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { getMastery, listStudents } from "../lib/api";
 import { useAsync } from "../lib/hooks";
@@ -29,6 +29,12 @@ export default function Mastery() {
 
   return (
     <Page accent={ACCENTS.student}>
+      <Link
+        to={`/c/${cid}/students`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
+      >
+        ← 返回学生列表
+      </Link>
       <PageHeader
         title={student ? `${student.name_or_alias} 的掌握程度画像` : "掌握程度画像"}
         desc="掌握程度会随时间慢慢下降，只反映该生自身变化"
