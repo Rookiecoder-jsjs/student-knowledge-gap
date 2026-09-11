@@ -215,8 +215,8 @@ def _sse_text(r) -> str:
     return r.text
 
 
-def test_mcp_handshake_lists_nine_tools(sec_client):
-    """带 token 走完整 initialize → tools/list：sc 9 工具在场（挂载端到端）。"""
+def test_mcp_handshake_lists_ten_tools(sec_client):
+    """带 token 走完整 initialize → tools/list：sc 10 工具在场（挂载端到端）。"""
     import json
 
     client, S, ids = sec_client
@@ -244,6 +244,7 @@ def test_mcp_handshake_lists_nine_tools(sec_client):
     expected = {
         "get_class_overview", "get_exam_summary", "get_kp_mastery",
         "run_attribution", "get_kp_detail", "get_teaching_progress",
-        "list_students", "create_report_draft_tool", "record_intervention_tool",
+        "list_students", "get_student_progress",
+        "create_report_draft_tool", "record_intervention_tool",
     }
     assert names == expected

@@ -460,7 +460,7 @@ def test_summary_denominator_semantics(session, env):
 
 
 def test_action_plan_view_ordering(session, env):
-    """全班行在前 → 小组 → 个体；pending 计数正确；三层计数齐全。"""
+    """全班行在前 → 小组 → 个体；rows 为队列（仅挂起）而 pending 是全量积压。"""
     _weak_env_common(session, env)
     exam = _latest_exam(session)
     _gen(session, env, exam=exam)
@@ -470,7 +470,6 @@ def test_action_plan_view_ordering(session, env):
     order = {"class": 0, "group": 1, "student": 2}
     scopes = [order[r["scope"]] for r in view["rows"]]
     assert scopes == sorted(scopes), "三层杠杆顺序：全班→小组→个体"
-    assert view["pending_confirm"] == sum(
-        1 for r in view["rows"] if r["status"] == "suggested"
-    )
+    assert all(r["status"] == "suggested" for r in view["rows"]), "队列只放挂起建议"
+    assert view["pending_confirm"] >= len(view["rows"]), "积压数 ≥ 队列行数"
     assert view["counts"]["class"] >= 1, "3/6 弱应产出 reteach 班级行"

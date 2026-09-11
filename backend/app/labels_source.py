@@ -59,8 +59,24 @@ INTERVENTION_STATUS_LABEL: dict[str, str] = {
 }
 
 EFFECT_LABEL: dict[str, str] = {
-    "awaiting_retest": "等待复测",
+    "awaiting_retest": "等待验证",
     "improved": "有提升",
     "flat": "暂无明显变化",
     "declined": "有所回落",
+}
+
+# 干预进度生命周期（progress-loop-design P1；app/pipeline/progress.py LOOP_*
+# 常量与前端 labels.ts 共用此真源）——键即折叠函数产出的中文状态值
+LOOP_STATE_LABEL: dict[str, str] = {
+    "未学到": "还没学到",
+    "证据不足": "证据不足",
+    "达标": "掌握达标",
+    "薄弱待干预": "待安排干预",
+    "已建议": "已建议行动",
+    "待复测": "干预中 · 待验证",
+    "自报待检验": "已自报 · 待检验",
+    "已闭合": "已见效",
+    "持平复评": "复评持平",
+    "未闭合": "需再加码",
+    "已跳过": "已跳过",
 }

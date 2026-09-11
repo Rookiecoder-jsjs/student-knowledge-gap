@@ -44,6 +44,7 @@ from app.mcp_tools import (  # noqa: E402
     get_exam_summary as _get_exam_summary,
     get_kp_detail as _get_kp_detail,
     get_kp_mastery as _get_kp_mastery,
+    get_student_progress as _get_student_progress,
     get_teaching_progress as _get_teaching_progress,
     list_students as _list_students,
     record_intervention as _record_intervention,
@@ -195,7 +196,7 @@ def get_exam_summary(
     """
     def op(session):
         _guard_class(session, class_id)
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session, class_id)
         return _get_exam_summary(session, graph, class_id, exam_id)
 
     return _run(op, "GET /classes/{id}/quality-report", {"class_id": class_id, "exam_id": exam_id})
@@ -219,7 +220,7 @@ def get_kp_mastery(
     """
     def op(session):
         _guard_class(session, class_id)
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session, class_id)
         _check_class_students(session, class_id, student_ids)
         kp_ids: list[int] | None = None
         if kp_codes:
@@ -244,6 +245,28 @@ def get_kp_mastery(
 
 
 @mcp.tool(annotations=_READONLY)
+def get_student_progress(
+    student_id: Annotated[int, Field(ge=1, description="学生 id")],
+    as_of: Annotated[str | None, Field(description="截止日期 YYYY-MM-DD；缺省今天")] = None,
+) -> dict:
+    """查询一名学生各知识点的干预进度生命周期：薄弱待干预/已建议/待复测/已闭合/未闭合等状态。
+
+    与教师端诊断页的进度状态同源（同一折叠函数派生，非另算）。适用于「上次说他哪个点薄弱，现在怎么样了」「干预做了有没有效果」「哪些点还在等复测」类对账与追踪问题。返回按需要行动优先排序，达标点只给计数。
+    """
+    def op(session):
+        from app.models import Student
+
+        stu = session.get(Student, student_id)
+        if stu is None:
+            raise ToolInputError(f"学生 {student_id} 不存在")
+        _guard_class(session, stu.class_id)
+        _, graph = resolve_graph(session, stu.class_id)
+        return _get_student_progress(session, graph, student_id, _opt_date(as_of))
+
+    return _run(op, "GET /students/{id}/weaknesses", {"student_id": student_id, "as_of": as_of})
+
+
+@mcp.tool(annotations=_READONLY)
 def run_attribution(
     student_id: Annotated[int, Field(ge=1, description="学生 id")],
     as_of: Annotated[str | None, Field(description="截止日期 YYYY-MM-DD；缺省今天")] = None,
@@ -259,7 +282,7 @@ def run_attribution(
         if stu is None:
             raise ToolInputError(f"学生 {student_id} 不存在")
         _guard_class(session, stu.class_id)
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session)
         return _run_attribution(session, graph, student_id, _opt_date(as_of))
 
     return _run(op, "POST /students/{id}/attributions", {"student_id": student_id, "as_of": as_of})
@@ -283,7 +306,7 @@ def get_kp_detail(
         target = raw
 
     def op(session):
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session)
         return _get_kp_detail(session, graph, target)
 
     return _run(op, "GET /kb/kps/{id}", {"code_or_id": code_or_id})
@@ -343,7 +366,7 @@ def create_report_draft_tool(
     由教师在收件箱中签发或打回——你没有签发权限，也无需等待签发结果。
     """
     def op(session):
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session)
         if student_id is not None:
             from app.models import Student
 
@@ -397,7 +420,7 @@ def record_intervention_tool(
         if stu is None:
             raise ToolInputError(f"学生 {student_id} 不存在")
         _guard_class(session, stu.class_id)
-        graph = resolve_graph(session)
+        _, graph = resolve_graph(session)
         return _record_intervention(
             session, graph,
             student_id=student_id, kp_code=kp_code, kind=kind,

@@ -24,7 +24,9 @@ from app.llm.audit import wrap_client
 
 load_dotenv()  # .env：SC_LLM_PROVIDER / SC_LLM_API_KEY / SC_LLM_MODEL / SC_LLM_BASE_URL
 
-TIMEOUT = 120.0
+# 请求超时（秒）。长输出任务（学习方案等）在 max 级模型上可能超 120s，
+# 可用 SC_LLM_TIMEOUT 上调；部署方也可换更快的 SC_LLM_TEXT_MODEL 从根上解决。
+TIMEOUT = float(os.environ.get("SC_LLM_TIMEOUT", "120"))
 
 # G13：LLM 幂等键（provider 支持时透传，避免 retry 重复计费）。
 # 开启后按 (model, system, user, image) 内容哈希派生 Idempotency-Key 头，稳定跨重试--

@@ -155,6 +155,11 @@ LLM_CB_COOLDOWN_SECONDS = max(1, int(_env("SC_LLM_CB_COOLDOWN_SECONDS", "60")))
 # 默认开会让任何触发报告生成的测试/演示都真调 LLM 消耗额度；部署方显式置 1 开启。
 LLM_PLAN_ENABLE = _env("SC_LLM_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
 
+# AI 学习方案生成（study-loop-design）：学生门户「开始学习」的方案正文（讲解+变式例题）。
+# 与 LLM_PLAN_ENABLE 同纪律默认关——模板兜底保证自报闭环不断（学习方案退化为
+# 教材内容+错因提示），部署方显式置 1 开启；熔断独立于 plan_writer。
+STUDY_PLAN_ENABLE = _env("SC_STUDY_PLAN_ENABLE", "").lower() in ("1", "true", "yes")
+
 # 干预闭环（intervention-loop-design.md §8）：建议生成与效果验证参数。
 # ACTION_PLAN_ENABLE 默认开——纯计算层零 LLM、零外部调用，关闭仅用于试点回退
 # （关闭时提交不生成干预建议；改进单仍随诊断单走 SC_LLM_PLAN_ENABLE 路径）。

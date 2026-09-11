@@ -41,15 +41,23 @@ class ToolInputError(ValueError):
     """参数非法（越界/格式错）。包装层直接把 message 回给模型。"""
 
 
-def resolve_graph(session: Session) -> tuple:
-    """active 知识库解析 → (kb_version_id, KpGraph)。无 active 抛 ToolInputError。
+def resolve_graph(session: Session, class_id: int | None = None) -> tuple:
+    """active 知识库解析（RBAC 口径，rbac-scopes-design §5）：有 class_id 时按
+    调用者视野解析学科——科任学科绑定行覆盖班级默认（auth.class_subject），
+    无绑定 → 班级默认学科。无 active 抛 ToolInputError。
 
     MCP 场景没有 HTTP 层，这里复刻 deps._active_kb 的 strict 语义但不抛 HTTP 异常。
     """
+    from app.auth import class_subject, mcp_context
     from app.kb.resolver import active_kb
 
+    subject: str | None = None
+    if class_id is not None:
+        clazz = session.get(Class, class_id)
+        if clazz is not None:
+            subject = class_subject(session, mcp_context(session), clazz)
     try:
-        kb = active_kb(session)
+        kb = active_kb(session, subject)
     except KbNotActiveError as e:
         raise ToolInputError(str(e)) from e
     if kb is None:
@@ -186,6 +194,73 @@ def get_kp_mastery(
         "mastered_sample": ok_rows[:10],
         "total_pairs": len(rows),
         "truncated": len(rows) > len(weak_rows[:_WEAK_FIRST_LIMIT]) + len(ok_rows[:10]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 2b. get_student_progress —— 单生干预进度生命周期（闭环一期 P1，对账数据源）
+# ---------------------------------------------------------------------------
+
+# 呈现排序：需要行动/关注的在前，已闭合次之
+_PROGRESS_ORDER = {
+    "薄弱待干预": 0,
+    "已建议": 1,
+    "待复测": 2,
+    "未闭合": 3,
+    "持平复评": 4,
+    "已跳过": 5,
+    "证据不足": 6,
+    "未学到": 7,
+    "已闭合": 8,
+}
+
+
+def get_student_progress(
+    session: Session,
+    graph: KpGraph,
+    student_id: int,
+    as_of: date | None = None,
+) -> dict:
+    """单生知识点进度生命周期（诊断 → 干预 → 复测 → 闭合）。
+
+    与 /students/{id}/weaknesses 的 loop_state 出自同一折叠函数
+    （app.pipeline.progress，单一真相）；只读不写库。达标点只给计数不逐条列——
+    上下文预算给「需要关注的」。
+    """
+    from app.pipeline.progress import LOOP_ON_TRACK, loop_states_for_student
+
+    stu = session.get(Student, student_id)
+    if stu is None:
+        raise LookupError(f"学生 {student_id} 不存在")
+    when = _as_dt(as_of)
+    loop = loop_states_for_student(session, graph, student_id, stu.class_id, when)
+    rows: list[dict] = []
+    on_track = 0
+    for kp_id in graph.grade7_kp_ids():
+        state = loop.get(kp_id)
+        if state is None:
+            continue
+        if state == LOOP_ON_TRACK:
+            on_track += 1
+            continue
+        kp = graph.kp(kp_id)
+        m = mastery_at(session, student_id, kp_id, when)
+        rows.append(
+            {
+                "kp_code": kp.code,
+                "kp_name": kp.name,
+                "state": state,
+                "mastery": round(m, 3) if m is not None else None,
+            }
+        )
+    rows.sort(key=lambda r: (_PROGRESS_ORDER.get(r["state"], 99), r["kp_code"]))
+    return {
+        "student_id": student_id,
+        "as_of": str(when.date()),
+        "attention": rows[:MAX_PAGE],
+        "attention_total": len(rows),
+        "on_track_count": on_track,
+        "truncated": len(rows) > MAX_PAGE,
     }
 
 

@@ -228,7 +228,7 @@ def test_list_students_pagination(graph, session):
 # ---------------------------------------------------------------------------
 
 
-def test_server_registers_nine_tools():
+def test_server_registers_ten_tools():
     import asyncio
 
     from app.mcp_server import mcp
@@ -243,13 +243,15 @@ def test_server_registers_nine_tools():
         "get_kp_detail",
         "get_teaching_progress",
         "list_students",
+        # 闭环一期 P1 对账工具（progress-loop-design）
+        "get_student_progress",
         # Phase 3 批次B 写工具（过审批门）
         "create_report_draft_tool",
         "record_intervention_tool",
     }
     readonly = {"get_class_overview", "get_exam_summary", "get_kp_mastery",
                 "run_attribution", "get_kp_detail", "get_teaching_progress",
-                "list_students"}
+                "list_students", "get_student_progress"}
     writes = {"create_report_draft_tool", "record_intervention_tool"}
     for t in tools:
         ann = t.annotations or {}

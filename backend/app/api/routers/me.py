@@ -1,8 +1,13 @@
-"""学生自服务只读面（auth-roles-design §6）：/me 命名空间 + 管理员预览镜像。
+"""学生自服务面（auth-roles-design §6）：/me 命名空间 + 管理员预览镜像。
 
 不复用 /students/{id}（防 id 探测）——学生主体只能读自己的掌握/薄弱/已签发报告。
 全部**只读、只发 issued 内容**；学生永不触发分析/签发/写操作（draft 不可见）。
 教师视角走原 /students/{id}/... 端点不变。
+
+**刻意例外（study-loop-design）**：学习方案的 get-or-generate（``/me/study-plan``）
+与学生自报（``/me/study-records/{id}/self-mark``）是学生自服务的写端点——修复段
+责任重分配后学生是学习执行主体。仅限 self 端点可写；预览镜像仍严格只读
+（不触发生成、无自报按钮的数据面）。
 
 管理员预览（frontend-ends-design 超级账号）：``/admin/students/{id}/portal/*`` 与
 /me 共用同一组 payload 函数——只读、只发 issued 的语义由构造保证一致，只是主体从
@@ -29,9 +34,11 @@ from app.api.deps import (
     require_student,
 )
 from app.inbox import TYPE_LABELS
-from app.models import Report, Student
+from app.models import Report, StudyRecord, Student
 from app.pipeline.mastery import mastery_at
+from app.pipeline.progress import loop_states_for_student
 from app.pipeline.weakness import assess_student_kps
+from app.study import get_or_generate_study_record, self_mark_learned, self_report_map
 
 router = APIRouter()
 
@@ -56,7 +63,7 @@ def _profile_payload(s: Student) -> dict:
 
 def _mastery_payload(db: Session, s: Student, when: datetime) -> dict:
     """掌握度（与学生诊断单/教师端同算法，仅限该生）。"""
-    kb = _active_kb(db)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
     graph = _graph(db, kb.id)
     out = []
     for kp_id in graph.grade7_kp_ids():
@@ -69,9 +76,11 @@ def _mastery_payload(db: Session, s: Student, when: datetime) -> dict:
 
 def _weaknesses_payload(db: Session, s: Student, when: datetime) -> dict:
     """薄弱点（与教师端 /students/{id}/weaknesses 同形状）。"""
-    kb = _active_kb(db)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
     graph = _graph(db, kb.id)
     assessments = assess_student_kps(db, graph, s.id, s.class_id, when)
+    # 进度生命周期（闭环一期 P1）：薄弱项携带干预进度状态，门户呈现闭环故事
+    loop = loop_states_for_student(db, graph, s.id, s.class_id, when, assessments=assessments)
     return {
         "student_id": s.id,
         "as_of": str(when.date()),
@@ -85,6 +94,7 @@ def _weaknesses_payload(db: Session, s: Student, when: datetime) -> dict:
                 "trajectory": a.trajectory,
                 "stale": a.stale,
                 "class_common": a.is_class_common,
+                "loop_state": loop.get(a.kp_id),
             }
             for a in assessments
             if a.is_weak
@@ -173,6 +183,83 @@ def _action_plan_payload(db: Session, s: Student) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 学习方案 + 自报（study-loop-design）：/me 唯一可写面（预览镜像严格只读）
+# ---------------------------------------------------------------------------
+
+
+def _study_list_payload(db: Session, s: Student, when: datetime) -> dict:
+    """学习记录列表（不含方案正文；行级带折叠态，弱项卡片/学习页共用）。"""
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    graph = _graph(db, kb.id)
+    recs = list(
+        db.scalars(
+            select(StudyRecord)
+            .where(StudyRecord.student_id == s.id)
+            .order_by(StudyRecord.id.desc())
+        )
+    )
+    loop = loop_states_for_student(
+        db, graph, s.id, s.class_id, when,
+        self_reports=self_report_map(db, [s.id]),
+    )
+    return {
+        "student_id": s.id,
+        "records": [
+            {
+                "id": r.id,
+                "kp_code": graph.kp(r.kp_id).code,
+                "kp_name": graph.kp(r.kp_id).name,
+                "generated_at": r.generated_at.isoformat(timespec="seconds"),
+                "self_marked_at": r.self_marked_at.isoformat(timespec="seconds")
+                if r.self_marked_at
+                else None,
+                "loop_state": loop.get(r.kp_id),
+            }
+            for r in recs
+        ],
+    }
+
+
+def _study_plan_payload(
+    db: Session, s: Student, kp_code: str, when: datetime, *, allow_generate: bool
+) -> dict:
+    """学习方案视图。self 走 get-or-generate（可写）；预览 allow_generate=False
+    （无记录 404，绝不触发 LLM/写库）。"""
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    graph = _graph(db, kb.id)
+    kp_id = next(
+        (kid for kid in graph.grade7_kp_ids() if graph.kp(kid).code == kp_code), None
+    )
+    if kp_id is None:
+        raise HTTPException(404, "知识点不存在")
+    try:
+        rec = get_or_generate_study_record(
+            db, graph, s, kp_id, allow_generate=allow_generate, now=when
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    loop = loop_states_for_student(
+        db, graph, s.id, s.class_id, when,
+        self_reports=self_report_map(db, [s.id]),
+    )
+    kp = graph.kp(kp_id)
+    return {
+        "id": rec.id,
+        "kp_code": kp.code,
+        "kp_name": kp.name,
+        "plan_markdown": rec.plan_markdown,
+        "plan_writer": rec.plan_writer,
+        "generated_at": rec.generated_at.isoformat(timespec="seconds"),
+        "self_marked_at": rec.self_marked_at.isoformat(timespec="seconds")
+        if rec.self_marked_at
+        else None,
+        "loop_state": loop.get(kp_id),
+    }
+
+
+# ---------------------------------------------------------------------------
 # /me：学生本人
 # ---------------------------------------------------------------------------
 
@@ -222,6 +309,45 @@ def me_report_full(
 @router.get("/me/action-plan")
 def me_action_plan(ctx=Depends(require_student), db: Session = Depends(get_db)):
     return _action_plan_payload(db, _self(ctx))
+
+
+@router.get("/me/study-records")
+def me_study_records(ctx=Depends(require_student), db: Session = Depends(get_db)):
+    return _study_list_payload(db, _self(ctx), datetime.now())
+
+
+@router.get("/me/study-plan")
+def me_study_plan(
+    kp_code: str,
+    as_of: date | None = None,
+    ctx=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """学习方案（get-or-generate：首次查看生成并缓存；幂等复用不重调 LLM）。
+
+    无显式 as_of 用真实时刻——方案生成/轮次锚点要真时间；显式 as_of 走
+    当日 23:59 约定（历史查看口径，与 weaknesses 一致）。
+    """
+    when = _as_dt(as_of) if as_of is not None else datetime.now()
+    return _study_plan_payload(db, _self(ctx), kp_code, when, allow_generate=True)
+
+
+@router.post("/me/study-records/{record_id}/self-mark")
+def me_self_mark(
+    record_id: int,
+    ctx=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    """自报「我学会了」：软闭合——只推进干预状态机，掌握度不动（app.study 硬边界）。"""
+    s = _self(ctx)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    graph = _graph(db, kb.id)
+    try:
+        out = self_mark_learned(db, graph, s, record_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    db.commit()
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -285,3 +411,23 @@ def preview_action_plan(
     db: Session = Depends(get_db),
 ):
     return _action_plan_payload(db, s)
+
+
+@router.get("/admin/students/{student_id}/portal/study-records")
+def preview_study_records(
+    s: Student = Depends(_preview_student),
+    db: Session = Depends(get_db),
+):
+    return _study_list_payload(db, s, datetime.now())
+
+
+@router.get("/admin/students/{student_id}/portal/study-plan")
+def preview_study_plan(
+    kp_code: str,
+    s: Student = Depends(_preview_student),
+    db: Session = Depends(get_db),
+):
+    """预览学习方案：严格只读（allow_generate=False），无记录 404，不触发 LLM。"""
+    return _study_plan_payload(
+        db, s, kp_code, _as_dt(None), allow_generate=False
+    )

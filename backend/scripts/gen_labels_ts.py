@@ -20,6 +20,7 @@ from app.labels_source import (
     EFFECT_LABEL,
     INTERVENTION_STATUS_LABEL,
     KIND_LABEL,
+    LOOP_STATE_LABEL,
     TRAJ_LABEL,
     VERSION_STATUS_LABEL,
 )
@@ -48,6 +49,7 @@ export const versionStatusLabel = (s: string | null | undefined) => translate(VE
 export const kindLabel = (k: string) => translate(KIND_LABEL, k);
 export const interventionStatusLabel = (s: string) => translate(INTERVENTION_STATUS_LABEL, s);
 export const effectLabel = (e: string) => translate(EFFECT_LABEL, e);
+export const loopStateLabel = (s: string | null | undefined) => translate(LOOP_STATE_LABEL, s);
 """
 
 
@@ -68,6 +70,7 @@ def build_labels_ts() -> str:
     parts.append(_ts_map("KIND_LABEL", KIND_LABEL))
     parts.append(_ts_map("INTERVENTION_STATUS_LABEL", INTERVENTION_STATUS_LABEL))
     parts.append(_ts_map("EFFECT_LABEL", EFFECT_LABEL))
+    parts.append(_ts_map("LOOP_STATE_LABEL", LOOP_STATE_LABEL))
     return "\n\n".join(parts) + FOOTER
 
 

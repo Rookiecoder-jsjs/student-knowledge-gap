@@ -32,6 +32,7 @@ from app.models import (
     ExamResponse,
     Intervention,
     Student,
+    StudyRecord,
 )
 from app.pipeline.attribution import (
     ATTR_CONFUSABLE,
@@ -240,7 +241,13 @@ def generate_interventions(
     - 同生同点同 kind 已 done 且 done_at 后无新证据 → 不重复建议（防轰炸）；
     - done_at 后有新证据且本次评估仍薄弱 → 二次干预（note 预填升级说明）。
 
-    返回 {"suggested": 行数, "groups": 成组数}。
+    合并与归档纪律（行动明细队列化，§1.2 生成端前提）：
+    - 同 (班级, 学生, 点) 至多一条挂起建议，跨考试原位刷新不新增（存量同键
+      重复只留最新一条，其余归档）；
+    - 前提消失的挂起建议随本场提交自动归档（学生达标 / 对症归因失效 / 班级
+      共性占比跌破阈值且样本充足）。
+
+    返回 {"suggested": 物化行数（含刷新）, "groups": 成组数, "archived": 归档数}。
     """
     if not ACTION_PLAN_ENABLE:
         return {"suggested": 0, "groups": 0}
@@ -268,6 +275,27 @@ def generate_interventions(
         session.delete(row)
     session.flush()
 
+    # ---- 跨考试合并（行动明细队列化的生成端前提）：同 (班级, 学生, KP)
+    # 至多一条挂起建议——已存在则原行刷新（换基线/注记/对症动作/组标记），
+    # 不新增事实。kind 不进键：同一需求的对症动作随最新归因演进，刷新而非
+    # 并存。积压数从此随复测/达标收缩，采纳率分母不再被重复建议污染。
+    pending_grouped: dict[tuple[int | None, int], list[Intervention]] = {}
+    for r in session.scalars(
+        select(Intervention).where(
+            Intervention.class_id == class_id,
+            Intervention.status == "suggested",
+        )
+    ):
+        pending_grouped.setdefault((r.student_id, r.kp_id), []).append(r)
+    # 合并纪律生效前的存量同键重复只留最新一条，其余归档（事实保留）
+    pending_by_key: dict[tuple[int | None, int], Intervention] = {}
+    for key, group in pending_grouped.items():
+        group.sort(key=lambda r: r.id)
+        for dup in group[:-1]:
+            dup.status = "skipped"
+            dup.note = "系统合并：同一需求仅保留最新建议"
+        pending_by_key[key] = group[-1]
+
     kept_done: dict[tuple[int, int, str], Intervention] = {}
     for att in session.scalars(
         select(Intervention).where(
@@ -280,6 +308,7 @@ def generate_interventions(
 
     # ---- 每生一次评估，个体行与班级共性共享 ----
     individual: dict[int, list[ActionRow]] = {}
+    still_ask: dict[int, set[int]] = {}  # 本场评估仍支持行动建议的知识点集
     weak_count: dict[int, int] = {}
     n_assessed: dict[int, int] = {}
     for sid in committed_ids:
@@ -301,6 +330,7 @@ def generate_interventions(
                 r.note = "二次干预：首次干预后复测仍待加强"
             kept_rows.append(r)
         individual[sid] = kept_rows
+        still_ask[sid] = {r.kp_id for r in kept_rows}
         # 共性统计复用同一份评估（gate/无掌握度的不计分母）
         for a in assessments:
             if a.gate is not None or a.mastery is None:
@@ -343,38 +373,89 @@ def generate_interventions(
                 )
             )
 
-    # ---- 物化落库 ----
+    # 班级行自动归档护栏：仅当该点本场被足够学生评估（n≥4）且共性占比跌破
+    # 阈值——「证明已消退」才归档；样本不足（n<4）不下结论，保留原建议。
+    class_common_now = {r.kp_id for r in class_rows}
+    disproven_kps = {
+        kp
+        for kp, c in weak_count.items()
+        if kp not in class_common_now
+        and n_assessed.get(kp, 0) >= 4
+        and c / n_assessed[kp] < CLASS_COMMON_WEAK_RATIO
+    }
+
+    # ---- 物化落库（合并优先：已有挂起行原位刷新，事实不重复）----
     created = 0
-    for row in class_rows:
+
+    def _upsert(row: ActionRow, sid: int | None) -> None:
+        nonlocal created
+        existing = pending_by_key.get((sid, row.kp_id))
+        if existing is not None:
+            existing.exam_id = exam_id
+            existing.source_report_id = source_report_id
+            existing.kind = row.kind
+            existing.scope = row.scope
+            existing.group_ref = (
+                f"r{source_report_id or 0}:{row.root_kp_id}"
+                if row.scope == SCOPE_GROUP
+                else None
+            )
+            existing.baseline_as_of = as_of
+            existing.note = (
+                f"{row.note}，建议下节课前 15 分钟重讲 + 变式训练"
+                if sid is None
+                else row.note
+            )
+            created += 1
+            return
         session.add(
             Intervention(
-                class_id=class_id, student_id=None, kp_id=row.kp_id,
+                class_id=class_id, student_id=sid, kp_id=row.kp_id,
                 exam_id=exam_id, source_report_id=source_report_id,
-                kind=row.kind, scope=row.scope, group_ref=None,
+                kind=row.kind, scope=row.scope,
+                group_ref=(
+                    f"r{source_report_id or 0}:{row.root_kp_id}"
+                    if row.scope == SCOPE_GROUP
+                    else None
+                ),
                 baseline_as_of=as_of, status="suggested",
-                note=f"{row.note}，建议下节课前 15 分钟重讲 + 变式训练",
+                note=(
+                    f"{row.note}，建议下节课前 15 分钟重讲 + 变式训练"
+                    if sid is None
+                    else row.note
+                ),
             )
         )
         created += 1
+
+    for row in class_rows:
+        _upsert(row, None)
     for sid in committed_ids:
         for row in individual[sid]:
-            session.add(
-                Intervention(
-                    class_id=class_id, student_id=sid, kp_id=row.kp_id,
-                    exam_id=exam_id, source_report_id=source_report_id,
-                    kind=row.kind, scope=row.scope,
-                    group_ref=(
-                        f"r{source_report_id or 0}:{row.root_kp_id}"
-                        if row.scope == SCOPE_GROUP
-                        else None
-                    ),
-                    baseline_as_of=as_of, status="suggested", note=row.note,
-                )
-            )
-            created += 1
+            _upsert(row, sid)
+
+    # ---- 自动归档：前提消失的挂起建议随本场提交落 skipped（系统注记）。
+    # 学生侧：该生本场评估已不再支持此建议（已达标 / 对症归因失效）；
+    # 班级侧：共性占比跌破阈值且样本充足。归档是事实追加，不删历史；
+    # 日后若再次薄弱，下一场考试会照常重新建议（自愈）。
+    archived = 0
+    for (sid, kp), existing in pending_by_key.items():
+        if existing.status != "suggested":
+            continue
+        gone = (
+            sid is None and kp in disproven_kps
+        ) or (
+            sid is not None
+            and sid in still_ask
+            and kp not in still_ask[sid]
+        )
+        if gone:
+            existing.status = "skipped"
+            existing.note = "系统归档：最新评估不再支持此建议"
+            archived += 1
 
     session.flush()
-    return {"suggested": created, "groups": group_count}
+    return {"suggested": created, "groups": group_count, "archived": archived}
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +591,30 @@ def intervention_summary(session: Session, graph: KpGraph, class_id: int) -> dic
     lift_rate = round(dist["improved"] / evaluable, 3) if evaluable else None
     adoption = round(len(done_rows) / adopt_denom, 3) if adopt_denom else None
 
+    # 自报待检验（study-loop-design）：有自报事实的学生逐一折叠计数——
+    # 软闭合量（老师零操作、被动验证），与 done 行计数口径互补
+    self_reported = 0
+    reporters = list(
+        session.scalars(
+            select(StudyRecord.student_id)
+            .where(
+                StudyRecord.class_id == class_id,
+                StudyRecord.self_marked_at.is_not(None),
+            )
+            .distinct()
+        )
+    )
+    if reporters:
+        # 局部 import 防循环（progress 顶层引用本模块阈值常量，同 action_plan_view）
+        from app.pipeline.progress import LOOP_SELF_REPORTED, loop_states_for_student
+
+        now = datetime.now()
+        for sid in reporters:
+            states = loop_states_for_student(session, graph, sid, class_id, now)
+            self_reported += sum(
+                1 for v in states.values() if v == LOOP_SELF_REPORTED
+            )
+
     return {
         "total": len(rows),
         "by_status": by_status,
@@ -520,12 +625,18 @@ def intervention_summary(session: Session, graph: KpGraph, class_id: int) -> dic
         "intervention_lift_rate": lift_rate,
         "evaluable_count": evaluable,
         "by_kind_effect": by_kind_effect,
+        # 学生自报闭环量：已自报待下一场考试被动验证的 (学生, 知识点) 数
+        "self_reported": self_reported,
     }
 
 
 # ---------------------------------------------------------------------------
 # 行动方向读视图（端点用）：三层杠杆排序 + 渲染所需字段
 # ---------------------------------------------------------------------------
+
+# 行动明细队列上限（§1.2 收口）：待办超过 10 条对教师不是清单是噪音——
+# 排序责任在系统（杠杆序截前 10），完整事实走 /interventions 列表。
+ACTION_QUEUE_MAX = 10
 
 
 def action_plan_view(
@@ -535,6 +646,10 @@ def action_plan_view(
 
     三层杠杆降序：全班重讲（一次课覆盖所有人）→ 小组（人数降序）→ 个体
     （K5 重要度：基础>核心>拓展，同级按掌握度缺口降序）。名单原序，无排名。
+
+    rows 是**待办队列**而非账本投影：仅挂起建议、班级行覆盖的个体/小组行
+    折叠隐藏（视图规则，事实不动）、小组按组一行、截前 ACTION_QUEUE_MAX 条。
+    pending_confirm / counts 保持全量事实口径（积压数诚实展示）。
     """
     stmt = select(Intervention).where(Intervention.class_id == class_id)
     if exam_id is not None:
@@ -559,8 +674,27 @@ def action_plan_view(
     group_size: dict[str, int] = {}
     for r in group_rows:
         group_size[r.group_ref] = group_size.get(r.group_ref, 0) + 1
+    class_rows.sort(key=lambda r: (_imp(r.kp_id), r.id))
     group_rows.sort(key=lambda r: (-group_size.get(r.group_ref, 0), r.group_ref or ""))
     student_rows.sort(key=lambda r: (_imp(r.kp_id), _gap_key(r)))
+
+    # 行级进度状态（闭环一期 P1）：局部 import 防循环（progress 顶层引用本模块
+    # 的阈值常量）；同一学生的多行共享一次折叠
+    from app.pipeline.progress import (
+        LOOP_INSUFFICIENT,
+        LOOP_SUGGESTED,
+        loop_states_for_student,
+        row_loop_state,
+    )
+
+    loop_cache: dict[int, dict[int, str]] = {}
+
+    def _loop(sid: int) -> dict[int, str]:
+        if sid not in loop_cache:
+            loop_cache[sid] = loop_states_for_student(
+                session, graph, sid, class_id, datetime.now()
+            )
+        return loop_cache[sid]
 
     def _serialize(r: Intervention) -> dict:
         kp = graph.kp(r.kp_id)
@@ -569,9 +703,16 @@ def action_plan_view(
             "kind": r.kind,
             "scope": r.scope,
             "status": r.status,
+            "group_ref": r.group_ref,
             "kp_code": kp.code,
             "kp_name": kp.name,
             "note": r.note,
+            "loop_state": (
+                _loop(r.student_id).get(r.kp_id)
+                if r.student_id is not None
+                else row_loop_state(r)
+            ),
+            "retest_exam_id": r.retest_exam_id,
             "suggested_at": r.suggested_at.isoformat() if r.suggested_at else None,
             "done_at": r.done_at.isoformat() if r.done_at else None,
             "taught": r.kp_id in covered,
@@ -584,11 +725,63 @@ def action_plan_view(
             d["alias"] = stu.name_or_alias if stu else None
         return d
 
+    serialized = [_serialize(r) for r in [*class_rows, *group_rows, *student_rows]]
+
+    # ---- 待办队列折叠（账本 → 队列，§1.2 收口）----
+    # ①学生级行过折叠态门槛：诉求仍成立（已建议/证据不足）才进队列，
+    #   达标/待复测/已闭合等状态自动退出；
+    # ②班级行覆盖抑制：同点已有挂起的全班重讲，个体/小组行不再是独立待办
+    #   （班级行被跳过或复测判未闭合后自动回流——纯视图规则，事实不动）；
+    # ③小组行按 group_ref 折叠一行（确认/跳过按组批量落事实）；
+    # ④截前 ACTION_QUEUE_MAX 条，无「展开全部」。
+    queue_include = {LOOP_SUGGESTED, LOOP_INSUFFICIENT}
+    class_pending_codes = {
+        s["kp_code"]
+        for s in serialized
+        if s["scope"] == SCOPE_CLASS and s["status"] == "suggested"
+    }
+
+    def _standalone(s: dict) -> bool:
+        return (
+            s["loop_state"] in queue_include
+            and s["kp_code"] not in class_pending_codes
+        )
+
+    seen_groups: set[str] = set()
+    candidates: list[dict] = []
+    for s in serialized:
+        if s["status"] != "suggested":
+            continue
+        if s["scope"] in (SCOPE_GROUP, SCOPE_STUDENT):
+            if not _standalone(s):
+                continue
+            if s["scope"] == SCOPE_GROUP:
+                ref = s.get("group_ref")
+                if ref is None or ref in seen_groups:
+                    continue  # 同组只出代表行
+                seen_groups.add(ref)
+        candidates.append(s)
+
+    # ⑤同键去重（与生成端合并纪律同口径）：存量重复行只露最新一条，
+    #   其余待下次提交被生成端归档——队列不重复呈现同一需求。
+    best: dict[tuple, dict] = {}
+    for s in candidates:
+        key = (
+            ("class", s["kp_code"])
+            if s["scope"] == SCOPE_CLASS
+            else ("student", s.get("student_id"), s["kp_code"])
+        )
+        prev = best.get(key)
+        if prev is None or s["id"] > prev["id"]:
+            best[key] = s
+    keep_ids = {s["id"] for s in best.values()}
+    queue = [s for s in candidates if s["id"] in keep_ids][:ACTION_QUEUE_MAX]
+
     return {
         "class_id": class_id,
         "exam_id": exam_id,
-        "pending_confirm": sum(1 for r in rows if r.status == "suggested"),
-        "rows": [_serialize(r) for r in [*class_rows, *group_rows, *student_rows]],
+        "pending_confirm": sum(1 for s in serialized if s["status"] == "suggested"),
+        "rows": queue,
         "counts": {
             "class": len(class_rows),
             "group": len(group_rows),

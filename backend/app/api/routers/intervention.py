@@ -1,7 +1,13 @@
 """干预闭环路由（intervention-loop-design.md §5）：行动方向 / 干预记录 / 效果验证。
 
-7 端点：action-plan（班/生）、interventions 列表、confirm/skip、effect、summary。
-状态机：suggested → done | skipped；done/skipped 是执行事实，终态不可再迁移。
+端点：action-plan（班/生）、interventions 列表、confirm/skip（with_group 批量）、
+effect、summary。状态机：suggested → done | skipped；done/skipped 是执行事实，
+终态不可再迁移。
+
+闭环一期（progress-loop-design）增补：行级进度状态 loop_state（折叠函数派生）。
+定向复测（retest-blueprint / link-retest）已于 2026-09-11 软退役（study-loop-design：
+验证语义由软闭合+自然考试被动验证接管，教师出卷路径无人使用）——retest_exam_id
+列与历史关联保留（只停新写入），「诊断」考试类型与管线照常支持手动建卷。
 """
 
 from __future__ import annotations
@@ -13,13 +19,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import auth as _auth
 from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.intervention import (
+    SCOPE_GROUP,
     action_plan_view,
     intervention_effect,
     intervention_summary,
 )
 from app.models import Class, Intervention, Student
+from app.pipeline.progress import loop_states_for_student, row_loop_state
 
 router = APIRouter()
 
@@ -50,10 +59,11 @@ def class_action_plan(
     db: Session = Depends(get_db),
 ):
     """教学行动方向：全班 → 小组 → 个体三层 + 一键确认用的行 id。"""
-    if db.get(Class, class_id) is None:
+    clazz = db.get(Class, class_id)
+    if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
     graph = _graph(db, kb.id)
     return action_plan_view(db, graph, class_id, exam_id=exam_id)
 
@@ -69,7 +79,9 @@ def student_action_plan(
     """改进单 get-or-generate（同诊断单模式：有已存直接返回，无则补生成）。"""
     stu = _student_or_404(db, student_id)
     guard_class(stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
     graph = _graph(db, kb.id)
 
     from datetime import datetime, time as dtime
@@ -152,17 +164,58 @@ def list_interventions(
     page = rows_all[offset : offset + min(limit, 200)]
     graph = None
     if rows_all:
-        kb = _active_kb(db)
+        _row_cls = db.get(Class, rows_all[0].class_id)
+        kb = _active_kb(
+            db,
+            _auth.class_subject(db, ctx, _row_cls) if _row_cls is not None else None,
+        )
         graph = _graph(db, kb.id)
-    return {"total": len(rows_all), "items": [_row_view(db, r, graph) for r in page]}
+    loop_cache: dict[int, dict[int, str]] = {}
+    items = []
+    for r in page:
+        loop = (
+            _student_loop(db, ctx, r.student_id, loop_cache)
+            if r.student_id is not None
+            else None
+        )
+        items.append(_row_view(db, r, graph, loop=loop))
+    return {"total": len(rows_all), "items": items}
 
 
-def _row_view(db: Session, r: Intervention, graph=None) -> dict:
+def _student_loop(
+    db: Session, ctx, student_id: int, cache: dict[int, dict[int, str]]
+) -> dict[int, str]:
+    """按学生缓存的进度折叠（列表页同一学生多行只算一次）。"""
+    if student_id in cache:
+        return cache[student_id]
+    stu = db.get(Student, student_id)
+    if stu is None:
+        cache[student_id] = {}
+        return cache[student_id]
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
+    graph = _graph(db, kb.id)
+    cache[student_id] = loop_states_for_student(
+        db, graph, student_id, stu.class_id, datetime.now()
+    )
+    return cache[student_id]
+
+
+def _row_view(
+    db: Session, r: Intervention, graph=None, loop: dict[int, str] | None = None
+) -> dict:
     kp = graph.kp(r.kp_id) if graph is not None else None
     alias = None
     if r.student_id is not None:
         stu = db.get(Student, r.student_id)
         alias = stu.name_or_alias if stu else None
+    # 行级进度状态（闭环一期 P1）：学生行走折叠函数（个体判决），
+    # 班级/小组集体行只给三态、不下个体判决
+    if r.student_id is not None and loop is not None:
+        state = loop.get(r.kp_id)
+    else:
+        state = row_loop_state(r)
     return {
         "id": r.id,
         "class_id": r.class_id,
@@ -174,6 +227,8 @@ def _row_view(db: Session, r: Intervention, graph=None) -> dict:
         "scope": r.scope,
         "group_ref": r.group_ref,
         "status": r.status,
+        "loop_state": state,
+        "retest_exam_id": r.retest_exam_id,
         "note": r.note,
         "baseline_as_of": str(r.baseline_as_of.date()),
         "suggested_at": r.suggested_at.isoformat() if r.suggested_at else None,
@@ -185,45 +240,81 @@ def _row_view(db: Session, r: Intervention, graph=None) -> dict:
 def confirm_intervention(
     intervention_id: int,
     req: InterventionActionRequest | None = None,
+    with_group: bool = False,
     ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """一键确认执行（body 可选 note；默认当前时间戳 done_at）。"""
+    """一键确认执行（body 可选 note；默认当前时间戳 done_at）。
+
+    with_group=true 且目标行是小组行：同 group_ref 的全部挂起行批量落
+    「已执行」——队列按组折叠成一行展示，操作层一次、事实层逐行。
+    """
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
     guard_class(iv.class_id, db, ctx)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再确认")
-    iv.status = "done"
-    iv.done_at = datetime.now()
+    targets = [iv]
+    if with_group and iv.scope == SCOPE_GROUP and iv.group_ref:
+        targets = list(
+            db.scalars(
+                select(Intervention).where(
+                    Intervention.class_id == iv.class_id,
+                    Intervention.group_ref == iv.group_ref,
+                    Intervention.status == "suggested",
+                )
+            )
+        )
+    now = datetime.now()
     note = (req.note if req else None) or None
-    if note:
-        iv.note = note
+    for t in targets:
+        t.status = "done"
+        t.done_at = now
+        if note:
+            t.note = note
     db.commit()
-    return {"id": iv.id, "status": iv.status, "done_at": iv.done_at.isoformat()}
+    return {
+        "id": iv.id,
+        "status": iv.status,
+        "done_at": now.isoformat(),
+        "confirmed": len(targets),
+    }
 
 
 @router.post("/interventions/{intervention_id}/skip")
 def skip_intervention(
     intervention_id: int,
     req: InterventionActionRequest | None = None,
+    with_group: bool = False,
     ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """跳过（可选 note；skip 也是信号，不强制理由）。"""
+    """跳过（可选 note；skip 也是信号，不强制理由）。with_group 同 confirm。"""
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
     guard_class(iv.class_id, db, ctx)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再跳过")
-    iv.status = "skipped"
+    targets = [iv]
+    if with_group and iv.scope == SCOPE_GROUP and iv.group_ref:
+        targets = list(
+            db.scalars(
+                select(Intervention).where(
+                    Intervention.class_id == iv.class_id,
+                    Intervention.group_ref == iv.group_ref,
+                    Intervention.status == "suggested",
+                )
+            )
+        )
     note = (req.note if req else None) or None
-    if note:
-        iv.note = note
+    for t in targets:
+        t.status = "skipped"
+        if note:
+            t.note = note
     db.commit()
-    return {"id": iv.id, "status": iv.status}
+    return {"id": iv.id, "status": iv.status, "skipped": len(targets)}
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +330,11 @@ def single_effect(
     iv = db.get(Intervention, intervention_id)
     if iv is not None:
         guard_class(iv.class_id, db, ctx)
-    kb = _active_kb(db)
+    _iv_cls = db.get(Class, iv.class_id) if iv is not None else None
+    kb = _active_kb(
+        db,
+        _auth.class_subject(db, ctx, _iv_cls) if _iv_cls is not None else None,
+    )
     graph = _graph(db, kb.id)
     try:
         return intervention_effect(db, graph, intervention_id)
@@ -252,9 +347,10 @@ def interventions_summary(
     class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)
 ):
     """闭环度量：采纳率 + 干预提升率（北极星；分母只算可评估子集）。"""
-    if db.get(Class, class_id) is None:
+    clazz = db.get(Class, class_id)
+    if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
     graph = _graph(db, kb.id)
     return intervention_summary(db, graph, class_id)

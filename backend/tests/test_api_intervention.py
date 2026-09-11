@@ -222,6 +222,20 @@ def test_seven_endpoints_shapes_and_state_machine(client):
     assert ghost.status_code == 404
 
 
+def test_action_plan_rows_carry_loop_state(client):
+    """闭环一期 P1：action-plan 行带 loop_state（suggested → 已建议）与
+    retest_exam_id 字段；学生行折叠、集体行三态同源。"""
+    c, S = client
+    env = _seed(S)
+    r = c.get(f"/classes/{env['class_id']}/action-plan")
+    assert r.status_code == 200
+    rows = r.json()["rows"]
+    assert rows, "共性薄弱应产出建议行"
+    assert all("loop_state" in row for row in rows)
+    assert all("retest_exam_id" in row for row in rows)
+    assert any(row["loop_state"] == "已建议" for row in rows if row["status"] == "suggested")
+
+
 def test_diagnosis_sheet_actions_wired(client):
     """班级诊断单 actions/intervention_summary 占位接通（替换空结构）。"""
     c, S = client
@@ -244,3 +258,89 @@ def test_action_plan_class_not_found(client):
     c, _ = client
     assert c.get("/classes/424242/action-plan").status_code == 404
     assert c.get("/interventions/summary", params={"class_id": 424242}).status_code == 404
+
+
+def test_group_batch_confirm_and_skip(client):
+    """队列按组折叠展示；with_group=true 批量落事实（操作层一次、事实层逐行）。"""
+    from datetime import datetime
+
+    c, S = client
+    env = _seed(S)
+    cid = env["class_id"]
+
+    # U 点单题考试 → 全员 gate=数据不足 → 折叠态「证据不足」∈ 队列白名单
+    # （需先有教学进度，否则 gate=未学到，不在队列白名单）
+    s = S()
+    s.add(TeachingProgress(class_id=cid, kp_id=env["kp"]["U"],
+                           taught_at=date(2025, 9, 1)))
+    tpl = ExamTemplate(class_id=cid, name="U单证据", exam_date=date(2025, 11, 1),
+                       type="单元")
+    s.add(tpl)
+    s.flush()
+    from app.models import QuestionKp, TemplateQuestion
+    tq = TemplateQuestion(exam_template_id=tpl.id, idx=1, stem="题",
+                          q_type="解答", full_score=10.0, cog_level="应用")
+    s.add(tq)
+    s.flush()
+    s.add(QuestionKp(template_question_id=tq.id, kp_id=env["kp"]["U"], weight=1.0))
+    s.flush()
+    for name, sid in env["students"].items():
+        resp = ExamResponse(exam_template_id=tpl.id, student_id=sid,
+                            source="excel", status="待审核")
+        s.add(resp)
+        s.flush()
+        s.add(ResponseAnswer(exam_response_id=resp.id,
+                             template_question_id=tq.id, score=5.0))
+        resp.total_score = 5.0
+    from app.ingestion.commit import commit_exam
+    commit_exam(s, tpl.id)
+    # 同组三行（模拟小组聚类产物）
+    for name in ("T01", "T02", "T03"):
+        s.add(Intervention(
+            class_id=cid, student_id=env["students"][name], kp_id=env["kp"]["U"],
+            exam_id=tpl.id, kind="spaced_review", scope="group",
+            group_ref="r1:U", baseline_as_of=datetime(2025, 10, 1, 12, 0),
+            status="suggested",
+        ))
+    s.commit()
+    s.close()
+
+    r = c.get(f"/classes/{cid}/action-plan")
+    assert r.status_code == 200
+    grp = [x for x in r.json()["rows"] if x["scope"] == "group"]
+    assert len(grp) == 1, "同组折叠成一行"
+    assert grp[0]["group_size"] == 3 and grp[0]["group_ref"] == "r1:U"
+
+    rep = grp[0]["id"]
+    r = c.post(f"/interventions/{rep}/confirm",
+               params={"with_group": True}, json=None)
+    assert r.status_code == 200 and r.json()["confirmed"] == 3
+    s = S()
+    assert s.query(Intervention).filter_by(
+        group_ref="r1:U", status="done").count() == 3, "同组三行各自落事实"
+    s.close()
+
+    # 再造一组走 skip 批量
+    s = S()
+    for name in ("T04", "T05", "T06"):
+        s.add(Intervention(
+            class_id=cid, student_id=env["students"][name], kp_id=env["kp"]["U"],
+            exam_id=tpl.id, kind="spaced_review", scope="group",
+            group_ref="r2:U", baseline_as_of=datetime(2025, 10, 1, 12, 0),
+            status="suggested",
+        ))
+    s.commit()
+    s.close()
+    r = c.get(f"/classes/{cid}/action-plan")
+    grp2 = next(x for x in r.json()["rows"]
+                if x.get("group_ref") == "r2:U")
+    r = c.post(f"/interventions/{grp2['id']}/skip",
+               params={"with_group": True}, json={"note": "下学期"})
+    assert r.status_code == 200 and r.json()["skipped"] == 3
+
+    # 普通行（无 group_ref）with_group 不扩散：confirmed==1
+    r = c.get("/interventions", params={"class_id": cid, "status": "suggested"})
+    solo = next(x for x in r.json()["items"] if x["scope"] != "group")
+    r = c.post(f"/interventions/{solo['id']}/confirm",
+               params={"with_group": True}, json=None)
+    assert r.status_code == 200 and r.json()["confirmed"] == 1

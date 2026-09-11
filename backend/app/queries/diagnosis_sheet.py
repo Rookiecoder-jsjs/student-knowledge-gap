@@ -214,7 +214,8 @@ def class_diagnosis_sheet(
         "class_id": class_id,
         "status": status,
         "improvement_advice": advice_payload,
-        # 行动明细：pending_confirm 计数 + 三层全量行（唯一全量版面，§1.2）
+        # 行动明细：pending_confirm 全量积压 + 待办队列（≤10 条，action_plan_view
+        # 内折叠：仅挂起/覆盖抑制/小组按组一行/同键去重/截前 10，§1.2 收口）
         "actions": {
             "pending_confirm": plan["pending_confirm"],
             "rows": plan["rows"],
