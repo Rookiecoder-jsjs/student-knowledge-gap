@@ -12,18 +12,21 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import _active_kb, _graph, get_db, require_kb_editor
+from app import auth as _auth
+from app.api.deps import _active_kb, _graph, get_db, require_kb_editor, require_teacher
 from app.kb import edit as kb_edit
 from app.kb import versioning as kb_ver
 from app.kb.compatibility import compatibility
 from app.kb.edit import KbEditError, KbNotFoundError
 from app.kb.graph import KpGraph
+from app.kb.resolver import active_kb
 from app.ingestion.templates import suggest_question_tags
 from app.kb.loader import KbImportError, import_kb
 from app.models import KbVersion, KnowledgePoint, KpRelation
 from app.queries import kb as query_kb
 from app.schemas import (
     KbImportRequest,
+    KbVersionCreateRequest,
     KbVersionPatchRequest,
     KpCreateRequest,
     KpUpdateRequest,
@@ -68,6 +71,46 @@ def _kb_http_error(e: KbEditError) -> HTTPException:
     return HTTPException(400, str(e))
 
 
+def _kb_write_guard(db: Session, ctx, kb: KbVersion, *, govern: bool = False) -> None:
+    """范围写权裁决（rbac-scopes-design §4）：403 翻译。govern=True 用治理权。"""
+    ok = (
+        _auth.can_govern_kb(db, ctx, kb.subject, kb.grade)
+        if govern
+        else _auth.can_write_kb(db, ctx, kb.subject, kb.grade)
+    )
+    if not ok:
+        grade_txt = f"年级{kb.grade}" if kb.grade is not None else "全年级"
+        raise HTTPException(
+            403,
+            f"知识库写权不含 {kb.subject}（{grade_txt}）：{kb.textbook_edition} v{kb.version}",
+        )
+
+
+def _kp_version_guard(db: Session, ctx, kp_id: int) -> None:
+    """按知识点定位所属版本并做内容写权裁决（update/delete 等按 id 直改的入口）。"""
+    kp = db.get(KnowledgePoint, kp_id)
+    if kp is None:
+        raise HTTPException(404, "知识点不存在")
+    kb = db.get(KbVersion, kp.kb_version_id)
+    if kb is None:
+        raise HTTPException(404, "知识点所属版本不存在")
+    _kb_write_guard(db, ctx, kb)
+
+
+def _relation_version_guard(db: Session, ctx, rel_id: int) -> None:
+    """按关系定位所属版本（from 端点 kp 的版本）并做内容写权裁决。"""
+    rel = db.get(KpRelation, rel_id)
+    if rel is None:
+        raise HTTPException(404, "关系不存在")
+    kp = db.get(KnowledgePoint, rel.from_kp_id)
+    if kp is None:
+        raise HTTPException(404, "关系所属知识点不存在")
+    kb = db.get(KbVersion, kp.kb_version_id)
+    if kb is None:
+        raise HTTPException(404, "知识点所属版本不存在")
+    _kb_write_guard(db, ctx, kb)
+
+
 # ---------------------------------------------------------------------------
 # 导入 / 上传
 # ---------------------------------------------------------------------------
@@ -83,6 +126,7 @@ def kb_import(
         kb = import_kb(db, req.yaml_path)
     except (KbImportError, FileNotFoundError) as e:
         raise HTTPException(400, str(e))
+    _kb_write_guard(db, ctx, kb)  # 越权导入 → 403（get_db 回滚已建版本）
     return {"kb_version_id": kb.id, "status": kb.status, "version": kb.version}
 
 
@@ -100,6 +144,7 @@ async def kb_upload(
         kb = import_kb(db, tmp_path)
     except Exception as e:
         raise HTTPException(400, f"知识库导入失败: {e}")
+    _kb_write_guard(db, ctx, kb)  # 越权导入 → 403（get_db 回滚已建版本）
     return {"kb_version_id": kb.id, "status": kb.status, "version": kb.version}
 
 
@@ -109,9 +154,21 @@ async def kb_upload(
 
 
 @router.get("/kb/versions")
-def list_kb_versions(db: Session = Depends(get_db)):
-    """列全部知识库版本（kb-edit §4.1）。聚合在 queries.kb（N+1 → 一次 group_by）。"""
-    return {"versions": query_kb.kb_versions_list(db)}
+def list_kb_versions(
+    db: Session = Depends(get_db),
+    ctx=Depends(require_teacher),
+):
+    """列知识库版本（kb-edit §4.1）。聚合在 queries.kb（N+1 → 一次 group_by）。
+
+    RBAC 读取面（rbac-scopes-design §5）：持有学科×年级授权者只看授权学科；
+    admin / kb_editor / 普通教师 / 开放模式不受限（KB 读=全校，既有语义）。
+    """
+    versions = query_kb.kb_versions_list(db)
+    scopes = _auth.subject_scopes(db, ctx)
+    if scopes:
+        allowed = {s for s, _g in scopes}
+        versions = [v for v in versions if v.get("subject") in allowed]
+    return {"versions": versions}
 
 
 @router.get("/kb/kps")
@@ -197,8 +254,21 @@ def create_kp(
     db: Session = Depends(get_db),
     ctx=Depends(require_kb_editor),
 ):
-    """新建知识点（属 active kb）。code 同版本唯一（uq_kb_code + IntegrityError 兜底）。"""
-    kb = _active_kb(db)
+    """新建知识点。缺省落 active 版本（旧行为）；显式 kb_version_id 可写入
+    draft/reviewed 版本（图形化建库向导走这条路）——active 版本拒绝直写，
+    治理上改启用版须走 fork→改→审→启用。code 同版本唯一（uq_kb_code +
+    IntegrityError 兜底）。"""
+    if req.kb_version_id is not None:
+        kb = db.get(KbVersion, req.kb_version_id)
+        if kb is None:
+            raise HTTPException(404, "知识库版本不存在")
+        if kb.status == "active":
+            raise HTTPException(
+                400, "不能直接写入启用中的版本；请先「基于当前版修订」出草稿"
+            )
+    else:
+        kb = _active_kb(db)
+    _kb_write_guard(db, ctx, kb)
     try:
         kp = kb_edit.create_kp(
             db,
@@ -228,6 +298,7 @@ def update_kp(
     ctx=Depends(require_kb_editor),
 ):
     """改属性（不允许改 code）。〔v0.2〕改 mastery_floor/difficulty_prior 支持 ?preview=true 影响预览。"""
+    _kp_version_guard(db, ctx, kp_id)
     by = ctx.teacher.name if ctx.teacher is not None else "开放模式"
     try:
         kp, impact, previewed = kb_edit.update_kp(
@@ -261,6 +332,7 @@ def delete_kp(
     ctx=Depends(require_kb_editor),
 ):
     """软归档（默认）/ 硬删（force=true）。引用预检见 kb-edit §5。"""
+    _kp_version_guard(db, ctx, kp_id)
     by = ctx.teacher.name if ctx.teacher is not None else "开放模式"
     try:
         return kb_edit.delete_kp(db, kp_id, force=force, confirm=confirm, by=by)
@@ -276,6 +348,7 @@ def create_relation(
 ):
     """新建关系：校验 type/weight/同版本/非自环（kb-edit §4.4/§6.3）。"""
     kb = _active_kb(db)
+    _kb_write_guard(db, ctx, kb)
     graph = _graph(db, kb.id)
     try:
         rel = kb_edit.create_relation(
@@ -304,6 +377,7 @@ def update_relation(
     db: Session = Depends(get_db),
     ctx=Depends(require_kb_editor),
 ):
+    _relation_version_guard(db, ctx, rel_id)
     try:
         rel = kb_edit.update_relation(db, rel_id, type=req.type, weight=req.weight)
     except KbEditError as e:
@@ -325,6 +399,7 @@ def delete_relation(
     db: Session = Depends(get_db),
     ctx=Depends(require_kb_editor),
 ):
+    _relation_version_guard(db, ctx, rel_id)
     try:
         kb_edit.delete_relation(db, rel_id)
     except KbEditError as e:
@@ -339,22 +414,75 @@ def delete_relation(
 
 @router.post("/kb/versions")
 def fork_kb_version(
+    source_version_id: int | None = None,
     db: Session = Depends(get_db),
     ctx=Depends(require_kb_editor),
 ):
-    """fork 当前 active：复制其 kp（含 archived）+ 关系为草稿新版本（kb-edit §4.5/§6.3）。"""
-    src = _active_kb(db)
+    """fork 为草稿新版本：复制其 kp（含 archived）+ 关系（kb-edit §4.5/§6.3）。
+
+    缺省源 = 全局 active（旧行为）；多学科页显式传 source_version_id=当前浏览
+    版本——fork 源跟学科走，不串。
+    """
+    if source_version_id is not None:
+        src = db.get(KbVersion, source_version_id)
+        if src is None:
+            raise HTTPException(404, "版本不存在")
+    else:
+        src = _active_kb(db)
+    _kb_write_guard(db, ctx, src)
     new = kb_ver.fork_kb_version(db, src)
     return {"id": new.id, "status": new.status, "forked_from": src.id}
 
 
+@router.post("/kb/versions/create")
+def create_kb_version(
+    req: KbVersionCreateRequest,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
+    """图形化建库第一步：创建空白草稿版本（多学科：subject 显式指定）。
+
+    与 fork（POST /kb/versions）路径区分；内容经 POST /kb/kps?kb_version_id=
+    逐条写入，或 YAML 导入走既有通道。
+    """
+    if not _auth.can_write_kb(db, ctx, req.subject.strip(), req.grade):
+        raise HTTPException(403, f"知识库写权不含学科「{req.subject.strip()}」")
+    kb = KbVersion(
+        subject=req.subject.strip(),
+        grade=req.grade,
+        textbook_edition=req.textbook_edition.strip(),
+        version=req.version.strip(),
+        status="draft",
+    )
+    db.add(kb)
+    db.flush()
+    return {
+        "id": kb.id,
+        "subject": kb.subject,
+        "grade": kb.grade,
+        "version": kb.version,
+        "status": kb.status,
+    }
+
+
 @router.get("/kb/versions/{version_id}/compatibility")
 def kb_compatibility(version_id: int, db: Session = Depends(get_db)):
-    """与当前 active 的 code 差集 + 〔v0.2〕属性 diff（切换前预览）。"""
+    """与**同学科**当前 active 的 code 差集 + 〔v0.2〕属性 diff（切换前预览）。
+
+    多学科口径：全局 active 会跨学科比错对象；同学科无 active（首激活）→
+    空差集（没有可失联的旧证据）。
+    """
     target = db.get(KbVersion, version_id)
     if target is None:
         raise HTTPException(404, "版本不存在")
-    active = _active_kb(db)
+    active = active_kb(db, target.subject)
+    if active is None or active is target:
+        return {
+            "active_version_id": active.id if active is not None else None,
+            "target_version_id": target.id,
+            "missing_codes": [],
+            "attribute_changes": [],
+        }
     return {
         "active_version_id": active.id,
         "target_version_id": target.id,
@@ -373,23 +501,27 @@ def patch_kb_version(
 ):
     """改 status：draft->reviewed->active。切 active 做超集 + 〔v0.2〕属性 diff 校验（§6.1/§6.2/§6.5）。
 
-    两层写权：draft→reviewed 授权教师可置（「备好了」信号）；置 active=全校口径
-    切换，admin 专属（开放模式匿名放行——bootstrap 向导依赖）。
+    RBAC 范围（rbac-scopes-design §4）：draft→reviewed=内容层（can_write_kb）；
+    active=治理层（can_govern_kb——学科管理员可启用本学科版本；开放模式匿名
+    放行——bootstrap 向导依赖）。
     """
     target = db.get(KbVersion, version_id)
     if target is None:
         raise HTTPException(404, "版本不存在")
     if req.status not in ("draft", "reviewed", "active"):
         raise HTTPException(400, "非法 status")
-    if req.status == "active" and ctx.teacher is not None and not ctx.is_admin:
-        raise HTTPException(403, "切换正式版需要管理员权限")
+    _kb_write_guard(db, ctx, target, govern=(req.status == "active"))
 
     if req.status != "active":
         target.status = req.status
         db.flush()
         return {"id": target.id, "status": target.status}
 
-    active = _active_kb(db)
+    # 多学科口径：被替代的旧 active 按**同学科**解析（全局解析会把别的学科降级）；
+    # 同学科无 active（含目标即学科内最新版）→ None = 首激活语义（跳过兼容对照）
+    active = active_kb(db, target.subject)
+    if active is target:
+        active = None
     try:
         return kb_ver.activate_kb_version(
             db, target, active, force=force, confirm=confirm

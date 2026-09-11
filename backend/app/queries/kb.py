@@ -28,6 +28,7 @@ def kb_versions_list(session: Session) -> list[dict]:
             {
                 "id": kb.id,
                 "subject": kb.subject,
+                "grade": kb.grade,
                 "textbook_edition": kb.textbook_edition,
                 "version": kb.version,
                 "status": kb.status,

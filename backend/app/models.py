@@ -51,6 +51,9 @@ class Class(Base):
     name: Mapped[str] = mapped_column(String(100))
     grade: Mapped[int] = mapped_column(Integer)          # 年级，如 7 = 初一
     subject: Mapped[str] = mapped_column(String(20), default="数学")
+    # 班主任（rbac-scopes-design §3）：一班一人；NULL = 未指派。
+    # 班主任自动获得本班全科视野（不需要 teacher_class 授权行）。
+    homeroom_teacher_id: Mapped[int | None] = mapped_column(ForeignKey("teacher.id"), nullable=True)
 
     school: Mapped[School] = relationship(back_populates="classes")
     students: Mapped[list[Student]] = relationship(back_populates="clazz")
@@ -109,7 +112,11 @@ class Teacher(Base):
 
 
 class TeacherClass(Base):
-    """教师↔班级授权（多对多；权限粒度「校内教师↔自己班级」，D2）。"""
+    """教师↔班级授权（多对多；权限粒度「校内教师↔自己班级」，D2）。
+
+    subject 为空 = 全科视野（存量授权行为不变）；非空 = 科任（仅见该学科考试，
+    rbac-scopes-design §3）。
+    """
 
     __tablename__ = "teacher_class"
     __table_args__ = (UniqueConstraint("teacher_id", "class_id", name="uq_teacher_class"),)
@@ -117,6 +124,25 @@ class TeacherClass(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"))
     class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    subject: Mapped[str | None] = mapped_column(String(20), nullable=True)  # NULL=全科
+
+
+class TeacherSubjectScope(Base):
+    """学科管理员授权（学科×年级；rbac-scopes-design §2/§3）。
+
+    一行 = 该教师在 (subject, grade) 范围内拥有知识库内容写权与治理权；
+    多行 = 多范围。admin 不依赖本表（天然全校），kb_editor 是正交的全局能力。
+    """
+
+    __tablename__ = "teacher_subject_scope"
+    __table_args__ = (
+        UniqueConstraint("teacher_id", "subject", "grade", name="uq_teacher_subject_scope"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teacher.id"))
+    subject: Mapped[str] = mapped_column(String(20))
+    grade: Mapped[int] = mapped_column(Integer)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +155,7 @@ class KbVersion(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     subject: Mapped[str] = mapped_column(String(20))
+    grade: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 版本年级（面板分组/范围授权匹配；存量 NULL = 未标年级）
     textbook_edition: Mapped[str] = mapped_column(String(100))
     version: Mapped[str] = mapped_column(String(20), default="0.1.0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -194,6 +221,8 @@ class ExamTemplate(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    # 考试学科（rbac-scopes-design 承重墙）：建卷/导入写入；NULL → KB 解析回退班级默认学科
+    subject: Mapped[str | None] = mapped_column(String(20), nullable=True)
     name: Mapped[str] = mapped_column(String(120))
     exam_date: Mapped[date] = mapped_column(Date)
     type: Mapped[str] = mapped_column(String(20))   # 单元|期中|期末|练习|补录|诊断
@@ -384,6 +413,10 @@ class Intervention(Base):
     source_report_id: Mapped[int | None] = mapped_column(
         ForeignKey("report.id"), nullable=True
     )
+    # 验证本干预的复测小卷（闭环一期 P2；2026-09-11 软退役——历史关联只读保留，
+    # 不再有新写入，验证语义由软闭合+自然考试接管）：INTEGER 不加 FK（增量列纪律，
+    # SQLite ALTER 不补 FK；create_all 新库同形）。
+    retest_exam_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     kind: Mapped[str] = mapped_column(String(24))   # 封闭集合，labels_source 真源
     scope: Mapped[str] = mapped_column(String(12))  # class | group | student
     # 同组共享（如 "r{report_id}:{root_kp_id}"）；班级行为 NULL
@@ -395,6 +428,33 @@ class Intervention(Base):
     suggested_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)  # 可选备注（一键确认不强制）
+
+
+class StudyRecord(Base):
+    """学习记录（study-loop-design）：AI 学习方案快照 + 学生自报事实。
+
+    与 Intervention 生命周期同构的事实行：方案生成时落行（generated_at），
+    学生自报「我学会了」置 self_marked_at。两条硬边界：自报**永不移动掌握度**
+    （不是证据，不产生 EvidenceEvent，掌握度裁判仍是判分作答）；自报只在当前
+    干预轮内有效（轮次界定见 app/study.py）。个体建议行被自报消化后
+    intervention_id 指向该行；班级行派发后学生各自生成方案，行可为空。
+    """
+
+    __tablename__ = "study_record"
+    __table_args__ = (Index("ix_study_record_student_kp", "student_id", "kp_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
+    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
+    kp_id: Mapped[int] = mapped_column(ForeignKey("knowledge_point.id"))
+    # 触发本轮学习的建议行；INTEGER 不加 FK（增量列纪律，同 Intervention.retest_exam_id）
+    intervention_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_markdown: Mapped[str] = mapped_column(Text)
+    # 溯源：{"model", "prompt_version"} 或 {"template": true}（LLM 关闭/失败回落模板）
+    plan_writer: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    self_marked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # ---------------------------------------------------------------------------

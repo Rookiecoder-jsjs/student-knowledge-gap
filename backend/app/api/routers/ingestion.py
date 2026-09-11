@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app import auth as _auth
 from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.db import utcnow
 # 批量模块经模块引用（batch_mod.X / batch_up.X）而非指名导入：测试会 monkeypatch
@@ -33,6 +34,7 @@ from app.kb.edit import log_correction
 from app.llm.client import LLMError, get_client
 from app.llm.prompts import RESPONSE_BATCH_PROMPT_VERSION
 from app.models import (
+    Class,
     ExamResponse,
     ExamTemplate,
     KnowledgePoint,
@@ -174,7 +176,7 @@ async def photo_template(
 ):
     """阶段A：试卷照片 → 结构化模板 + 闭集知识点标注（source=LLM，待审核）。"""
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
     image = await file.read()
     result = parse_template_from_photo(db, kb.id, class_id, name, exam_date, type, image)
     if result.exam_id is None:
@@ -461,7 +463,15 @@ def update_question_tags(question_id: int, req: QuestionTagsUpdate, ctx=Depends(
     )
     if committed:
         raise HTTPException(400, "该考试已有已提交作答，改标会使已派生证据失效；请以补录考试处理")
-    kb = _active_kb(db)
+    _tpl = db.get(ExamTemplate, q.exam_template_id)
+    _cls = db.get(Class, _tpl.class_id) if _tpl is not None else None
+    # 考试语境学科（rbac-scopes-design 承重墙）：exam.subject ?? 班级默认
+    kb = _active_kb(
+        db,
+        (_tpl.subject or (_cls.subject if _cls else None))
+        if _tpl is not None
+        else None,
+    )
     graph = _graph(db, kb.id)
     resolved = []
     for tag in req.kps:

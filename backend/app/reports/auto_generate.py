@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.kb.graph import KpGraph
 from app.kb.resolver import KbNotActiveError, active_kb
 from app.models import (
+    Class,
     ExamResponse,
     ExamTemplate,
     KbVersion,
@@ -63,7 +64,12 @@ def generate_exam_reports(session: Session, exam_id: int) -> ExamReportResult:
     template = session.get(ExamTemplate, exam_id)
     if template is None:
         return ExamReportResult()
-    kb = _active_kb(session)
+    _kb_cls = session.get(Class, template.class_id) if template.class_id else None
+    # 考试语境学科（rbac-scopes-design 承重墙）：exam.subject ?? 班级默认
+    kb = _active_kb(
+        session,
+        template.subject or (_kb_cls.subject if _kb_cls is not None else None),
+    )
     if kb is None:
         logger.warning("考试 %s 报告生成跳过：无 active 知识库版本", exam_id)
         return ExamReportResult()
@@ -194,13 +200,13 @@ def _actions_head(
     ]
 
 
-def _active_kb(session: Session) -> KbVersion | None:
-    """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
+def _active_kb(session: Session, subject: str | None = None) -> KbVersion | None:
+    """active 知识库（strict 策略统一在 kb.resolver，候选5a；多学科按 subject 解析）。
 
     报告生成是 best-effort：strict 无 active / 无任何版本均返回 None，报告跳过、不影响提交。
     """
     try:
-        return active_kb(session)
+        return active_kb(session, subject)
     except KbNotActiveError:
         logger.warning("考试报告生成跳过：SC_KB_STRICT_ACTIVE 下无 active 知识库版本")
         return None

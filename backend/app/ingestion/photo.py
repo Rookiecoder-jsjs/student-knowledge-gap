@@ -33,6 +33,7 @@ from app.llm.prompts import (
 from app.models import (
     ExamResponse,
     ExamTemplate,
+    KbVersion,
     KnowledgePoint,
     ParseJob,
     QuestionKp,
@@ -107,8 +108,11 @@ def parse_template_from_photo(
         result.warnings.append("模型未返回任何题目")
         return result
 
+    _kb = session.get(KbVersion, kb_version_id)
     tpl = ExamTemplate(
         class_id=class_id,
+        # 考试学科随所依据的知识库版本（rbac-scopes-design 承重墙）
+        subject=_kb.subject if _kb is not None else None,
         name=name,
         exam_date=exam_date,
         type=type_,

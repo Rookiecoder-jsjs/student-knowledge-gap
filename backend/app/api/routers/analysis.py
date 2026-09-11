@@ -11,12 +11,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app import auth as _auth
 from app.api.deps import (
     _active_kb,
     _as_dt,
     _graph,
     get_db,
     guard_class,
+    guard_exam,
     require_teacher,
 )
 from app.models import Class as ClassModel
@@ -29,6 +31,7 @@ from app.pipeline.attribution import (
     verify_attribution_prediction,
 )
 from app.pipeline.mastery import mastery_at
+from app.pipeline.progress import loop_states_for_student
 from app.pipeline.weakness import assess_student_kps
 from app.queries.diagnosis_sheet import class_diagnosis_sheet
 from app.reports.diagnosis_orchestrator import (
@@ -54,7 +57,10 @@ def student_mastery(
     if stu is None:
         raise HTTPException(404, "学生不存在")
     guard_class(stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
     out = []
@@ -74,10 +80,15 @@ def student_weaknesses(
     if stu is None:
         raise HTTPException(404, "学生不存在")
     guard_class(stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
     assessments = assess_student_kps(db, graph, student_id, stu.class_id, when)
+    # 进度生命周期（闭环一期 P1）：与 /me/weaknesses 同源折叠，教师端同形状
+    loop = loop_states_for_student(db, graph, student_id, stu.class_id, when, assessments=assessments)
     return {
         "student_id": student_id,
         "as_of": str(when.date()),
@@ -91,6 +102,7 @@ def student_weaknesses(
                 "trajectory": a.trajectory,
                 "stale": a.stale,
                 "class_common": a.is_class_common,
+                "loop_state": loop.get(a.kp_id),
             }
             for a in assessments
             if a.is_weak
@@ -110,7 +122,10 @@ def run_attributions(
     if stu is None:
         raise HTTPException(404, "学生不存在")
     guard_class(stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
     active = materialize_attribution_verdicts(db, graph, student_id, stu.class_id, when)
@@ -144,13 +159,16 @@ def quality_report(
     ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    if db.get(ClassModel, class_id) is None:
+    clazz = db.get(ClassModel, class_id)
+    if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
     tpl = db.get(ExamTemplate, exam_id)
     if tpl is not None:
-        guard_class(tpl.class_id, db, ctx)
-    kb = _active_kb(db)
+        guard_exam(tpl, db, ctx)  # 班级归属 + 学科收窄一次裁决
+    # 考试语境学科（rbac-scopes-design 承重墙）：exam.subject ?? 班级默认
+    subject = (tpl.subject or clazz.subject) if tpl is not None else clazz.subject
+    kb = _active_kb(db, subject)
     graph = _graph(db, kb.id)
     # get-or-generate 编排在领域层（候选2 diagnosis_orchestrator）：不感知 HTTP
     try:
@@ -172,10 +190,11 @@ def class_diagnosis_sheet_endpoint(class_id: int, ctx=Depends(require_teacher), 
     滚动现状（跨考试 derive-on-read）+ 最新班级改进意见（LLM/模板）+
     行动与闭环摘要（intervention-loop 落地后接入，本期空占位）。
     """
-    if db.get(ClassModel, class_id) is None:
+    clazz = db.get(ClassModel, class_id)
+    if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
     graph = _graph(db, kb.id)
     return class_diagnosis_sheet(db, graph, class_id)
 
@@ -194,7 +213,10 @@ def diagnosis(
     if stu is None:
         raise HTTPException(404, "学生不存在")
     guard_class(stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
+    kb = _active_kb(
+        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+    )
     graph = _graph(db, kb.id)
     try:
         report, _generated = get_or_generate_diagnosis(
@@ -248,7 +270,12 @@ def verify_attribution(
     _stu = db.get(Student, att.student_id)
     if _stu is not None:
         guard_class(_stu.class_id, db, ctx)
-    kb = _active_kb(db)
+    kb = _active_kb(
+        db,
+        _auth.class_subject(db, ctx, _stu.clazz)
+        if _stu is not None and _stu.clazz
+        else None,
+    )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
     try:

@@ -31,32 +31,43 @@ def strict_active() -> bool:
     return os.environ.get("SC_KB_STRICT_ACTIVE", "").lower() in ("1", "true", "yes")
 
 
-def active_kb(session: Session) -> KbVersion | None:
-    """取 status=active 的最新版本；无 active 时按 strict 决定兜底或抛错。
+def active_kb(session: Session, subject: str | None = None) -> KbVersion | None:
+    """取 status=active 的最新版本（多学科口径：可按学科解析）；无 active 时按
+    strict 决定兜底或抛错。
 
-    - strict（SC_KB_STRICT_ACTIVE）无 active → 抛 ``KbNotActiveError``，
-      避免分析跑在未审图谱上；
-    - 否则兜底最新版本并 warning（结论需教研核对，与运行时一致）；
-    - 仍无任何版本 → 返回 ``None``。
+    - subject 给定：在该学科内解析（调用方经 ``Class.subject`` 传入）——学科内
+      无 active 时 strict 抛错 / 非严格兜底**同学科**最新版本并 warning，绝不
+      跨学科兜底（否则数学分析会串到语文图谱上）；
+    - subject 为 None：保持旧行为（全局最新 active），兼容无学科上下文的调用
+      （KB 浏览类端点缺省、题干推荐等）。
+    - strict（SC_KB_STRICT_ACTIVE）无 active → 抛 ``KbNotActiveError``，避免
+      分析跑在未审图谱上；仍无任何版本 → 返回 ``None``。
     """
-    kb = session.scalar(
-        select(KbVersion)
-        .where(KbVersion.status == "active")
-        .order_by(KbVersion.id.desc())
-    )
+    stmt = select(KbVersion).where(KbVersion.status == "active")
+    if subject is not None:
+        stmt = stmt.where(KbVersion.subject == subject)
+    kb = session.scalar(stmt.order_by(KbVersion.id.desc()))
     if kb is not None:
         return kb
     if strict_active():
         raise KbNotActiveError(
-            "无审核通过(active)的知识库版本，请先审核并激活（SC_KB_STRICT_ACTIVE 已开启）"
+            f"无审核通过(active)的知识库版本"
+            f"{f'（学科：{subject}）' if subject else ''}，请先审核并激活"
+            f"（SC_KB_STRICT_ACTIVE 已开启）"
         )
-    kb = session.scalar(select(KbVersion).order_by(KbVersion.id.desc()))
-    if kb is not None and kb.status != "active":
+    stmt2 = select(KbVersion)
+    if subject is not None:
+        stmt2 = stmt2.where(KbVersion.subject == subject)
+    kb = session.scalar(stmt2.order_by(KbVersion.id.desc()))
+    if kb is None:
+        return None
+    if kb.status != "active":
         logger.warning(
-            "分析层兜底使用未激活的知识库版本(id=%d, status=%s, %s v%s)，"
+            "分析层兜底使用未激活的知识库版本(id=%d, status=%s, %s %s v%s)，"
             "该版本未经教研审核，归因结果需谨慎核对（improvement-plan §2.1）",
             kb.id,
             kb.status,
+            kb.subject,
             kb.textbook_edition,
             kb.version,
         )

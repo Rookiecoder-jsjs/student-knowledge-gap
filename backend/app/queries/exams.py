@@ -84,6 +84,7 @@ def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
                 "source": tpl.source,
                 "question_count": question_counts.get(tpl.id, 0),
                 "response_counts": status_counts[tpl.id],
+                "subject": tpl.subject,  # 考试学科（rbac-scopes-design 承重墙；NULL=存量未标注）
                 "unreviewed_tags": unreviewed.get(tpl.id, 0),
             }
         )

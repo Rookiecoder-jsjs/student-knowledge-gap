@@ -101,6 +101,17 @@ class KpCreateRequest(BaseModel):
     difficulty_prior: float = 0.5
     mastery_floor: float = 0.6
     importance: str = "核心"    # 基础/核心/拓展（kb-improvement-design K5）
+    # 显式目标版本（图形化建库向导写入 draft/reviewed）；缺省 = active（旧行为）
+    kb_version_id: int | None = None
+
+
+class KbVersionCreateRequest(BaseModel):
+    """图形化建库：新建空白草稿版本（多学科，subject 必填；grade 落版本年级）。"""
+
+    subject: str = Field(min_length=1, max_length=20)
+    grade: int | None = None
+    textbook_edition: str = Field(min_length=1, max_length=100)
+    version: str = Field(default="0.1.0", max_length=20)
 
 
 class KpUpdateRequest(BaseModel):

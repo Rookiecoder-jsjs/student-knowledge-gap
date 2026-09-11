@@ -14,6 +14,7 @@ from app.models import (
     ExamTemplate,
     KnowledgePoint,
     Student,
+    Teacher,
     TeachingProgress,
 )
 
@@ -33,6 +34,15 @@ def classes_list(session: Session) -> list[dict]:
             )
         ).all()
     )
+    # 班主任（rbac-scopes-design §3）：批量取姓名，列表端点零 N+1
+    hr_ids = {c.homeroom_teacher_id for c in classes if c.homeroom_teacher_id is not None}
+    homeroom_names: dict[int, str] = {}
+    if hr_ids:
+        homeroom_names = dict(
+            session.execute(
+                select(Teacher.id, Teacher.name).where(Teacher.id.in_(hr_ids))
+            ).all()
+        )
     for clazz in classes:
         out.append(
             {
@@ -43,6 +53,8 @@ def classes_list(session: Session) -> list[dict]:
                 "school_id": clazz.school_id,
                 "student_count": student_counts.get(clazz.id, 0),
                 "exam_count": exam_counts.get(clazz.id, 0),
+                "homeroom_teacher_id": clazz.homeroom_teacher_id,
+                "homeroom_teacher_name": homeroom_names.get(clazz.homeroom_teacher_id or 0),
             }
         )
     return out

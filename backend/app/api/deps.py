@@ -108,12 +108,12 @@ def require_kb_editor(
     authorization: str = Header(default=""),
     db: Session = Depends(get_db),
 ) -> "_auth.AccessContext":
-    """知识库写操作守卫（两层写权，frontend-ends-design §B）：
+    """知识库写操作粗闸（两层写权 → RBAC 范围体系，rbac-scopes-design §4）：
 
-    - 内容层（kp/关系 CRUD、fork 草稿、import、draft→reviewed）：
-      安全模式下 admin **或被授权 kb_editor 教师**可写；
-    - 版本治理层（「设为正式版」= 全校口径切换）：admin 专属——不放 dep，
-      由 patch_kb_version 端点内部分权（同一端点还承载 draft→reviewed）。
+    只拦「确定无任何 KB 写权」的主体（安全模式下非 admin、非 kb_editor、且无
+    学科×年级授权的教师）。精细的范围裁决由各写端点经 ``auth.can_write_kb`` /
+    ``auth.can_govern_kb`` 按目标版本 (subject, grade) 执行——粗闸保证即使端点
+    漏检，无权教师也进不来。
 
     开放模式匿名放行（初始化向导 bootstrap 依赖匿名导库）。读端点不加门
     ——全校教师可读（列表端点仍受中间件闸约束，学生主体不可达）。
@@ -124,6 +124,7 @@ def require_kb_editor(
         and not ctx.is_admin
         and not ctx.teacher.kb_editor
         and _auth.security_mode_on(db)
+        and not _auth.subject_scopes(db, ctx)
     ):
         raise HTTPException(403, "知识库写操作需要管理员或被授权教师权限")
     return ctx
@@ -137,21 +138,31 @@ def guard_class(class_id: int, db: Session, ctx: "_auth.AccessContext"):
         raise HTTPException(403, str(e)) from e
 
 
+def guard_exam(exam, db: Session, ctx: "_auth.AccessContext") -> None:
+    """考试归属 + 学科收窄校验（rbac-scopes-design §4）：403 翻译。"""
+    try:
+        _auth.assert_exam_access(db, ctx, exam)
+    except _auth.PermissionError_ as e:
+        raise HTTPException(403, str(e)) from e
+
+
 def _graph(session: Session, kb_version_id: int) -> KpGraph:
     return KpGraph(session, kb_version_id)
 
 
-def _active_kb(session: Session) -> KbVersion:
+def _active_kb(session: Session, subject: str | None = None) -> KbVersion:
     """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
 
+    subject 透传 resolver（多学科口径：调用方经班级 ``Class.subject`` 传入）。
     strict 无 active → 400；无任何版本 → 400「尚未导入」。HTTP 层只做信号翻译。
     """
     try:
-        kb = active_kb(session)
+        kb = active_kb(session, subject)
     except KbNotActiveError as e:
         raise HTTPException(400, str(e))
     if kb is None:
-        raise HTTPException(400, "尚未导入知识库，请先 POST /kb/import")
+        msg = f"学科「{subject}」尚未导入知识库" if subject else "尚未导入知识库，请先 POST /kb/import"
+        raise HTTPException(400, msg)
     return kb
 
 

@@ -18,6 +18,11 @@
   纯校级与授课兼管同形）与 Student（增凭据列）向上统一为 ``AccessContext`` 的
   principal；token 携带身份种类 kind（t/s，admin 权限每次从 DB 现读）；学生自服务
   走 ``/me`` 只读面（main.py 中间件前缀白名单隔离），MCP/gateway 仍教师专用。
+- **RBAC 范围体系（rbac-scopes-design）**：学科管理员 ``teacher_subject_scope``
+  （学科×年级）、班主任 ``class.homeroom_teacher_id``、科任收窄
+  ``teacher_class.subject``。裁决函数：``subject_scopes`` / ``class_subject`` /
+  ``assert_exam_access``（学科收窄）/ ``can_write_kb`` / ``can_govern_kb`` /
+  ``can_enable_student``；班级层裁决仍只有 ``assert_class_access`` 一个实现。
 
 本层不感知 HTTP 异常——抛 AuthError/PermissionError，由 deps 翻译。
 """
@@ -35,7 +40,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Class, Student, Teacher, TeacherClass
+from app.models import Class, Student, Teacher, TeacherClass, TeacherSubjectScope
 
 PBKDF2_ITERS = 60_000
 TOKEN_TTL_S = 7 * 24 * 3600  # 一周（教师口令登录，长会话合理）
@@ -346,8 +351,10 @@ def mcp_context(db: Session) -> AccessContext:
 
 
 def assert_class_access(db: Session, ctx: AccessContext, class_id: int) -> Class:
-    """班级访问裁决：开放模式放行；安全模式要求 admin 或 teacher_class 授权。
+    """班级访问裁决：开放模式放行；安全模式要求 admin、班主任或 teacher_class 授权。
 
+    班主任豁免（rbac-scopes-design §2）：homeroom_teacher_id 命中即放行——
+    班主任自动获得本班全科视野，不需要授权行。
     匿名上下文（teacher=None）在安全模式下拒绝——覆盖「MCP 进程未注入身份」
     的兜底缺口：裁决只有一个实现，HTTP 与 MCP 不可能各对匿名语义有不同解释。
     """
@@ -359,6 +366,8 @@ def assert_class_access(db: Session, ctx: AccessContext, class_id: int) -> Class
             raise PermissionError_("匿名身份无班级访问权限（安全模式）")
         return clazz
     if ctx.is_admin:
+        return clazz
+    if clazz.homeroom_teacher_id == ctx.teacher.id:
         return clazz
     granted = db.scalar(
         select(func.count(TeacherClass.id)).where(
@@ -382,14 +391,164 @@ def assert_student_access(db: Session, ctx: AccessContext, student_id: int) -> S
 
 
 def assert_exam_access(db: Session, ctx: AccessContext, exam_template) -> None:
-    assert_class_access(db, ctx, exam_template.class_id)
+    """考试访问裁决（rbac-scopes-design §4）：班级可见性 + 学科收窄。
+
+    班级层（是否在授权班内）由 assert_class_access 承担；在其之上叠加学科维度：
+    授权行带 subject 且与考试学科（exam.subject ?? 班级默认）不符 → 拒绝。
+    班主任全科豁免；admin / 匿名（开放模式）不收窄。
+    """
+    clazz = assert_class_access(db, ctx, exam_template.class_id)
+    if ctx.teacher is None or ctx.is_admin:
+        return
+    if clazz.homeroom_teacher_id == ctx.teacher.id:
+        return
+    exam_subject = exam_template.subject or clazz.subject
+    bound = db.scalars(
+        select(TeacherClass.subject).where(
+            TeacherClass.teacher_id == ctx.teacher.id,
+            TeacherClass.class_id == clazz.id,
+            TeacherClass.subject.is_not(None),
+        )
+    ).all()
+    if bound and exam_subject not in bound:
+        raise PermissionError_(
+            f"教师 {ctx.label} 对班级 {clazz.name} 仅有 "
+            f"{'、'.join(bound)} 学科视野，该考试学科为 {exam_subject}"
+        )
 
 
 def allowed_class_ids(db: Session, ctx: AccessContext) -> list[int] | None:
-    """可见班级 id 集合；None = 不限制（开放模式/admin）。列表端点过滤用。"""
+    """可见班级 id 集合；None = 不限制（开放模式/admin）。列表端点过滤用。
+
+    授权行 ∪ 班主任班级（rbac-scopes-design §2）——班主任未持授权行也必须在
+    列表（/classes 等）里看到自己的班。
+    """
     if ctx.teacher is None or ctx.is_admin:
         return None
-    rows = db.scalars(
-        select(TeacherClass.class_id).where(TeacherClass.teacher_id == ctx.teacher.id)
+    granted = set(
+        db.scalars(
+            select(TeacherClass.class_id).where(
+                TeacherClass.teacher_id == ctx.teacher.id
+            )
+        )
     )
-    return list(rows)
+    granted.update(
+        db.scalars(
+            select(Class.id).where(Class.homeroom_teacher_id == ctx.teacher.id)
+        )
+    )
+    return sorted(granted)
+
+
+# ---------------------------------------------------------------------------
+# RBAC 范围体系（rbac-scopes-design §4）：学科管理员 / 班主任 / 科任收窄
+# ---------------------------------------------------------------------------
+
+
+def subject_scopes(db: Session, ctx: AccessContext) -> list[tuple[str, int]] | None:
+    """学科管理员授权范围；None = 不受限（admin / 开放模式匿名）。
+
+    空列表 = 教师无任何学科授权（普通教师语义，不等于受限）。
+    """
+    if ctx.teacher is None or ctx.is_admin:
+        return None
+    rows = db.execute(
+        select(TeacherSubjectScope.subject, TeacherSubjectScope.grade).where(
+            TeacherSubjectScope.teacher_id == ctx.teacher.id
+        )
+    ).all()
+    return [(r[0], r[1]) for r in rows]
+
+
+def homeroom_class_ids(db: Session, teacher_id: int) -> list[int]:
+    """教师担任班主任的班级 id 集（/auth/me 派生 + 前端旗标用）。"""
+    return list(
+        db.scalars(select(Class.id).where(Class.homeroom_teacher_id == teacher_id))
+    )
+
+
+def is_homeroom(db: Session, ctx: AccessContext, class_id: int) -> bool:
+    """是否该班班主任（admin 不算——admin 有更宽通道，不冒充班主任语义）。"""
+    if ctx.teacher is None:
+        return False
+    return bool(
+        db.scalar(
+            select(Class.id).where(
+                Class.id == class_id, Class.homeroom_teacher_id == ctx.teacher.id
+            )
+        )
+    )
+
+
+def class_subject(db: Session, ctx: AccessContext, clazz: Class) -> str | None:
+    """班级语境的知识库学科（rbac-scopes-design §4）。
+
+    科任学科绑定行覆盖班级默认学科（收窄后的视野口径）；班主任/全科授权/admin
+    → 班级默认（clazz.subject）。考试语境不走本函数——一律 exam.subject ?? clazz.subject。
+    """
+    if ctx.teacher is not None and not ctx.is_admin:
+        bound = db.scalar(
+            select(TeacherClass.subject).where(
+                TeacherClass.teacher_id == ctx.teacher.id,
+                TeacherClass.class_id == clazz.id,
+                TeacherClass.subject.is_not(None),
+            )
+        )
+        if bound:
+            return bound
+    return clazz.subject
+
+
+def _scope_covers(
+    db: Session, ctx: AccessContext, subject: str | None, grade: int | None
+) -> bool:
+    """范围匹配：任一授权行覆盖 (subject, grade)。
+
+    grade 为 None（未标年级版本/存量）→ 按学科匹配（未标年级视为全年级共有）。
+    """
+    if subject is None:
+        return False
+    scopes = subject_scopes(db, ctx)
+    if not scopes:
+        return False
+    if grade is None:
+        return any(s == subject for s, _g in scopes)
+    return (subject, grade) in scopes
+
+
+def can_write_kb(
+    db: Session, ctx: AccessContext, subject: str | None, grade: int | None = None
+) -> bool:
+    """KB 内容写权（rbac-scopes-design §4）：admin ∨ kb_editor ∨ 范围授权。
+
+    开放模式匿名放行（bootstrap 导库依赖，与 require_kb_editor 语义一致）。
+    """
+    if ctx.teacher is None:
+        return not security_mode_on(db)
+    if ctx.is_admin or ctx.teacher.kb_editor:
+        return True
+    return _scope_covers(db, ctx, subject, grade)
+
+
+def can_govern_kb(
+    db: Session, ctx: AccessContext, subject: str | None, grade: int | None = None
+) -> bool:
+    """KB 治理权（启用/停用版本 = 全校口径切换）：admin ∨ 范围授权。
+
+    治理权下放学科管理员——教研组长决定本学科启用哪版（rbac-scopes-design §2）。
+    """
+    if ctx.teacher is None:
+        return not security_mode_on(db)
+    if ctx.is_admin:
+        return True
+    return _scope_covers(db, ctx, subject, grade)
+
+
+def can_enable_student(db: Session, ctx: AccessContext, student: Student) -> bool:
+    """学生账号开通/重置权：admin ∨ 本班班主任（rbac-scopes-design §8）。"""
+    if ctx.teacher is None:
+        return not security_mode_on(db)
+    if ctx.is_admin:
+        return True
+    clazz = db.get(Class, student.class_id)
+    return bool(clazz and clazz.homeroom_teacher_id == ctx.teacher.id)

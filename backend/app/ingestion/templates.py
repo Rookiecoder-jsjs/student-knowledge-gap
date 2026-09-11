@@ -17,6 +17,7 @@ from app.llm.client import LLMError, get_client
 from app.llm.prompts import TAGGER_PROMPT_VERSION, TAGGER_SYSTEM, tagger_user_prompt
 from app.models import (
     ExamTemplate,
+    KbVersion,
     KnowledgePoint,
     QuestionKp,
     TemplateQuestion,
@@ -42,8 +43,11 @@ def create_template(
         )
     }
 
+    _kb = session.get(KbVersion, kb_version_id)
     tpl = ExamTemplate(
         class_id=class_id,
+        # 考试学科随所依据的知识库版本（rbac-scopes-design 承重墙）
+        subject=_kb.subject if _kb is not None else None,
         name=name,
         exam_date=exam_date,
         type=type_,

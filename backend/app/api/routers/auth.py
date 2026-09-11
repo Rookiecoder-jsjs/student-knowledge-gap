@@ -4,7 +4,10 @@
 - ``GET /auth/me``：会话恢复，返回 role 与主体现形状（前端按角色路由）；
 - 账号与授权管理（``POST /auth/teachers`` 等）仅 admin 可用——首个 admin 由
   bootstrap 脚本/命令行创建（scripts/create_teacher.py），避免鸡生蛋；
-- 学生自服务账号由 admin 开通（``POST /auth/students/{id}/enable``）；
+- 学生自服务账号由 admin 或**本班班主任**开通（``POST /auth/students/{id}/enable``，
+  rbac-scopes-design §8 下放）；
+- 学科管理员授权（``PUT /auth/teachers/{id}/subject-scopes``）与班主任指派
+  （``PUT /auth/classes/{id}/homeroom``）仅 admin；
 - 本 router 只做 HTTP 翻译；裁决逻辑在 app.auth。
 """
 
@@ -18,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import auth
-from app.api.deps import access_ctx, get_db, require_admin
+from app.api.deps import access_ctx, get_db, require_admin, require_teacher
 from app.models import Class as ClassModel
 from app.models import Student, Teacher
 
@@ -46,10 +49,30 @@ class StudentEnableRequest(BaseModel):
 
 class GrantRequest(BaseModel):
     class_ids: list[int]
+    # 可选科任学科（rbac-scopes-design §7）：None=不改动存量行；""=清绑全科；
+    # 非空=新授权行带学科 / 存量行改绑
+    subject: str | None = Field(default=None, max_length=20)
 
 
 class KbEditorRequest(BaseModel):
     kb_editor: bool
+
+
+class SubjectScopeItem(BaseModel):
+    subject: str = Field(min_length=1, max_length=20)
+    grade: int
+
+
+class SubjectScopeSetRequest(BaseModel):
+    """学科管理员授权（覆盖式设置；rbac-scopes-design §7）。"""
+
+    scopes: list[SubjectScopeItem]
+
+
+class HomeroomRequest(BaseModel):
+    """班主任指派（teacher_id=None = 取消；班级侧单值，rbac-scopes-design §3）。"""
+
+    teacher_id: int | None = None
 
 
 def _unique_username(db: Session, username: str) -> bool:
@@ -61,16 +84,20 @@ def _unique_username(db: Session, username: str) -> bool:
     return True
 
 
-def _teacher_payload(ctx: auth.AccessContext) -> dict:
+def _teacher_payload(db: Session, ctx: auth.AccessContext) -> dict:
     t = ctx.teacher
     classes = [
         {"class_id": c.id, "name": c.name}
         for c in sorted(t.classes, key=lambda c: c.id)
     ]
+    scopes = auth.subject_scopes(db, ctx) or []
     return {
         "role": "admin" if t.admin else "teacher",
         "teacher": {"id": t.id, "name": t.name, "admin": t.admin, "kb_editor": t.kb_editor},
         "classes": classes,
+        # RBAC 范围（rbac-scopes-design §9）：前端旗标与后端同口径派生
+        "subject_scopes": [{"subject": s, "grade": g} for s, g in scopes],
+        "homeroom_class_ids": auth.homeroom_class_ids(db, t.id),
     }
 
 
@@ -99,7 +126,9 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         if kind == "t"
         else auth.AccessContext(student=principal)
     )
-    body = _teacher_payload(ctx) if kind == "t" else _student_payload(ctx)
+    body = (
+        _teacher_payload(db, ctx) if kind == "t" else _student_payload(ctx)
+    )
     body["token"] = token
     return body
 
@@ -107,12 +136,13 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/auth/me")
 def me(
     ctx=Depends(access_ctx),
+    db: Session = Depends(get_db),
 ):
     """当前身份（前端会话恢复用；匿名返回 authenticated:false）。"""
     if ctx.principal is None:
         return {"authenticated": False}
     body = (
-        _teacher_payload(ctx)
+        _teacher_payload(db, ctx)
         if ctx.teacher is not None
         else _student_payload(ctx)
     )
@@ -151,11 +181,15 @@ def list_teachers(
 ):
     """管理员查教师账号（frontend-ends-design §C 账号管理列表面）。
 
-    返回 name/username/admin/已授班级——班级授权行内编辑的数据源。
+    返回 name/username/admin/已授班级/学科×年级授权/班主任班级——账号管理
+    行内编辑的数据源（rbac-scopes-design §7）。
     """
     rows = db.scalars(select(Teacher).order_by(Teacher.id))
-    return {
-        "teachers": [
+    out = []
+    for t in rows:
+        _tctx = auth.AccessContext(teacher=t)
+        scopes = auth.subject_scopes(db, _tctx) or []
+        out.append(
             {
                 "teacher_id": t.id,
                 "name": t.name,
@@ -166,20 +200,30 @@ def list_teachers(
                     {"class_id": c.id, "name": c.name}
                     for c in sorted(t.classes, key=lambda c: c.id)
                 ],
+                "subject_scopes": [{"subject": s, "grade": g} for s, g in scopes],
+                "homeroom_class_ids": auth.homeroom_class_ids(db, t.id),
             }
-            for t in rows
-        ]
-    }
+        )
+    return {"teachers": out}
 
 
 @router.post("/auth/students/{student_id}/enable")
 def enable_student(
     student_id: int,
     req: StudentEnableRequest,
-    admin_ctx=Depends(require_admin),
+    ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """管理员开通/重置学生自服务账号（username 缺省 = external_code 学籍号）。"""
+    """开通/重置学生自服务账号（username 缺省 = external_code 学籍号）。
+
+    RBAC（rbac-scopes-design §8）：admin 或本班班主任——账号开通权下放班主任，
+    只管本班（can_enable_student 裁决）。
+    """
+    stu = db.get(Student, student_id)
+    if stu is None:
+        raise HTTPException(404, "学生不存在")
+    if not auth.can_enable_student(db, ctx, stu):
+        raise HTTPException(403, "学生账号开通需要管理员或本班班主任权限")
     try:
         _stu, username = auth.enable_student_login(
             db, student_id, req.password, req.username
@@ -196,25 +240,96 @@ def grant_classes(
     admin_ctx=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """授予班级访问权（幂等；admin 全班可见无需授权行）。"""
+    """授予班级访问权（幂等；admin 全班可见无需授权行）。
+
+    RBAC（rbac-scopes-design §7）：可选 subject —— 传「数学」等则该授权行为
+    科任（仅见该学科考试）；传空串清空 = 全科（存量语义）。
+    """
     t = db.get(Teacher, teacher_id)
     if t is None:
         raise HTTPException(404, "教师不存在")
+    bound_subject = req.subject.strip() if req.subject else None
     added = 0
     for cid in req.class_ids:
         if db.get(ClassModel, cid) is None:
             raise HTTPException(404, f"班级 {cid} 不存在")
-        exists = db.scalar(
-            select(auth.TeacherClass.id).where(
+        row = db.scalar(
+            select(auth.TeacherClass).where(
                 auth.TeacherClass.teacher_id == teacher_id,
                 auth.TeacherClass.class_id == cid,
             )
         )
-        if exists is None:
-            db.add(auth.TeacherClass(teacher_id=teacher_id, class_id=cid))
+        if row is None:
+            db.add(
+                auth.TeacherClass(
+                    teacher_id=teacher_id, class_id=cid, subject=bound_subject
+                )
+            )
             added += 1
+        elif req.subject is not None:
+            row.subject = bound_subject
     db.flush()
     return {"teacher_id": teacher_id, "added": added}
+
+
+@router.put("/auth/teachers/{teacher_id}/subject-scopes")
+def set_subject_scopes(
+    teacher_id: int,
+    req: SubjectScopeSetRequest,
+    admin_ctx=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """设置学科管理员授权（学科×年级，覆盖式；rbac-scopes-design §7）。
+
+    授权行授予 KB 内容写权与治理权（can_write_kb/can_govern_kb），角色从 DB
+    现读，已发 token 立即生效/失效。
+    """
+    t = db.get(Teacher, teacher_id)
+    if t is None:
+        raise HTTPException(404, "教师不存在")
+    for row in db.scalars(
+        select(auth.TeacherSubjectScope).where(
+            auth.TeacherSubjectScope.teacher_id == teacher_id
+        )
+    ):
+        db.delete(row)
+    seen: set[tuple[str, int]] = set()
+    for item in req.scopes:
+        key = (item.subject.strip(), item.grade)
+        if key in seen:
+            continue
+        seen.add(key)
+        db.add(
+            auth.TeacherSubjectScope(
+                teacher_id=teacher_id, subject=key[0], grade=key[1]
+            )
+        )
+    db.flush()
+    return {
+        "teacher_id": teacher_id,
+        "subject_scopes": [{"subject": s, "grade": g} for s, g in sorted(seen)],
+    }
+
+
+@router.put("/auth/classes/{class_id}/homeroom")
+def set_homeroom(
+    class_id: int,
+    req: HomeroomRequest,
+    admin_ctx=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """指派/取消班主任（一班一人；rbac-scopes-design §3/§7）。
+
+    班主任自动获得本班全科视野与学生账号开通权（无需 teacher_class 授权行）。
+    """
+    clazz = db.get(ClassModel, class_id)
+    if clazz is None:
+        raise HTTPException(404, "班级不存在")
+    if req.teacher_id is not None and db.get(Teacher, req.teacher_id) is None:
+        raise HTTPException(404, "教师不存在")
+    clazz.homeroom_teacher_id = req.teacher_id
+    db.flush()
+    return {"class_id": class_id, "homeroom_teacher_id": req.teacher_id}
 
 
 @router.post("/auth/teachers/{teacher_id}/kb-editor")

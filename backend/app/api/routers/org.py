@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app import auth as _auth
 from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.kb.resolver import KbNotActiveError, active_kb
 from app.models import Class, School, Student, TeachingProgress
@@ -68,7 +69,7 @@ def create_class(school_id: int, req: ClassCreate, ctx=Depends(require_teacher),
 @router.post("/classes/{class_id}/progress")
 def update_progress(class_id: int, req: ProgressUpdate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     _guard(db, ctx, class_id)
-    kb = _active_kb(db)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
     graph = _graph(db, kb.id)
 
     added = 0

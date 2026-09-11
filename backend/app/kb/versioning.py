@@ -73,7 +73,7 @@ def fork_kb_version(session: Session, src: KbVersion) -> KbVersion:
 def activate_kb_version(
     session: Session,
     target: KbVersion,
-    active: KbVersion,
+    active: KbVersion | None,
     *,
     force: bool = False,
     confirm: bool = False,
@@ -81,11 +81,27 @@ def activate_kb_version(
 ) -> dict:
     """把 target 切为 active（旧 active 降 reviewed）。
 
+    多学科口径（2026-09-11）：active 按调用方解析的**同学科**当前 active 传入；
+    ``active=None``（该学科首个版本首激活）跳过兼容性对照——没有被替代版本时
+    缺失码/参数 diff 无从谈起，直接置 active 并记切换日志。
+
     返回端点响应内容（{id, status, switched_from, missing_codes_accepted,
     attribute_changes_accepted, note}）。
     """
     if target.status == "active":
         raise KbEditError("该版本已是 active")
+    if active is None:
+        target.status = "active"
+        log_correction(session, "kb_version", target.id, "active", None, target.id, by)
+        session.flush()
+        return {
+            "id": target.id,
+            "status": "active",
+            "switched_from": None,
+            "missing_codes_accepted": [],
+            "attribute_changes_accepted": [],
+            "note": _ACTIVATION_NOTE,
+        }
     comp = compatibility(session, active, target)
     # ① code 超集：缺失 code 需 force（接受旧证据失联）
     missing = comp["missing_codes"]
