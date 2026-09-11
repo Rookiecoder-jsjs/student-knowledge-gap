@@ -1,89 +1,110 @@
 import {
   ArrowRight,
   BookOpen,
+  Buildings,
   ClipboardText,
   PlusCircle,
   TreeStructure,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
+import { AccountCluster, TOOL_LINK, TopBar } from "../components/TopBar";
 import { ErrorState, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { listClassesOverview } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
+import { roleFlags } from "../lib/portal";
 import type { ClassOverview } from "../lib/types";
 
-/** 一级页面·班级概览：横向对比所有班级的待办 / 最近考试 / 教学进度，点击进入单班工作台。 */
+/** 一级页面·班级概览：横向对比所有班级的待办 / 最近考试 / 教学进度，点击进入单班工作台。
+ * 顶栏为统一骨架（UI 位置统一 2026-09-10）：知识库/校务台/账号自页底上移进顶栏右侧。
+ */
 export default function ClassPicker() {
   const nav = useNavigate();
+  const { session } = useAuth();
+  const flags = roleFlags(session);
   const { data, loading, error, reload } = useAsync(() => listClassesOverview(), []);
 
   return (
-    <div className="mx-auto flex min-h-[100dvh] max-w-[1200px] flex-col px-6 py-12">
-      {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
-      <header className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f766e] via-[#14b8a6] to-[#2563eb] px-8 py-9 text-white shadow-lift">
-        <div className="flex items-center gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
-            <TreeStructure size={24} weight="bold" />
-          </span>
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight">班级概览</h1>
-            <p className="mt-1 text-sm text-white/80">
-              选择班级进入工作台，或创建新班级开始分析
-            </p>
+    <div className="flex min-h-[100dvh] flex-col">
+      <TopBar
+        title="薄弱点分析"
+        subtitle="教师工作台"
+        right={
+          <>
+            <Link to="/kb" className={TOOL_LINK}>
+              <BookOpen size={15} />
+              <span className="hidden sm:inline">知识库</span>
+            </Link>
+            {flags.adminOrOpen && (
+              <Link to="/admin" className={TOOL_LINK}>
+                <Buildings size={15} />
+                <span className="hidden sm:inline">校务台</span>
+              </Link>
+            )}
+            {session && <AccountCluster session={session} name={session.teacher?.name ?? ""} />}
+          </>
+        }
+      />
+
+      <div className="mx-auto w-full max-w-[1200px] flex-1 px-6 pb-12 pt-8">
+        {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
+        <header className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f766e] via-[#14b8a6] to-[#2563eb] px-8 py-9 text-white shadow-lift">
+          <div className="flex items-center gap-4">
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
+              <TreeStructure size={24} weight="bold" />
+            </span>
+            <div>
+              <h1 className="font-display text-3xl font-bold tracking-tight">班级概览</h1>
+              <p className="mt-1 text-sm text-white/80">
+                选择班级进入工作台，或创建新班级开始分析
+              </p>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {loading && <Skeleton rows={3} />}
-      {error && <ErrorState message={error} onRetry={reload} />}
+        {loading && <Skeleton rows={3} />}
+        {error && <ErrorState message={error} onRetry={reload} />}
 
-      {data && data.classes.length === 0 && (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-line bg-surface/70 px-10 py-16 text-center shadow-soft">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
-            <PlusCircle size={30} className="text-accent" weight="thin" />
-          </span>
-          <div>
-            <p className="text-lg font-semibold">还没有班级</p>
-            <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-relaxed text-ink-soft">
-              首次使用需要三步：导入知识库、建立班级名单、标记教学进度。
-              完成后即可录入考试并生成分析。
-            </p>
+        {data && data.classes.length === 0 && (
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-line bg-surface/70 px-10 py-16 text-center shadow-soft">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
+              <PlusCircle size={30} className="text-accent" weight="thin" />
+            </span>
+            <div>
+              <p className="text-lg font-semibold">还没有班级</p>
+              <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-relaxed text-ink-soft">
+                首次使用需要三步：导入知识库、建立班级名单、标记教学进度。
+                完成后即可录入考试并生成分析。
+              </p>
+            </div>
+            <Link
+              to="/wizard"
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
+            >
+              <PlusCircle size={17} />
+              开始初始化（约 5 分钟）
+            </Link>
           </div>
-          <Link
-            to="/wizard"
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
-          >
-            <PlusCircle size={17} />
-            开始初始化（约 5 分钟）
-          </Link>
-        </div>
-      )}
+        )}
 
-      {data && data.classes.length > 0 && (
-        <StaggerList className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {data.classes.map((c) => (
-            <StaggerItem key={c.class_id}>
-              <ClassCard c={c} onClick={() => nav(`/c/${c.class_id}`)} />
-            </StaggerItem>
-          ))}
-        </StaggerList>
-      )}
-
-      <div className="mt-10 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-        <Link
-          to="/kb"
-          className="inline-flex items-center gap-1.5 font-medium text-accent transition-colors hover:text-accent-deep"
-        >
-          <BookOpen size={15} />
-          知识库管理
-        </Link>
         {data && data.classes.length > 0 && (
-          <span className="text-ink-faint">
+          <StaggerList className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {data.classes.map((c) => (
+              <StaggerItem key={c.class_id}>
+                <ClassCard c={c} onClick={() => nav(`/c/${c.class_id}`)} />
+              </StaggerItem>
+            ))}
+          </StaggerList>
+        )}
+
+        {data && data.classes.length > 0 && (
+          <p className="mt-10 text-sm text-ink-faint">
             需要新建班级？{" "}
             <Link to="/wizard" className="font-medium text-accent hover:text-accent-deep">
               进入初始化向导
             </Link>
-          </span>
+          </p>
         )}
       </div>
     </div>

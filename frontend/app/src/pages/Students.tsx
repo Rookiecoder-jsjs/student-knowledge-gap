@@ -1,9 +1,13 @@
-import { ChartBar, FirstAidKit, ListChecks } from "@phosphor-icons/react";
+import { ChartBar, Eye, FirstAidKit, Key, ListChecks } from "@phosphor-icons/react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Page, PageHeader, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
-import { listInterventions, listStudents } from "../lib/api";
+import { enableStudentAccount, listInterventions, listStudents } from "../lib/api";
+import type { StudentInfo } from "../lib/types";
+import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
+import { roleFlags } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
 
 /** 学生列表（名单原序，不按任何分数排序）。 */
@@ -11,6 +15,7 @@ export default function Students() {
   const { classId } = useParams();
   const cid = Number(classId);
   const { data, loading, error, reload } = useAsync(() => listStudents(cid), [cid]);
+  const flags = roleFlags(useAuth().session);
   // 干预摘要（intervention-loop §6）：每行 chip「N 项建议 · M 已执行」——聚合一次
   const iv = useAsync(
     () => listInterventions({ class_id: cid }).catch(() => ({ total: 0, items: [] })),
@@ -24,6 +29,28 @@ export default function Students() {
     if (row.status === "done") slot.done += 1;
     byStudent.set(row.student_id, slot);
   }
+
+  // admin 开通/重置学生自服务账号（frontend-ends-design §D）
+  const [enableFor, setEnableFor] = useState<StudentInfo | null>(null);
+  const [enableErr, setEnableErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [pw, setPw] = useState("");
+  const [uname, setUname] = useState("");
+
+  const doEnable = async () => {
+    if (!enableFor) return;
+    setBusy(true);
+    setEnableErr(null);
+    try {
+      await enableStudentAccount(enableFor.student_id, pw, uname.trim() || undefined);
+      setEnableFor(null); // 成功即关闭；行内徽标/按钮随 reload 更新
+      reload();
+    } catch (e) {
+      setEnableErr(e instanceof Error ? e.message : "开通失败");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Page accent={ACCENTS.student}>
@@ -54,6 +81,7 @@ export default function Students() {
                 <p className="truncate text-sm font-medium">{s.name_or_alias}</p>
                 <p className="flex items-center gap-2 text-xs text-ink-faint">
                   {s.external_code}
+                  {s.has_account && <Badge tone="neutral">自服务已开通</Badge>}
                   {stat && (stat.suggested > 0 || stat.done > 0) && (
                     <Badge tone={stat.suggested > 0 ? "warn" : "neutral"}>
                       {stat.suggested > 0
@@ -63,7 +91,32 @@ export default function Students() {
                   )}
                 </p>
               </div>
-              <span className="flex gap-2">
+              <span className="flex items-center gap-2">
+                {flags.adminLogin && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEnableFor(s);
+                      setEnableErr(null);
+                      setPw("");
+                      setUname(s.username ?? "");
+                    }}
+                    title={s.has_account ? "重置学生自服务账号口令" : "开通学生自服务账号"}
+                  >
+                    <Key size={14} />
+                    {s.has_account ? "重置口令" : "开通账号"}
+                  </Button>
+                )}
+                {flags.adminLogin && (
+                  <Link
+                    to={`/c/${cid}/students/${s.student_id}/portal`}
+                    title="以学生视角查看自服务门户（只读，与 /me 同源同形状）"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
+                  >
+                    <Eye size={14} />
+                    学生视角
+                  </Link>
+                )}
                 <Link
                   to={`/c/${cid}/students/${s.student_id}/diagnosis`}
                   className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:text-accent"
@@ -92,6 +145,39 @@ export default function Students() {
           </Card>
         </Reveal>
       )}
+
+      {/* 开通/重置学生自服务账号（frontend-ends-design §D；仅 admin 会话） */}
+      <Modal
+        open={enableFor !== null}
+        onClose={() => setEnableFor(null)}
+        title={enableFor?.has_account ? `重置口令 · ${enableFor?.name_or_alias}` : `开通自服务账号 · ${enableFor?.name_or_alias ?? ""}`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEnableFor(null)} disabled={busy}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={doEnable} disabled={busy || pw.length < 6}>
+              {busy ? "提交中…" : "保存"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-ink-faint">
+            学生登录后查看自己的掌握度/薄弱点/已签发报告与改进单（只读自服务面）。
+            {enableFor?.has_account
+              ? "已开通账号将重置口令。"
+              : "缺省登录名 = 学籍号（external_code），也可显式指定。"}
+          </p>
+          <Field label="登录名">
+            <Input value={uname} onChange={(e) => setUname(e.target.value)} placeholder={enableFor?.external_code || "学籍号"} autoFocus />
+          </Field>
+          <Field label="口令（≥6 位）">
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          </Field>
+          {enableErr && <p className="text-xs text-danger">{enableErr}</p>}
+        </div>
+      </Modal>
     </Page>
   );
 }

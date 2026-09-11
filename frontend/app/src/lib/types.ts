@@ -36,6 +36,9 @@ export interface StudentInfo {
   student_id: number;
   name_or_alias: string;
   external_code: string;
+  /** frontend-ends-design §D：自服务账号状态（username 即学籍号/登录名，非口令）。 */
+  has_account?: boolean;
+  username?: string | null;
 }
 
 export interface ProgressEntry {

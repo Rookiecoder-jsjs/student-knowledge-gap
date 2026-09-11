@@ -31,6 +31,7 @@ import type {
   UsageLedger,
   Weaknesses,
 } from "./types";
+import { getToken } from "./auth";
 
 export type { InboxItem, InboxSummary, ReportFull, UsageLedger } from "./types";
 
@@ -45,10 +46,20 @@ export class ApiError extends Error {
 
 const BASE = "/api";
 
+// 401 全局处理：由 AuthContext 注册——token 失效 → 清会话回登录页。
+let _unauthorized: (() => void) | null = null;
+export function setApiUnauthorized(fn: () => void): void {
+  _unauthorized = fn;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+  const headers = new Headers(init?.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const opts: RequestInit | undefined = init ? { ...init, headers } : { headers };
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, init);
+    res = await fetch(`${BASE}${path}`, opts);
   } catch {
     throw new ApiError(0, "无法连接后端服务（请确认 uvicorn 已在 8000 端口启动）");
   }
@@ -60,6 +71,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* 非 JSON 错误体 */
     }
+    if (res.status === 401) _unauthorized?.();
     throw new ApiError(res.status, detail);
   }
   return res.json() as Promise<T>;
@@ -508,6 +520,111 @@ export const rejectReport = (reportId: number, note: string) =>
 // 用量台账（§5.9）
 export const adminUsage = (month: string) =>
   request<UsageLedger>(`/admin/usage?month=${encodeURIComponent(month)}`);
+
+// ---- 学生自服务（auth-roles-design §6：/me 只读，仅学生会话可达）----
+
+export interface MeProfile {
+  student_id: number;
+  name_or_alias: string;
+  external_code: string;
+  class_id: number;
+  class_name: string | null;
+}
+
+export const meProfile = () => request<{ student: MeProfile }>("/me");
+
+export const meMastery = (asOf?: string) =>
+  request<{ student_id: number; as_of: string; mastery: MasteryItem[] }>(
+    `/me/mastery${asOf ? `?as_of=${asOf}` : ""}`
+  );
+
+export const meWeaknesses = (asOf?: string) =>
+  request<Weaknesses>(`/me/weaknesses${asOf ? `?as_of=${asOf}` : ""}`);
+
+export const meReports = () =>
+  request<{ reports: (ReportSummary & { type_label?: string })[] }>("/me/reports");
+
+export const meReportFull = (reportId: number) =>
+  request<ReportFull>(`/me/reports/${reportId}/full`);
+
+export const meActionPlan = () =>
+  request<{ report_id: number | null; markdown: string | null; as_of: string | null }>(
+    "/me/action-plan"
+  );
+
+// ---- 学生门户预览（frontend-ends-design 超级账号：admin 只读镜像，形状与 /me/* 一致）----
+
+export const portalProfile = (studentId: number) =>
+  request<{ student: MeProfile }>(`/admin/students/${studentId}/portal`);
+
+export const portalMastery = (studentId: number, asOf?: string) =>
+  request<{ student_id: number; as_of: string; mastery: MasteryItem[] }>(
+    `/admin/students/${studentId}/portal/mastery${asOf ? `?as_of=${asOf}` : ""}`
+  );
+
+export const portalWeaknesses = (studentId: number, asOf?: string) =>
+  request<Weaknesses>(
+    `/admin/students/${studentId}/portal/weaknesses${asOf ? `?as_of=${asOf}` : ""}`
+  );
+
+export const portalReports = (studentId: number) =>
+  request<{ reports: (ReportSummary & { type_label?: string })[] }>(
+    `/admin/students/${studentId}/portal/reports`
+  );
+
+export const portalReportFull = (studentId: number, reportId: number) =>
+  request<ReportFull>(`/admin/students/${studentId}/portal/reports/${reportId}/full`);
+
+export const portalActionPlan = (studentId: number) =>
+  request<{ report_id: number | null; markdown: string | null; as_of: string | null }>(
+    `/admin/students/${studentId}/portal/action-plan`
+  );
+
+// ---- 管理端（frontend-ends-design §C/§D：账号管理面；admin-only）----
+
+export interface TeacherAccountRow {
+  teacher_id: number;
+  name: string;
+  username: string | null;
+  admin: boolean;
+  kb_editor: boolean;
+  classes: { class_id: number; name: string }[];
+}
+
+export const listTeachers = () =>
+  request<{ teachers: TeacherAccountRow[] }>("/auth/teachers");
+
+export const createTeacher = (body: {
+  name: string;
+  username: string;
+  password: string;
+  school_id: number;
+  admin?: boolean;
+  kb_editor?: boolean;
+}) => request<{ teacher_id: number }>("/auth/teachers", json(body));
+
+export const grantTeacherClasses = (teacherId: number, class_ids: number[]) =>
+  request<{ teacher_id: number; added: number }>(
+    `/auth/teachers/${teacherId}/classes`,
+    json({ class_ids })
+  );
+
+/** 授予/撤销知识库编辑权（两层写权：内容层资格；版本治理仍 admin）。 */
+export const setTeacherKbEditor = (teacherId: number, kb_editor: boolean) =>
+  request<{ teacher_id: number; kb_editor: boolean }>(
+    `/auth/teachers/${teacherId}/kb-editor`,
+    json({ kb_editor })
+  );
+
+export const enableStudentAccount = (
+  studentId: number,
+  password: string,
+  username?: string
+) =>
+  request<{ student_id: number; username: string }>(
+    `/auth/students/${studentId}/enable`,
+    json({ password, username: username ?? null })
+  );
 
 // ---------------------------------------------------------------------------
 // 干预闭环（intervention-loop-design §5 七端点）

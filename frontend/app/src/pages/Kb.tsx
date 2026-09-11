@@ -1,4 +1,4 @@
-import { ArrowsLeftRight, DownloadSimple, MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import { ArrowsLeftRight, BookOpen, DownloadSimple, MagnifyingGlass, Plus } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { KpDetailEditor } from "../components/KpDetailEditor";
@@ -17,11 +17,22 @@ import {
   type KpNode,
 } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { roleFlags } from "../lib/portal";
+import { useAuth } from "../lib/AuthContext";
 import { versionStatusLabel } from "../lib/labels";
 import { ACCENTS } from "../lib/theme";
 
-/** 知识库浏览与编辑页（全局，不绑班级；kb-edit §4.1/§7.2）。 */
+/** 知识库浏览与编辑页（全局，不绑班级；kb-edit §4.1/§7.2）。
+
+两层写权（frontend-ends-design §B，分区重设计 2026-09-10）：
+- 内容层（kp/关系 CRUD、fork 草稿）= 开放模式匿名 / admin / 被授权 kb_editor 教师；
+- 版本治理（设为正式版=全校口径切换）= 仅 admin（开放模式匿名含演示语义）。
+其余教师只读（后端 require_kb_editor 兜底，前端隐藏写控件）。
+ */
 export default function Kb() {
+  const flags = roleFlags(useAuth().session);
+  const editable = flags.kbContentEditable;
+  const canActivate = flags.kbVersionEditable;
   const versions = useAsync(() => listKbVersions(), []);
   const [versionId, setVersionId] = useState<number | null>(null);
   const activeVersion =
@@ -158,16 +169,23 @@ export default function Kb() {
       {/* 版本工具栏 */}
       {versions.data && currentVersionId && (
         <div className="mb-5 flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={doFork} disabled={forkBusy}>
-            <Plus size={15} /> 复制为新版本
-          </Button>
+          {editable ? (
+            <Button variant="secondary" onClick={doFork} disabled={forkBusy}>
+              <Plus size={15} /> 复制为新版本
+            </Button>
+          ) : (
+            <span className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-ink-soft">
+              <BookOpen size={13} className="mr-1 inline" />
+              只读 · 知识库由授权教师与管理员维护（教师可浏览与导出）
+            </span>
+          )}
           <Button
             variant="secondary"
             onClick={() => window.open(exportKbUrl(currentVersionId), "_blank")}
           >
             <DownloadSimple size={15} /> 导出 YAML
           </Button>
-          {currentIs && !currentIs.is_active && (
+          {canActivate && currentIs && !currentIs.is_active && (
             <Button variant="primary" onClick={startSwitch} disabled={switchBusy}>
               <ArrowsLeftRight size={15} /> 设为正式版
             </Button>
@@ -236,8 +254,12 @@ export default function Kb() {
             {!selectedId && (
               <Card className="p-6">
                 <EmptyState
-                  title="选择左侧知识点查看与编辑"
-                  hint="属性、前置链、后继与包含关系；可改属性、归档、增删关系。"
+                  title={editable ? "选择左侧知识点查看与编辑" : "选择左侧知识点查看"}
+                  hint={
+                    editable
+                      ? "属性、前置链、后继与包含关系；可改属性、归档、增删关系。"
+                      : "知识库由授权教师与管理员维护，当前为只读浏览；可点击知识点查看详情与关系。"
+                  }
                 />
               </Card>
             )}
@@ -251,6 +273,7 @@ export default function Kb() {
                 kps={kps.data?.kps ?? []}
                 onReload={detail.reload}
                 onSelect={setSelectedId}
+                readOnly={!editable}
               />
             )}
           </section>

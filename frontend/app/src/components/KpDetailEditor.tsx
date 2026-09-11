@@ -25,17 +25,23 @@ const inputCls =
 const selectCls =
   "rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-xs transition-colors focus:border-accent";
 
-/** 知识点详情编辑面板：属性 + 〔v0.2〕preview + 归档/恢复/硬删 + 关系增删。 */
+/** 知识点详情编辑面板：属性 + 〔v0.2〕preview + 归档/恢复/硬删 + 关系增删。
+
+readOnly（frontend-ends-design §B）：无内容层写权的教师只读——隐藏停用/删除/保存/
+添加关系等写控件，属性控件禁用；仍可点关系跳转浏览。
+ */
 export function KpDetailEditor({
   detail,
   kps,
   onReload,
   onSelect,
+  readOnly = false,
 }: {
   detail: KpDetail;
   kps: KpNode[];
   onReload: () => void;
   onSelect: (id: number) => void;
+  readOnly?: boolean;
 }) {
   const [form, setForm] = useState({
     name: detail.name,
@@ -230,7 +236,8 @@ export function KpDetailEditor({
           {isContainer && <Badge tone="neutral">分类节点</Badge>}
         </div>
         <div className="flex items-center gap-1.5">
-          {!isContainer &&
+          {!readOnly &&
+            !isContainer &&
             (detail.archived ? (
               <Button variant="ghost" onClick={doRestore} disabled={busy}>
                 恢复
@@ -240,7 +247,7 @@ export function KpDetailEditor({
                 停用
               </Button>
             ))}
-          {!isContainer && !detail.archived && (
+          {!readOnly && !isContainer && !detail.archived && (
             <Button variant="danger" onClick={() => setHardDeleteConfirm(true)} disabled={busy}>
               彻底删除
             </Button>
@@ -269,7 +276,8 @@ export function KpDetailEditor({
         </div>
       )}
 
-      {/* 属性表单 */}
+      {/* 属性表单（readOnly：fieldset 整体禁用） */}
+      <fieldset disabled={busy || readOnly} className="contents">
       <div className="grid grid-cols-2 gap-3">
         <label className="col-span-2 flex flex-col gap-1 text-sm">
           <span className="text-xs text-ink-faint">名称</span>
@@ -336,6 +344,7 @@ export function KpDetailEditor({
           </select>
         </label>
       </div>
+      </fieldset>
 
       {/* 〔v0.2〕preview 影响数 */}
       {preview && (
@@ -352,13 +361,20 @@ export function KpDetailEditor({
       )}
 
       <div className="flex items-center gap-2">
-        <Button variant="primary" onClick={doSave} disabled={busy}>
-          <ArrowClockwise size={15} />
-          {preview ? "确认保存" : "保存"}
-        </Button>
-        <span className="text-xs text-ink-faint">
-          {hiLeverChanged && !preview ? "关键参数改动将先预览影响" : "code 不可改（稳定标识）"}
-        </span>
+        {!readOnly && (
+          <>
+            <Button variant="primary" onClick={doSave} disabled={busy}>
+              <ArrowClockwise size={15} />
+              {preview ? "确认保存" : "保存"}
+            </Button>
+            <span className="text-xs text-ink-faint">
+              {hiLeverChanged && !preview ? "关键参数改动将先预览影响" : "code 不可改（稳定标识）"}
+            </span>
+          </>
+        )}
+        {readOnly && (
+          <span className="text-xs text-ink-faint">只读 · 由管理员维护</span>
+        )}
       </div>
 
       {/* 关系 */}
@@ -382,7 +398,7 @@ export function KpDetailEditor({
           relId: p.relation_id,
         }))}
         onSelect={onSelect}
-        onDelete={doDeleteRel}
+        onDelete={readOnly ? undefined : doDeleteRel}
         busy={busy}
       />
       <RelSection
@@ -395,7 +411,7 @@ export function KpDetailEditor({
           relId: p.relation_id,
         }))}
         onSelect={onSelect}
-        onDelete={doDeleteRel}
+        onDelete={readOnly ? undefined : doDeleteRel}
         busy={busy}
       />
       {detail.contained.length > 0 && (
@@ -409,12 +425,13 @@ export function KpDetailEditor({
             relId: p.relation_id,
           }))}
           onSelect={onSelect}
-          onDelete={doDeleteRel}
+          onDelete={readOnly ? undefined : doDeleteRel}
           busy={busy}
         />
       )}
 
-      {/* 添加关系 */}
+      {/* 添加关系（readOnly 隐藏：仅 admin 可写关系） */}
+      {!readOnly && (
       <div className="rounded-md border border-line-strong bg-surface-2 p-3">
         <p className="mb-2 text-xs font-semibold text-ink-soft">添加关系</p>
         <div className="flex flex-wrap items-center gap-2">
@@ -450,6 +467,7 @@ export function KpDetailEditor({
           </Button>
         </div>
       </div>
+      )}
 
       <p className="text-xs text-ink-faint">
         知识库版本 #{detail.kb_version_id}
