@@ -187,7 +187,7 @@ def update_kp(
 
 
 def delete_kp(
-    session: Session, kp_id: int, *, force: bool = False, confirm: bool = False
+    session: Session, kp_id: int, *, force: bool = False, confirm: bool = False, by: str = "teacher"
 ) -> dict:
     """软归档（默认）/ 硬删（force=True）。引用预检见 kb-edit §5。
 
@@ -247,7 +247,7 @@ def delete_kp(
     if progress_refs > 0:
         session.execute(delete(TeachingProgress).where(TeachingProgress.kp_id == kp_id))
     kp.archived = True
-    log_correction(session, "knowledge_point", kp_id, "archived", False, True, "teacher")
+    log_correction(session, "knowledge_point", kp_id, "archived", False, True, by)
     session.flush()
     return {
         "archived": True,

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, kb, org, reports
+from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, kb, me, org, reports
 from app import mcp_http  # /mcp 挂载 + 逐请求教师鉴权（装车批第 5 批）
 from app.db import init_db
 from app.observability import setup_logging
@@ -64,12 +64,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# G11 全局鉴权闸（agent-product-design §5.5）：安全模式下全部业务端点要求
-# Bearer token；白名单 = 探针（/health /ready）+ 登录本身 + /mcp（MCP 走自己的
-# 逐请求教师 token 校验，见 app.mcp_http.mcp_auth）。裁决逻辑在 app.auth，
-# 这里只做「要不要拦」的路径判定——开放模式（无凭据账号）整层透明。
-# 班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
+# G11 全局鉴权闸（agent-product-design §5.5 + auth-roles-design 三角色）：安全
+# 模式下全部业务端点要求 Bearer token；白名单 = 探针（/health /ready）+ 登录本身
+# + /mcp（MCP 走自己的逐请求教师 token 校验，见 app.mcp_http.mcp_auth）。裁决逻辑
+# 在 app.auth，这里只做「要不要拦/角色放行」的路径判定——开放模式（无凭据账号）
+# 整层透明。班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
 _EXEMPT_PREFIXES = ("/health", "/ready", "/auth/login", "/mcp")
+# 学生主体可触达的前缀（自服务只读面 + 会话探测）；其余一切路径教师/admin 专属。
+# 教师端点假定 kind=t，学生 token 在此层即被 403，端点无需各自防御。
+_STUDENT_ALLOWED_PREFIXES = ("/me", "/auth/me")
 
 
 @app.middleware("http")
@@ -81,18 +84,36 @@ async def _auth_gate(request, call_next):  # noqa: ANN001
         from app import auth as _auth
         from app.api.deps import SessionLocal as _SL
 
+        raw = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
         db = _SL()
         try:
-            if _auth.security_mode_on(db):
+            # token 先验：有效则按角色放行；无效显式 401（给凭据但凭据坏不降级匿名）。
+            if raw:
                 try:
-                    teacher = _auth.current_teacher(
-                        db, request.headers.get("authorization", "")
-                    )
+                    kind, uid = _auth.verify_principal_token(raw)
                 except _auth.AuthError as e:
                     return JSONResponse({"detail": str(e)}, status_code=401)
-                if teacher is None:
-                    return JSONResponse({"detail": "需要登录"}, status_code=401)
-                request.state.teacher_id = teacher.id
+                if _auth.resolve_principal(db, kind, uid) is None:
+                    return JSONResponse(
+                        {
+                            "detail": f"token 对应的"
+                            f"{'教师' if kind == 't' else '学生'}不存在"
+                        },
+                        status_code=401,
+                    )
+                if kind == "s":
+                    # 学生主体只放行自服务白名单（独立于安全模式，防御性收口）
+                    if not any(
+                        path == p or path.startswith(p + "/")
+                        for p in _STUDENT_ALLOWED_PREFIXES
+                    ):
+                        return JSONResponse(
+                            {"detail": "学生账号无该操作权限"}, status_code=403
+                        )
+                else:
+                    request.state.teacher_id = uid
+            if _auth.security_mode_on(db) and not raw:
+                return JSONResponse({"detail": "需要登录"}, status_code=401)
         finally:
             db.close()
     return await call_next(request)
@@ -149,6 +170,7 @@ def ready():
 
 
 app.include_router(auth_router.router)
+app.include_router(me.router)
 app.include_router(org.router)
 app.include_router(kb.router)
 app.include_router(ingestion.router)

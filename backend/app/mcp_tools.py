@@ -246,6 +246,7 @@ def _kp_brief(k: KnowledgePoint) -> dict:
         "grade": k.grade,
         "semester": k.semester,
         "chapter": k.chapter,
+        "cog_levels_expected": k.cog_levels_expected or [],
         "difficulty_prior": k.difficulty_prior,
         "mastery_floor": k.mastery_floor,
         "importance": k.importance,

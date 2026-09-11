@@ -14,6 +14,10 @@
   与 MCP 工具层（显式调用，身份来自网关注入的 SC_MCP_TEACHER_ID）共用，
   「教师甲看不到教师乙的班」出口判据只实现一次。
 - 学生/考试等子资源的归属一律先解析到 class_id 再走同一断言，不另设路径。
+- **三角色（auth-roles-design）**：身份双承载——Teacher（`admin` 布尔=管理员，
+  纯校级与授课兼管同形）与 Student（增凭据列）向上统一为 ``AccessContext`` 的
+  principal；token 携带身份种类 kind（t/s，admin 权限每次从 DB 现读）；学生自服务
+  走 ``/me`` 只读面（main.py 中间件前缀白名单隔离），MCP/gateway 仍教师专用。
 
 本层不感知 HTTP 异常——抛 AuthError/PermissionError，由 deps 翻译。
 """
@@ -73,29 +77,64 @@ def _secret() -> str:
     return _secret_cache
 
 
-def issue_token(teacher_id: int, ttl_s: int = TOKEN_TTL_S) -> str:
+def _sign(kind: str, uid: int, ttl_s: int) -> str:
     exp = int(time.time()) + ttl_s
-    body = f"{teacher_id}.{exp}"
+    body = f"{kind}.{uid}.{exp}"
     sig = hmac.new(_secret().encode(), body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
 
 
-def verify_token(token: str) -> int:
-    """校验签名与有效期，返回 teacher_id；无效抛 AuthError。"""
+def issue_token(teacher_id: int, ttl_s: int = TOKEN_TTL_S) -> str:
+    """教师/admin token（签名与历史调用方一致）。"""
+    return _sign("t", teacher_id, ttl_s)
+
+
+def issue_student_token(student_id: int, ttl_s: int = TOKEN_TTL_S) -> str:
+    return _sign("s", student_id, ttl_s)
+
+
+def _parse_token(token: str) -> tuple[str, int]:
+    """解析并验签，返回 (kind, uid)；无效抛 AuthError。
+
+    新格式 ``{kind}.{id}.{exp}.{sig}``（kind ∈ t/s；admin 角色每次从 DB 现读，
+    不信任 token 内角色）；兼容旧三段 ``{id}.{exp}.{sig}``（视为 t）——避免 dev
+    localStorage 残留 token 与 gateway 过渡期现签 token 直接失效。
+    """
     parts = token.split(".")
-    if len(parts) != 3:
+    if len(parts) == 4:
+        kind, uid_raw, exp_raw, sig = parts
+        if kind not in ("t", "s"):
+            raise AuthError("token 格式非法")
+        body = f"{kind}.{uid_raw}.{exp_raw}"
+    elif len(parts) == 3:
+        kind, uid_raw, exp_raw = "t", parts[0], parts[1]
+        body = f"{parts[0]}.{parts[1]}"
+        sig = parts[2]
+    else:
         raise AuthError("token 格式非法")
-    body = f"{parts[0]}.{parts[1]}"
     expect = hmac.new(_secret().encode(), body.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expect, parts[2]):
+    if not hmac.compare_digest(expect, sig):
         raise AuthError("token 无效")
     try:
-        teacher_id, exp = int(parts[0]), int(parts[1])
+        uid, exp = int(uid_raw), int(exp_raw)
     except ValueError as e:
         raise AuthError("token 格式非法") from e
     if exp < time.time():
         raise AuthError("token 已过期")
-    return teacher_id
+    return kind, uid
+
+
+def verify_token(token: str) -> int:
+    """教师专用解析：student token 在此层拒绝（MCP/教师专用路径）。返回 teacher_id。"""
+    kind, uid = _parse_token(token)
+    if kind != "t":
+        raise AuthError("非教师 token")
+    return uid
+
+
+def verify_principal_token(token: str) -> tuple[str, int]:
+    """HTTP 通用解析：返回 (kind, uid)，供 access_ctx 解析教师或学生。"""
+    return _parse_token(token)
 
 
 def authenticate(db: Session, username: str, password: str) -> tuple[Teacher, str]:
@@ -111,12 +150,77 @@ def authenticate(db: Session, username: str, password: str) -> tuple[Teacher, st
     return row, issue_token(row.id)
 
 
+def authenticate_student(db: Session, username: str, password: str) -> tuple[Student, str]:
+    """学生口令登录（自服务门户）：成功返回 (学生, token)。"""
+    row = db.scalar(select(Student).where(Student.username == username))
+    if row is None:
+        hash_password(password, b"timing-equalizer")
+        raise AuthError("用户名或密码错误")
+    stored = row.password_hash or b""
+    salt = row.salt or b""
+    if not stored or not hmac.compare_digest(hash_password(password, salt), stored):
+        raise AuthError("用户名或密码错误")
+    return row, issue_student_token(row.id)
+
+
+def enable_student_login(
+    db: Session, student_id: int, password: str, username: str | None = None
+) -> tuple[Student, str]:
+    """开通/重置学生账号口令（admin 路由与 bootstrap CLI 共用）。
+
+    用户名缺省 = external_code（学籍号）；跨 teacher/student 两表唯一。返回
+    (student, 生效 username)；冲突/缺名抛 ValueError，由 HTTP 层译 400。
+    """
+    stu = db.get(Student, student_id)
+    if stu is None:
+        raise ValueError(f"学生 {student_id} 不存在")
+    uname = (username or "").strip() or (stu.external_code or "").strip()
+    if not uname:
+        raise ValueError("学生无学籍号（external_code），请显式指定 username")
+    if (stu.username or "") != uname:
+        if db.scalar(select(Teacher.id).where(Teacher.username == uname)):
+            raise ValueError(f"用户名已被占用: {uname}")
+        if db.scalar(select(Student.id).where(Student.username == uname)):
+            raise ValueError(f"用户名已被占用: {uname}")
+    salt = secrets.token_bytes(16)
+    stu.username = uname
+    stu.salt = salt
+    stu.password_hash = hash_password(password, salt)
+    return stu, uname
+
+
+def authenticate_any(
+    db: Session, username: str, password: str
+) -> tuple[Teacher | Student, str, str]:
+    """统一登录：教师优先、无则学生。返回 (principal, token, kind)。
+
+    同名不跨表（Teacher.username 与 Student.username 各自治）；若配置撞名，
+    /auth/login 教师优先——admin 建号时应用层预检兜底。
+    """
+    trow = db.scalar(select(Teacher).where(Teacher.username == username))
+    if trow is not None:
+        stored = trow.password_hash or b""
+        salt = trow.salt or b""
+        if stored and hmac.compare_digest(hash_password(password, salt), stored):
+            return trow, issue_token(trow.id), "t"
+        raise AuthError("用户名或密码错误")
+    srow = db.scalar(select(Student).where(Student.username == username))
+    if srow is not None:
+        stored = srow.password_hash or b""
+        salt = srow.salt or b""
+        if stored and hmac.compare_digest(hash_password(password, salt), stored):
+            return srow, issue_student_token(srow.id), "s"
+        raise AuthError("用户名或密码错误")
+    hash_password(password, b"timing-equalizer")
+    raise AuthError("用户名或密码错误")
+
+
 def current_teacher(db: Session, authorization: str | None) -> Teacher | None:
-    """Bearer token → 教师实体。
+    """Bearer token → 教师实体（教师专用路径：MCP / require_teacher 兜底）。
 
     无 Authorization 头返回 None（开放模式匿名放行；安全模式下 require_teacher
-    会拒绝）。带了头但无效则抛 AuthError——「给了凭据但凭据坏」必须显式失败，
-    不能静默降级为匿名。
+    会拒绝）。带了头但无效抛 AuthError——「给了凭据但凭据坏」必须显式失败，
+    不能静默降级为匿名。student token 在此层同样抛 AuthError（非教师）。
     """
     raw = (authorization or "").removeprefix("Bearer ").strip()
     if not raw:
@@ -126,6 +230,25 @@ def current_teacher(db: Session, authorization: str | None) -> Teacher | None:
     if t is None:
         raise AuthError("token 对应的教师不存在")
     return t
+
+
+def resolve_principal(db: Session, kind: str, uid: int) -> Teacher | Student | None:
+    return db.get(Teacher, uid) if kind == "t" else db.get(Student, uid)
+
+
+def current_principal(db: Session, authorization: str | None) -> Teacher | Student | None:
+    """Bearer token → 教师或学生实体（HTTP 通用，三角色登录）。
+
+    无 Authorization 头返回 None；带了头但 token 无效/主体不存在抛 AuthError。
+    """
+    raw = (authorization or "").removeprefix("Bearer ").strip()
+    if not raw:
+        return None
+    kind, uid = verify_principal_token(raw)
+    p = resolve_principal(db, kind, uid)
+    if p is None:
+        raise AuthError(f"token 对应的{'教师' if kind == 't' else '学生'}不存在")
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +261,9 @@ _mode_cache: bool | None = None
 def security_mode_on(db: Session) -> bool:
     """安全模式 = SC_AUTH_REQUIRED=1 或库里存在任一带凭据教师。
 
-    结果缓存（每进程一次）；管理员建首个账号后需重启生效是可接受的运维语义。
+    学生账号**不计入**——试点可先开学生门户、后建教师账号；SC_AUTH_REQUIRED=1
+    仍强制全闸。结果缓存（每进程一次）；管理员建首个账号后需重启生效是可接受的
+    运维语义。
     """
     global _mode_cache
     if _mode_cache is None:
@@ -166,17 +291,39 @@ def reset_mode_cache_for_tests() -> None:
 
 @dataclass(frozen=True)
 class AccessContext:
-    """一次调用的身份上下文。teacher=None = 开放模式匿名（MCP 服务身份同理）。"""
+    """一次调用的身份上下文。teacher/student 皆 None = 开放模式匿名（MCP 服务身份同理）。
 
-    teacher: Teacher | None
+    角色从 DB 实体现读，不信任 token：teacher+admin → admin；teacher → teacher；
+    student → student。归属裁决只认 ctx.teacher（教师↔班级）；学生由中间件路由
+    白名单 + 各自 /me self 断言隔离，不进入教师裁决路径。
+    """
+
+    teacher: Teacher | None = None
+    student: Student | None = None
 
     @property
     def is_admin(self) -> bool:
         return bool(self.teacher and self.teacher.admin)
 
     @property
+    def role(self) -> str:
+        if self.teacher is not None:
+            return "admin" if self.teacher.admin else "teacher"
+        if self.student is not None:
+            return "student"
+        return "anonymous"
+
+    @property
+    def principal(self) -> Teacher | Student | None:
+        return self.teacher if self.teacher is not None else self.student
+
+    @property
     def label(self) -> str:
-        return self.teacher.name if self.teacher else "anonymous"
+        if self.teacher is not None:
+            return self.teacher.name
+        if self.student is not None:
+            return self.student.name_or_alias
+        return "anonymous"
 
 
 def mcp_context(db: Session) -> AccessContext:

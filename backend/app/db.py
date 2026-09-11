@@ -107,6 +107,8 @@ def _legacy_alter_bootstrap() -> None:
     from scripts.migrate_parse_batch_started_at import add_started_at_column
     from scripts.migrate_report_status import add_status_columns
     from scripts.migrate_teacher_auth import add_teacher_auth
+    from scripts.migrate_teacher_kb_editor import add_teacher_kb_editor
+    from scripts.migrate_student_auth import add_student_auth
 
     add_archived_column()
     add_started_at_column()
@@ -114,6 +116,8 @@ def _legacy_alter_bootstrap() -> None:
     add_token_columns()
     drop_legacy_plan_tables()
     add_teacher_auth()
+    add_teacher_kb_editor()
+    add_student_auth()
 
 
 def _alembic_upgrade_head() -> None:

@@ -99,9 +99,22 @@ def update_progress(class_id: int, req: ProgressUpdate, ctx=Depends(require_teac
 
 
 @router.get("/classes")
-def list_classes(db: Session = Depends(get_db)):
-    """聚合在 queries.classes（每班 2 次 count → 2 次全量 group_by）。"""
-    return {"classes": query_classes.classes_list(db)}
+def list_classes(ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    """聚合在 queries.classes（每班 2 次 count → 2 次全量 group_by）。
+
+    安全模式下按授权班级过滤（教师甲看不到教师乙的班——出口判据①的列表面；
+    admin/开放模式不过滤）。
+    """
+    from app.api.deps import _auth as auth_mod
+
+    allowed = auth_mod.allowed_class_ids(db, ctx)
+    data = {"classes": query_classes.classes_list(db)}
+    if allowed is not None:
+        want = set(allowed)
+        data["classes"] = [
+            c for c in data["classes"] if c.get("class_id") in want
+        ]
+    return data
 
 
 @router.get("/classes/overview")
@@ -136,7 +149,9 @@ def list_students(class_id: int, ctx=Depends(require_teacher), db: Session = Dep
     students = db.scalars(
         select(Student).where(Student.class_id == class_id).order_by(Student.id)
     )
-    # 名单原序返回；禁止按分数排序由前端约束，此处不提供任何分数字段
+    # 名单原序返回；禁止按分数排序由前端约束，此处不提供任何分数字段。
+    # has_account/username（frontend-ends-design §D）：登录名即学籍号，教师可见
+    # 「谁已开通自服务」不泄密（口令不在此）；null = 未开通。
     return {
         "class_id": class_id,
         "students": [
@@ -144,6 +159,8 @@ def list_students(class_id: int, ctx=Depends(require_teacher), db: Session = Dep
                 "student_id": s.id,
                 "name_or_alias": s.name_or_alias,
                 "external_code": s.external_code,
+                "has_account": s.username is not None,
+                "username": s.username,
             }
             for s in students
         ],
@@ -200,8 +217,25 @@ def patch_progress(
 
 
 @router.get("/exams")
-def list_exams(class_id: int | None = None, db: Session = Depends(get_db)):
-    """聚合在 queries.exams（状态/未审标注/题数各一次 group_by，替代逐场 N+1）。"""
+def list_exams(
+    class_id: int | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """聚合在 queries.exams（状态/未审标注/题数各一次 group_by，替代逐场 N+1）。
+
+    安全模式下收敛到授权班级；显式 class_id 不在授权集 → 403。
+    """
+    from app.api.deps import _auth as auth_mod
+
+    allowed = auth_mod.allowed_class_ids(db, ctx)
+    if allowed is not None:
+        want = set(allowed)
+        if class_id is not None and class_id not in want:
+            raise HTTPException(403, "无权查看该班级考试")
+        rows = query_exams.exams_list(db, class_id)
+        rows = [e for e in rows if e.get("class_id") in want]
+        return {"exams": rows}
     return {"exams": query_exams.exams_list(db, class_id)}
 
 

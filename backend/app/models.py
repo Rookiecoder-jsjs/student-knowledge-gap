@@ -62,6 +62,12 @@ class Class(Base):
 
 
 class Student(Base):
+    """学生（数据对象；三角色登录后可选开通自服务账号，见 auth-roles-design）。
+
+    username/password_hash/salt 为 PBKDF2 产物（与 Teacher 同算法同参数）；三者
+    皆 NULL = 未开通登录（批量导入默认不开）。登录名建议取 external_code（学籍号）。
+    """
+
     __tablename__ = "student"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -69,6 +75,9 @@ class Student(Base):
     class_id: Mapped[int] = mapped_column(ForeignKey("class.id"))
     name_or_alias: Mapped[str] = mapped_column(String(100))   # 可用化名（PII 最小化）
     external_code: Mapped[str] = mapped_column(String(50), default="")  # 学籍号等外部编码
+    username: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    password_hash: Mapped[bytes | None] = mapped_column(nullable=True)
+    salt: Mapped[bytes | None] = mapped_column(nullable=True)
 
     clazz: Mapped[Class] = relationship(back_populates="students")
 
@@ -90,6 +99,9 @@ class Teacher(Base):
     password_hash: Mapped[bytes | None] = mapped_column(nullable=True)
     salt: Mapped[bytes | None] = mapped_column(nullable=True)
     admin: Mapped[bool] = mapped_column(default=False)
+    # 知识库授权编辑（两层写权）：True = 可录/维护 kp 与关系、fork 草稿版本；
+    # 「设为正式版」等版本治理动作仍仅 admin。admin 本身含全部写权。
+    kb_editor: Mapped[bool] = mapped_column(default=False)
 
     classes: Mapped[list["Class"]] = relationship(
         secondary="teacher_class", back_populates="teachers"

@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import _active_kb, _graph, get_db
+from app.api.deps import _active_kb, _graph, get_db, require_kb_editor
 from app.kb import edit as kb_edit
 from app.kb import versioning as kb_ver
 from app.kb.compatibility import compatibility
@@ -74,7 +74,11 @@ def _kb_http_error(e: KbEditError) -> HTTPException:
 
 
 @router.post("/kb/import")
-def kb_import(req: KbImportRequest, db: Session = Depends(get_db)):
+def kb_import(
+    req: KbImportRequest,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     try:
         kb = import_kb(db, req.yaml_path)
     except (KbImportError, FileNotFoundError) as e:
@@ -83,7 +87,11 @@ def kb_import(req: KbImportRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/kb/upload")
-async def kb_upload(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def kb_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     """浏览器直接上传知识库 YAML（无需服务器文件系统访问）。"""
     with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as tmp:
         tmp.write(await file.read())
@@ -184,7 +192,11 @@ def suggest_question_tags_endpoint(req: SuggestQuestionRequest, db: Session = De
 
 
 @router.post("/kb/kps")
-def create_kp(req: KpCreateRequest, db: Session = Depends(get_db)):
+def create_kp(
+    req: KpCreateRequest,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     """新建知识点（属 active kb）。code 同版本唯一（uq_kb_code + IntegrityError 兜底）。"""
     kb = _active_kb(db)
     try:
@@ -213,13 +225,15 @@ def update_kp(
     req: KpUpdateRequest,
     preview: bool = False,
     db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
 ):
     """改属性（不允许改 code）。〔v0.2〕改 mastery_floor/difficulty_prior 支持 ?preview=true 影响预览。"""
+    by = ctx.teacher.name if ctx.teacher is not None else "开放模式"
     try:
         kp, impact, previewed = kb_edit.update_kp(
             db,
             kp_id,
-            by="teacher",
+            by=by,
             preview=preview,
             name=req.name,
             description=req.description,
@@ -240,17 +254,26 @@ def update_kp(
 
 @router.delete("/kb/kps/{kp_id}")
 def delete_kp(
-    kp_id: int, force: bool = False, confirm: bool = False, db: Session = Depends(get_db)
+    kp_id: int,
+    force: bool = False,
+    confirm: bool = False,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
 ):
     """软归档（默认）/ 硬删（force=true）。引用预检见 kb-edit §5。"""
+    by = ctx.teacher.name if ctx.teacher is not None else "开放模式"
     try:
-        return kb_edit.delete_kp(db, kp_id, force=force, confirm=confirm)
+        return kb_edit.delete_kp(db, kp_id, force=force, confirm=confirm, by=by)
     except KbEditError as e:
         raise _kb_http_error(e)
 
 
 @router.post("/kb/relations")
-def create_relation(req: RelationCreateRequest, db: Session = Depends(get_db)):
+def create_relation(
+    req: RelationCreateRequest,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     """新建关系：校验 type/weight/同版本/非自环（kb-edit §4.4/§6.3）。"""
     kb = _active_kb(db)
     graph = _graph(db, kb.id)
@@ -275,7 +298,12 @@ def create_relation(req: RelationCreateRequest, db: Session = Depends(get_db)):
 
 
 @router.patch("/kb/relations/{rel_id}")
-def update_relation(rel_id: int, req: RelationUpdateRequest, db: Session = Depends(get_db)):
+def update_relation(
+    rel_id: int,
+    req: RelationUpdateRequest,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     try:
         rel = kb_edit.update_relation(db, rel_id, type=req.type, weight=req.weight)
     except KbEditError as e:
@@ -292,7 +320,11 @@ def update_relation(rel_id: int, req: RelationUpdateRequest, db: Session = Depen
 
 
 @router.delete("/kb/relations/{rel_id}")
-def delete_relation(rel_id: int, db: Session = Depends(get_db)):
+def delete_relation(
+    rel_id: int,
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     try:
         kb_edit.delete_relation(db, rel_id)
     except KbEditError as e:
@@ -306,7 +338,10 @@ def delete_relation(rel_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/kb/versions")
-def fork_kb_version(db: Session = Depends(get_db)):
+def fork_kb_version(
+    db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
+):
     """fork 当前 active：复制其 kp（含 archived）+ 关系为草稿新版本（kb-edit §4.5/§6.3）。"""
     src = _active_kb(db)
     new = kb_ver.fork_kb_version(db, src)
@@ -334,13 +369,20 @@ def patch_kb_version(
     confirm: bool = False,
     force: bool = False,
     db: Session = Depends(get_db),
+    ctx=Depends(require_kb_editor),
 ):
-    """改 status：draft->reviewed->active。切 active 做超集 + 〔v0.2〕属性 diff 校验（§6.1/§6.2/§6.5）。"""
+    """改 status：draft->reviewed->active。切 active 做超集 + 〔v0.2〕属性 diff 校验（§6.1/§6.2/§6.5）。
+
+    两层写权：draft→reviewed 授权教师可置（「备好了」信号）；置 active=全校口径
+    切换，admin 专属（开放模式匿名放行——bootstrap 向导依赖）。
+    """
     target = db.get(KbVersion, version_id)
     if target is None:
         raise HTTPException(404, "版本不存在")
     if req.status not in ("draft", "reviewed", "active"):
         raise HTTPException(400, "非法 status")
+    if req.status == "active" and ctx.teacher is not None and not ctx.is_admin:
+        raise HTTPException(403, "切换正式版需要管理员权限")
 
     if req.status != "active":
         target.status = req.status
