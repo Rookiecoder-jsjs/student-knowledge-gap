@@ -28,7 +28,9 @@ import Students from "./pages/Students";
 import TemplateView from "./pages/TemplateView";
 import Usage from "./pages/Usage";
 import Wizard from "./pages/Wizard";
+import KbCreate from "./pages/KbCreate";
 import Accounts from "./pages/admin/Accounts";
+import KbPanel from "./pages/admin/KbPanel";
 
 /** 利落减速曲线（案头 ease-out）。 */
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -67,6 +69,7 @@ function StudentRoutes() {
   return (
     <Routes>
       <Route path="/portal" element={<StudentPortal source={{ kind: "self" }} />} />
+      <Route path="/portal/study" element={<StudentPortal source={{ kind: "self" }} />} />
       <Route path="/portal/mastery" element={<StudentPortal source={{ kind: "self" }} />} />
       <Route path="/portal/reports" element={<StudentPortal source={{ kind: "self" }} />} />
       <Route path="/portal/plan" element={<StudentPortal source={{ kind: "self" }} />} />
@@ -131,7 +134,11 @@ function TeacherRoutes() {
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<Animated><ClassPicker /></Animated>} />
         <Route path="/wizard" element={<Animated><Wizard /></Animated>} />
-        <Route path="/kb" element={<Animated><Kb /></Animated>} />
+        {/* 知识库两页套 Shell（导航一致性 2026-09-11）：侧栏「知识库」项与
+            待签发/AI 教研员同为侧栏导航目的地，须保持侧栏 + 激活胶囊连续，
+            不再整页换壳；页内返回链（从哪进去回哪）保留 */}
+        <Route path="/kb" element={<Shell><Animated><Kb /></Animated></Shell>} />
+        <Route path="/kb/new" element={<Shell><Animated><KbCreate /></Animated></Shell>} />
 
         <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
         <Route path="/inbox" element={<Shell><Animated><Inbox /></Animated></Shell>} />
@@ -166,6 +173,10 @@ function TeacherRoutes() {
         {flags.adminLogin && (
           <Route path="/admin/accounts" element={<AdminShell><Animated><Accounts /></Animated></AdminShell>} />
         )}
+        {/* KB 总面板（rbac-scopes-design §6）：admin/开放 ∨ 学科管理员 ∨ kb_editor */}
+        {flags.kbPanelVisible && (
+          <Route path="/admin/kb" element={<AdminShell><Animated><KbPanel /></Animated></AdminShell>} />
+        )}
         {flags.adminOrOpen && (
           <Route path="/admin/usage" element={<AdminShell><Animated><Usage /></Animated></AdminShell>} />
         )}
@@ -174,6 +185,7 @@ function TeacherRoutes() {
         {flags.adminLogin && (
           <>
             <Route path="/c/:classId/students/:studentId/portal" element={<StudentPortalPreview />} />
+            <Route path="/c/:classId/students/:studentId/portal/study" element={<StudentPortalPreview />} />
             <Route path="/c/:classId/students/:studentId/portal/mastery" element={<StudentPortalPreview />} />
             <Route path="/c/:classId/students/:studentId/portal/reports" element={<StudentPortalPreview />} />
             <Route path="/c/:classId/students/:studentId/portal/plan" element={<StudentPortalPreview />} />

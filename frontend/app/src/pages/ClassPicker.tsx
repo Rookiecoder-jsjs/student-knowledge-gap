@@ -7,13 +7,14 @@ import {
   TreeStructure,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { AccountCluster, TOOL_LINK, TopBar } from "../components/TopBar";
 import { ErrorState, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { listClassesOverview } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
-import { roleFlags } from "../lib/portal";
+import { roleFlags, setBackTarget } from "../lib/portal";
 import type { ClassOverview } from "../lib/types";
 
 /** 一级页面·班级概览：横向对比所有班级的待办 / 最近考试 / 教学进度，点击进入单班工作台。
@@ -24,6 +25,11 @@ export default function ClassPicker() {
   const { session } = useAuth();
   const flags = roleFlags(session);
   const { data, loading, error, reload } = useAsync(() => listClassesOverview(), []);
+
+  // 校务台返回链（进出修订 2026-09-12）：从班级概览进校务台，退出时也回这里
+  useEffect(() => {
+    setBackTarget("/admin", "/");
+  }, []);
 
   return (
     <div className="flex min-h-[100dvh] flex-col">

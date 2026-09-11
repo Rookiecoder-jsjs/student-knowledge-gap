@@ -6,9 +6,10 @@ import { useAuth } from "../lib/AuthContext";
 import type { Session } from "../lib/auth";
 
 /**
- * 三端统一顶栏骨架（UI 位置统一 2026-09-10）：品牌左 · 导航中 · 工具/账号右。
- * 教师工作台 / 校务台 / 学生门户 / 班级选择页共用——端间切换时锚点位置一致。
- * 导航胶囊激活态 = 模块色（颜色即位置），动效参数与原 Shell 一致。
+ * 学生门户/班级选择页统一顶栏骨架（UI 位置统一 2026-09-10）：品牌左 · 导航中 ·
+ * 工具/账号右。side-nav-redesign（2026-09-11）后教师工作台/校务台已迁侧栏
+ * （SideNav.tsx），学生端 5 tab 顶栏保留现状、班级选择页仍为转场 hub。
+ * 导航胶囊激活态 = 模块色（颜色即位置），动效参数与侧栏一致。
  */
 
 /** 利落缓动（SaaS ease-out）。 */
@@ -20,6 +21,10 @@ export const TOOL_LINK =
   "inline-flex items-center gap-1.5 rounded-full px-2 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink sm:px-3";
 
 export interface TopBarNavItem {
+  /** 稳定唯一键（可选）：跨 cid 解析不变的原始路由。to 会随班级解析变化
+   * （classes 未加载时 cid=0 → 全部解析为 "/"，产生重复 key，React 协调
+   * 会留孤儿节点——导航链接翻倍的实锤根因），key 绝不能用解析后的 to。 */
+  id?: string;
   to: string;
   label: string;
   icon: ComponentType<{
@@ -97,9 +102,9 @@ export function TopBarNav({
   const reduce = useReducedMotion();
   return (
     <nav className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label={navLabel}>
-      {items.map(({ to, label, icon: Icon, accent, active }) => (
+      {items.map(({ id, to, label, icon: Icon, accent, active }) => (
         <Link
-          key={to}
+          key={id ?? label}
           to={to}
           aria-current={active ? "page" : undefined}
           className={`relative flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
@@ -126,7 +131,8 @@ export function TopBarNav({
   );
 }
 
-/** 右上账号簇：姓名+管理员徽标（窄屏隐藏）+ 登出钮（全宽可用，端进出修订语义）。 */
+/** 右上账号簇：姓名+管理员徽标（窄屏隐藏）+ 登出钮（全宽可用，端进出修订语义）。
+ * 教师端/校务台侧栏化后此簇同时沉入侧栏底部复用（SideNav footer）。 */
 export function AccountCluster({ session, name }: { session: Session; name?: string }) {
   const { logout } = useAuth();
   return (

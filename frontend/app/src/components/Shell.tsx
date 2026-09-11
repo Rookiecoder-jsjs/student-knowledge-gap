@@ -13,17 +13,24 @@ import { inboxSummary, listClasses, type InboxSummary as InboxSummaryData } from
 import { LAST_CLASS_KEY } from "../lib/auth";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
-import { roleFlags } from "../lib/portal";
+import { roleFlags, setBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
-import { AccountCluster, TOOL_LINK, TopBar, TopBarNav } from "./TopBar";
+import { AccountCluster } from "./TopBar";
+import { Sidebar, type SideNavGroup, type SideNavItem } from "./SideNav";
 
-/** 顶部导航：3 个模块，激活态 = 各自模块色胶囊（颜色即位置）。 */
+/** 主导航三项（班级作用域）：to 为解析前原始路由，渲染时经 scopeTo 解析。 */
 const NAV = [
   { to: "", label: "工作台", icon: House, accent: ACCENTS.dashboard },
   { to: "/exams", label: "考试", icon: Exam, accent: ACCENTS.exam },
   { to: "/students", label: "学生", icon: Student, accent: ACCENTS.student },
 ];
 
+/**
+ * 教师工作台壳（side-nav-redesign 2026-09-11）：顶栏 tab 迁左成侧栏菜单，
+ * 三组分区——班级（工作台/考试/学生）· 工具（待签发/AI 教研员/知识库）·
+ * 管理（校务台）。品牌+班级切换器在侧栏顶部，账号簇沉底，无顶栏、页面全高。
+ * 激活态颜色即位置：胶囊色 = 落点页 Page accent。
+ */
 export function Shell({ children }: { children: ReactNode }) {
   const { classId } = useParams();
   const nav = useNavigate();
@@ -50,7 +57,6 @@ export function Shell({ children }: { children: ReactNode }) {
       ? remembered
       : (classes.data?.classes[0]?.class_id ?? 0);
   const base = `/c/${cid}`;
-  const currentName = classes.data?.classes.find((c) => c.class_id === cid)?.name;
 
   // 端边界（frontend-ends-design §一）：角色由 session 派生，开放模式 null 会话
   // 视为 bootstrap 信任域（教师语义 + 用量可见）；admin 才见管理分区。
@@ -90,6 +96,12 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [routed, routedOk]);
 
+  // 校务台返回链（进出修订 2026-09-12）：教学壳内每换一页刷新 /admin 的返回
+  // 目标，「← 教学工作台」据此从哪来回哪；无记录时 AdminShell 回落班级概览。
+  useEffect(() => {
+    setBackTarget("/admin", location.pathname);
+  }, [location.pathname]);
+
   // 手动计算激活态：考试模块也涵盖 /quality 直达入口
   const path = location.pathname;
   // 无可用班级时（cid=0）班级簇不指向 /c/0，退回班级选择页
@@ -109,84 +121,134 @@ export function Shell({ children }: { children: ReactNode }) {
     return <Navigate to="/" replace />;
   }
 
+  // 侧栏语境块（md+）：班级切换器（select 自身显示当前班级名）；
+  // rail（<md）收成跳班级选择页的图标钮。
+  const hasClasses = (classes.data?.classes ?? []).length > 0;
+  const classContext = hasClasses ? (
+    <select
+      name="class-switch"
+      value={cid}
+      onChange={(e) => nav(`/c/${e.target.value}`)}
+      className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+      aria-label="切换班级"
+    >
+      {classes.data?.classes.map((c) => (
+        <option key={c.class_id} value={c.class_id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  ) : null;
+  const railClassSwitch = hasClasses ? (
+    <Link
+      to="/"
+      aria-label="切换班级"
+      title="切换班级"
+      className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/50 hover:text-ink"
+    >
+      <Buildings size={16} />
+    </Link>
+  ) : null;
+
+  // 待签发角标：绝对定位于项右上角（rail 下盖在图标角上）
+  const inboxBadge =
+    (draftCount ?? 0) > 0 ? (
+      <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
+        {draftCount}
+      </span>
+    ) : undefined;
+
+  // 侧栏三组（side-nav-redesign §1）：激活项颜色即位置。
+  // 工具组可见性照旧由角色旗标派生（isStaff/assistantVisible/adminOrOpen）。
+  const groups: SideNavGroup[] = [
+    {
+      label: "班级",
+      items: NAV.map(({ to, label, icon, accent }) => ({
+        // id=解析前的原始路由：跨 cid 恒定，避免 classes 未加载时 key 全为
+        // "/"（重复 key → React 协调留孤儿 → 导航链接翻倍，2026-09-11 实锤）
+        id: to,
+        to: scopeTo(to),
+        label,
+        icon,
+        accent,
+        active: isActiveFor(to),
+      })),
+    },
+    {
+      label: "工具",
+      items: (
+        [
+          ...(flags.isStaff
+            ? [
+                {
+                  id: "/inbox",
+                  to: "/inbox",
+                  label: "待签发",
+                  icon: Tray,
+                  accent: ACCENTS.dashboard,
+                  active: path.startsWith("/inbox"),
+                  trailing: inboxBadge,
+                },
+              ]
+            : []),
+          ...(flags.assistantVisible
+            ? [
+                {
+                  id: "/assistant",
+                  to: "/assistant",
+                  label: "AI 教研员",
+                  icon: ChatCircleDots,
+                  accent: ACCENTS.knowledge,
+                  active: path.startsWith("/assistant"),
+                },
+              ]
+            : []),
+          {
+            id: "/kb",
+            to: "/kb",
+            label: "知识库",
+            icon: BookOpen,
+            accent: ACCENTS.knowledge,
+            active: path.startsWith("/kb"),
+          },
+        ] satisfies SideNavItem[]
+      ),
+    },
+    ...(flags.adminOrOpen
+      ? [
+          {
+            label: "管理",
+            items: [
+              {
+                id: "/admin",
+                to: "/admin",
+                label: "校务台",
+                icon: Buildings,
+                accent: ACCENTS.dashboard,
+                active: path.startsWith("/admin"),
+              },
+            ] satisfies SideNavItem[],
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div className="flex min-h-[100dvh] flex-col">
-      {/* 统一顶栏骨架（TopBar）：品牌左 · 主导航中 · 工具/账号右。
-          窄屏：品牌收成图标、班级下拉隐藏（经品牌→班级概览切换），给主导航让位 */}
-      <TopBar
-        title={<span className="hidden sm:inline">薄弱点分析</span>}
-        subtitle={<span className="hidden sm:block">教师工作台</span>}
-        nav={
-          <TopBarNav
-            navLabel="主导航"
-            layoutId="shell-nav"
-            items={NAV.map(({ to, label, icon, accent }) => ({
-              to: scopeTo(to),
-              label,
-              icon,
-              accent,
-              active: isActiveFor(to),
-            }))}
-          />
-        }
-        right={
-          <>
-            {/* 全局工具簇：教师/管理员 + 开放模式；窄屏收成 icon-only（防溢出） */}
-            {flags.isStaff && (
-              <Link to="/inbox" className={`${TOOL_LINK} relative`}>
-                <Tray size={15} />
-                <span className="hidden sm:inline">待签发</span>
-                {(draftCount ?? 0) > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
-                    {draftCount}
-                  </span>
-                )}
-              </Link>
-            )}
-            {flags.assistantVisible && (
-              <Link to="/assistant" className={TOOL_LINK}>
-                <ChatCircleDots size={15} />
-                <span className="hidden sm:inline">AI 教研员</span>
-              </Link>
-            )}
-            <Link to="/kb" className={TOOL_LINK}>
-              <BookOpen size={15} />
-              <span className="hidden sm:inline">知识库</span>
-            </Link>
-
-            {/* 校务台入口（分区重设计）：admin 登录与开放模式可见，普通教师不见 */}
-            {flags.adminOrOpen && (
-              <Link to="/admin" className={TOOL_LINK}>
-                <Buildings size={15} />
-                <span className="hidden sm:inline">校务台</span>
-              </Link>
-            )}
-
-            {(classes.data?.classes ?? []).length > 0 && (
-              <select
-                name="class-switch"
-                value={cid}
-                onChange={(e) => nav(`/c/${e.target.value}`)}
-                className="ml-1 hidden rounded-full border border-line-strong bg-surface px-3 py-1.5 text-sm transition-colors focus:border-accent sm:block"
-                aria-label="切换班级"
-              >
-                {classes.data?.classes.map((c) => (
-                  <option key={c.class_id} value={c.class_id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            {currentName && !classes.loading && (
-              <span className="hidden text-sm font-semibold text-ink lg:inline">
-                {currentName}
-              </span>
-            )}
-            {session && <AccountCluster session={session} name={accountName || roleLabel} />}
-          </>
+    <div className="flex min-h-[100dvh]">
+      <Sidebar
+        title="薄弱点分析"
+        subtitle="教师工作台"
+        context={classContext}
+        railContext={railClassSwitch}
+        navLabel="主导航"
+        layoutId="shell-side-nav"
+        groups={groups}
+        footer={
+          session ? (
+            <AccountCluster session={session} name={accountName || roleLabel} />
+          ) : undefined
         }
       />
-
       <main className="min-w-0 flex-1">
         <div className="mx-auto max-w-[1200px] px-6 py-7">{children}</div>
       </main>
