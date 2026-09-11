@@ -252,7 +252,7 @@ export function PageHeader({
         <h1 className="font-display text-[30px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   );
 }

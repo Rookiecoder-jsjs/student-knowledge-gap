@@ -79,6 +79,15 @@ export function ReportTOC({ content }: { content: string }) {
   );
 }
 
+/** 会话消息 Markdown（聊天气泡内轻量渲染：无报告头拆分、无目录）。 */
+export function ChatMarkdown({ content }: { content: string }) {
+  return (
+    <div className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:text-accent [&_a]:underline [&_code]:rounded [&_code]:bg-black/10 [&_code]:px-1 [&_code]:text-[12px] [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-[15px] [&_h1]:font-semibold [&_h2]:mb-1 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:my-0.5 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/5 [&_pre]:p-2 [&_strong]:font-semibold [&_table]:my-1.5 [&_table]:w-full [&_table]:text-xs [&_td]:border [&_td]:border-line [&_td]:px-1.5 [&_td]:py-0.5 [&_th]:border [&_th]:border-line [&_th]:px-1.5 [&_th]:py-0.5 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
 /** 报告 Markdown 渲染：AI 解读段单独成块并带「模型生成」标注。 */
 export function ReportMarkdown({ content }: { content: string }) {
   const { main, ai } = splitReport(content);
