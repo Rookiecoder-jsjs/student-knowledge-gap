@@ -166,7 +166,7 @@ sc/                        # 产品仓库 = fork 本体（D7 定名后可整体�
 
 ### 4.5 明确不做（边界声明）
 
-- **不建学生/家长门户**（沿用 intervention-loop-design 评审结论①：G11 落地前不引入新角色；本文落地后是否开放另议）；
+- **不建学生/家长门户**（沿用 intervention-loop-design 评审结论①：G11 落地前不引入新角色）。**边界已重开（2026-09-09）**：学生自服务门户随三角色登录一并落地，设计见 `auth-roles-design.md`；
 - Agent **不触碰采集流程**（拍照识别/录入仍走既有表单流水线，Agent 只消费采集结果）；
 - 建议**只覆盖知识维度的学法与教学安排**，不涉及动机、情绪、家庭归因（沿用干预闭环边界声明，写进壳的人格 prompt）；
 - 数值层零 LLM 不动摇：Agent 写的是「研判与落笔」，一切数字由工具注入。
@@ -235,6 +235,7 @@ sc/                        # 产品仓库 = fork 本体（D7 定名后可整体�
 - **落地状态（2026-09-02，装车批第 5 批更新）**：首选路经 §6.3 演进——网关签发签名 token（HMAC-SHA256，与后端同密钥 `SC_AUTH_SECRET`）；sc MCP 迁入 backend 进程（streamable-http 挂 `/mcp`）后，codex 经 `[mcp_servers.sc]` 远程 url 以 `Authorization: Bearer` **逐请求**携带该 token，backend `auth.verify_token` 验签 → `auth.mcp_context` 按教师过滤（`app/mcp_http.py`）。壳侧 `school-authz-mcp` shim（第 3 步形态）退役，crate 留作参考；兜底路线（裸 `SC_MCP_TEACHER_ID` env）随 shim 一并移除——开放模式 = 无身份头匿名。
 - sc 后端所有分析端点补齐 `teacher↔class` 归属校验（这是 G11 的本体工作，与 Agent 化共用一套实现）；
 - 单校部署消解了跨租户隔离问题——权限粒度到「校内教师↔班级」即止。
+- **三角色扩展（2026-09-09，见 `auth-roles-design.md`）**：身份模型从教师单承载演进为 教师/学生 双承载统一 Principal；学生自服务走 `/me` 只读面；管理员 = Teacher.admin（纯校级与授课兼管同形）；gateway 统一登录（验 backend 签发的共享 HMAC token）。
 
 ### 5.6 记忆与 rollout
 
@@ -342,6 +343,10 @@ SQ/EQ 协议、CodexThread/Session/Task/Turn 循环、rollout recorder 与压缩
 | 原生 App | **不做** | —— |
 
 教师日常动线（零培训目标）：手机拍卷上传 → 收到卡片通知 → 点开看草稿 → 旁边追问 → 改两处签发。五步之内，无需说明书。
+
+> 前端多端门户与角色功能边界（三角色登录后的前端架构，2026-09-09 已批准）：学生端 /
+> 教师端 / 管理端（工作台内分区）能力面与硬边界，见 `docs/frontend-ends-design.md`——
+> 单 SPA 内按 role 分流，路由守卫 + 导航三簇 + KB 写权收口（写=admin、读=全校）。
 
 ---
 
