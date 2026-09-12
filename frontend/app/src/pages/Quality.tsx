@@ -1,9 +1,10 @@
-import { useParams, useSearchParams } from "react-router-dom";
-import { Card, EmptyState, ErrorState, Page, SectionTitle, Skeleton } from "../components/ui";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Card, EmptyState, ErrorState, Page, SectionTitle, Select, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { ReportMarkdown, ReportTOC } from "../components/Markdown";
 import { listExams, qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { getBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
 
 /**
@@ -33,20 +34,36 @@ export default function Quality() {
 
   const selectedExam = exams.data?.exams.find((e) => e.exam_id === effectiveExamId);
 
+  // 返回链（2026-09-12 设计反馈）：入口=考试页诊断单存档卡 / 概况页「本场完整报告」/
+  // 直达。键=本页路径，来源页经 setBackTarget 登记（sessionStorage 面包屑，全页刷新
+  // 不丢）；未登记回落考试列表。
+  const backTo = getBackTarget(`/c/${cid}/quality`, `/c/${cid}/exams`);
+  const backLabel = backTo.endsWith("/report")
+    ? "返回本场概况"
+    : backTo.includes("tab=diagnosis")
+      ? "返回班级诊断单"
+      : "返回考试列表";
+
   return (
     <Page accent={ACCENTS.exam}>
+      <Link
+        to={backTo}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
+      >
+        ← {backLabel}
+      </Link>
       <SectionTitle>单场考试报告{selectedExam ? ` · ${selectedExam.name}` : ""}</SectionTitle>
 
       {!presetExamId && (
         <Card className="mb-5 flex flex-wrap items-end gap-4 p-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-ink-faint">选择考试</span>
-            <select
+            <Select
               value={effectiveExamId ?? ""}
               onChange={(e) => {
                 window.location.href = `/c/${cid}/quality?exam=${e.target.value}`;
               }}
-              className="min-w-[220px] rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+              className="min-w-[220px]"
             >
               <option value="" disabled>
                 {exams.data && exams.data.exams.length > 0 ? "请选择…" : "暂无考试"}
@@ -56,7 +73,7 @@ export default function Quality() {
                   {e.name}（{e.exam_date}{e.subject ? ` · ${e.subject}` : ""}）
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <p className="ml-auto max-w-sm text-xs text-ink-faint">
             报告随考试提交自动生成并存档。班级的最新状态与改进意见请见
@@ -91,7 +108,7 @@ export default function Quality() {
                 </button>
               </div>
             </aside>
-            <Card className="p-6">
+            <Card className="p-4">
               <ReportMarkdown content={report.data.markdown} />
             </Card>
           </div>

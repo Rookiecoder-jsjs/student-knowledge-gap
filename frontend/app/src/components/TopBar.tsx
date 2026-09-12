@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import type { ComponentType, ReactNode } from "react";
 import { useAuth } from "../lib/AuthContext";
 import type { Session } from "../lib/auth";
+import { EASE } from "../lib/motion-tokens";
+import { ThemeToggle } from "./ThemeToggle";
 
 /**
  * 学生门户/班级选择页统一顶栏骨架（UI 位置统一 2026-09-10）：品牌左 · 导航中 ·
@@ -11,9 +13,6 @@ import type { Session } from "../lib/auth";
  * （SideNav.tsx），学生端 5 tab 顶栏保留现状、班级选择页仍为转场 hub。
  * 导航胶囊激活态 = 模块色（颜色即位置），动效参数与侧栏一致。
  */
-
-/** 利落缓动（SaaS ease-out）。 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 /** 顶栏工具/账号链接统一款式（教师 Shell、班级选择页、校务台右侧共用）。
  * 窄屏 icon-only 态收窄内边距，给中段主导航让位。 */
@@ -131,7 +130,8 @@ export function TopBarNav({
   );
 }
 
-/** 右上账号簇：姓名+管理员徽标（窄屏隐藏）+ 登出钮（全宽可用，端进出修订语义）。
+/** 右上账号簇：姓名+管理员徽标（窄屏隐藏）+ 主题切换（saas-redesign §5.3，
+ * 教师端/学生端一处接入全端生效）+ 登出钮（全宽可用，端进出修订语义）。
  * 教师端/校务台侧栏化后此簇同时沉入侧栏底部复用（SideNav footer）。 */
 export function AccountCluster({ session, name }: { session: Session; name?: string }) {
   const { logout } = useAuth();
@@ -147,6 +147,7 @@ export function AccountCluster({ session, name }: { session: Session; name?: str
           )}
         </span>
       )}
+      <ThemeToggle />
       <button
         onClick={logout}
         aria-label="退出登录"

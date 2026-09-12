@@ -109,7 +109,7 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group flex w-full flex-col rounded-2xl bg-surface p-6 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:shadow-lift hover:ring-2 hover:ring-accent/15 active:scale-[0.99]"
+      className="group flex w-full flex-col rounded-xl border border-line bg-surface p-5 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:border-accent/40 hover:shadow-lift active:scale-[0.99]"
     >
       <div className="flex items-start justify-between">
         <p className="text-lg font-semibold tracking-tight">{c.name}</p>

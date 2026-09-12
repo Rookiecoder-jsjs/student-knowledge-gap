@@ -189,7 +189,13 @@ export default function StudentPortal({ source }: { source: PortalSource }) {
 
 function Pct({ value }: { value: number }) {
   const v = Math.round(value * 100);
-  const color = v >= 80 ? "#10b981" : v >= 60 ? "#f59e0b" : "#ef4444";
+  // 语义色令牌（saas-redesign §8）：达标/偏低/薄弱 → success/warn/danger，双主题自动
+  const color =
+    v >= 80
+      ? "var(--color-success)"
+      : v >= 60
+        ? "var(--color-warn)"
+        : "var(--color-danger)";
   return (
     <div className="min-w-[110px]">
       <div className="mb-1 flex justify-between text-[11px] text-ink-faint">
@@ -217,7 +223,7 @@ function WeakTab({ source }: { source: PortalSource }) {
         <EmptyState title="暂无薄弱环节" hint="当前未发现低于掌握底线的知识点。可查看「我的掌握度」了解各环节水平。" />
       )}
       {data?.weak.map((w: WeakItem) => (
-        <Card key={w.code} className="p-5">
+        <Card key={w.code} className="p-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -387,7 +393,7 @@ function StudyPlanDetail({
         />
       )}
       {plan.data && (
-        <Card className="p-6">
+        <Card className="p-4">
           {plan.data.plan_writer && !plan.data.plan_writer.template && (
             <p className="mb-3 text-[11px] text-ink-faint">
               AI 生成{plan.data.plan_writer.model ? ` · ${plan.data.plan_writer.model}` : ""}
@@ -544,7 +550,7 @@ function PlanTab({ source }: { source: PortalSource }) {
         <EmptyState title="暂无改进单" hint="教师签发改进单后，会与诊断单一起在这里展示。" />
       )}
       {data?.markdown && (
-        <Card className="p-6">
+        <Card className="p-4">
           <ReportMarkdown content={data.markdown} />
         </Card>
       )}

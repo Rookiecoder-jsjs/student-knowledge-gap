@@ -97,7 +97,7 @@ export default function Inbox() {
 
           {/* 全文视图（点开某份草稿时） */}
           {full && (
-            <Card className="border-accent/40 p-5">
+            <Card className="border-accent/40 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Badge tone="accent">{full.type_label}</Badge>

@@ -5,6 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>薄弱点分析 · 教师工作台</title>
+    <script>
+      // 首绘前定主题（saas-redesign §5.2，防 FOUC）：sc.theme 三态
+      // （跟随系统/亮/暗）——未显式选择时按 prefers-color-scheme 落暗色。
+      // 与 lib/theme-mode.ts 的 KEY 约定一致，运行时切换走该模块。
+      (function () {
+        try {
+          var m = localStorage.getItem("sc.theme");
+          var dark =
+            m === "dark" ||
+            (m !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.dataset.theme = "dark";
+        } catch (e) {
+          /* 隐私模式等：亮色默认 */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

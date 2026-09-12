@@ -1,21 +1,27 @@
 @import "tailwindcss";
+/* React Flow 基础样式必须全局装载：懒 chunk 内 import 会被 rolldown-vite 丢弃
+   （2026-09-12 实锤：controls 塌 0 宽、handle 无定位）。覆盖段在文末 §导图。 */
+@import "@xyflow/react/dist/style.css";
 
+/* ===================================================================
+   双主题令牌（saas-redesign §4，2026-09-12 定稿）
+   @theme = 亮色默认（Tailwind 4 由 --color-* 生成同名工具类，工具类引用
+   var() → :root[data-theme="dark"] 覆盖变量即全站换色，页面不写暗色分支）。
+   主题切换机制见 §5：index.html boot 脚本首绘前设 data-theme（防 FOUC），
+   lib/theme-mode.ts 负责运行时三态（跟随系统/亮/暗）。
+   =================================================================== */
 @theme {
-  /* 彩色模块教育风（Duolingo / Khan Academy 系）：
-     冷灰画布 + 纯白卡片 + 16px 大圆角无描边 + 模块色编码。
-     关键机制：accent-soft/deep 由 --color-accent 运行时派生（见下方 :root），
-     页面根节点用 <Page accent="#f97316"> 覆盖 --color-accent，整页随之换模块色。
-     导航胶囊用模块字面色（mod-*），不随页面 accent 变化。 */
-  --color-canvas: #f6f7fb;
+  /* 中性色（专业商务系冷灰族；暗面见下方 dark 块） */
+  --color-canvas: #f7f8fa;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f3f8;
+  --color-surface-2: #f2f4f7;
 
-  --color-line: #e5e9f2;
-  --color-line-strong: #d3d9e6;
+  --color-line: #e4e7ec;
+  --color-line-strong: #d0d5dd;
 
-  --color-ink: #1f2937;
-  --color-ink-soft: #55617a;
-  --color-ink-faint: #7a86a1;
+  --color-ink: #1d2939;
+  --color-ink-soft: #475467;
+  --color-ink-faint: #667085;
 
   /* 模块色单一来源是 src/lib/theme.ts 的 ACCENTS（Shell 导航胶囊 + 各页 <Page accent> 共用）。
      此处只保留页面 accent 默认值 = 工作台青绿；soft/deep 见下方 :root 派生块。 */
@@ -23,12 +29,17 @@
   --color-accent-deep: #0f766e;
   --color-accent-soft: #ccfbf1;
 
+  /* 语义色（saas-redesign §4.3）：success/info 本轮补齐成体系 */
+  --color-success: #16a34a;
+  --color-success-soft: #dcfce7;
   --color-warn: #d97706;
   --color-warn-soft: #fef3c7;
   --color-danger: #dc2626;
   --color-danger-soft: #fee2e2;
+  --color-info: #0284c7;
+  --color-info-soft: #e0f2fe;
 
-  /* 柔和分层：层级主要靠底色差与纯白卡片，阴影只做轻托举 */
+  /* 柔和分层：层级主要靠描边 + 底色差，阴影只做轻托举（暗面覆盖见 dark 块） */
   --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.05);
   --shadow-lift: 0 2px 4px -1px rgb(15 23 42 / 0.06),
     0 6px 14px -4px rgb(15 23 42 / 0.09);
@@ -43,11 +54,76 @@
     monospace;
 }
 
-/* 模块色派生：soft = 主色 14% 兑白，deep = 主色 82% 兑黑。
+/* 模块色派生（亮，saas-redesign §4.2）：soft = 主色 14% 兑白，deep = 主色 82% 兑黑。
    var() 在使用处才求值——页面覆盖 --color-accent 后，soft/deep 自动跟随换色。 */
 :root {
   --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, white);
   --color-accent-deep: color-mix(in srgb, var(--color-accent) 82%, black);
+}
+
+/* 暗色主题（saas-redesign §4.1/§4.2）：蓝黑族不用纯黑、文本不用纯白；
+   模块色 soft 换兑暗面、deep 提亮（暗面 accent 文本要亮才能读）；
+   语义色主色统一提亮一档，soft 走同一 mix 兑暗面；阴影加深
+   （暗面层级主要靠 surface 亮度阶 + 描边，阴影只兜底）。 */
+:root[data-theme="dark"] {
+  --color-canvas: #0f141d;
+  --color-surface: #161d29;
+  --color-surface-2: #1f2836;
+
+  --color-line: #273143;
+  --color-line-strong: #3a4763;
+
+  --color-ink: #e7ebf3;
+  --color-ink-soft: #9aa7bf;
+  --color-ink-faint: #6b7893;
+
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, #161d29);
+  --color-accent-deep: color-mix(in srgb, var(--color-accent) 55%, white);
+
+  --color-success: #34d399;
+  --color-success-soft: color-mix(in srgb, #34d399 14%, #161d29);
+  --color-warn: #fbbf24;
+  --color-warn-soft: color-mix(in srgb, #fbbf24 14%, #161d29);
+  --color-danger: #f87171;
+  --color-danger-soft: color-mix(in srgb, #f87171 14%, #161d29);
+  --color-info: #38bdf8;
+  --color-info-soft: color-mix(in srgb, #38bdf8 14%, #161d29);
+
+  --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-lift: 0 2px 4px -1px rgb(0 0 0 / 0.4),
+    0 6px 14px -4px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 10px 24px -8px rgb(0 0 0 / 0.55),
+    0 20px 48px -16px rgb(0 0 0 / 0.5);
+}
+
+/* 打印强制亮色（saas-redesign §5.4）：报告「打印/导出 PDF」恒为亮色，
+   暗色打印既费墨也不该出暗色 PDF。只需在 dark 下重置回亮值。 */
+@media print {
+  :root[data-theme="dark"] {
+    --color-canvas: #ffffff;
+    --color-surface: #ffffff;
+    --color-surface-2: #f2f4f7;
+    --color-line: #e4e7ec;
+    --color-line-strong: #d0d5dd;
+    --color-ink: #1d2939;
+    --color-ink-soft: #475467;
+    --color-ink-faint: #667085;
+    --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, white);
+    --color-accent-deep: color-mix(in srgb, var(--color-accent) 82%, black);
+    --color-success: #16a34a;
+    --color-success-soft: #dcfce7;
+    --color-warn: #d97706;
+    --color-warn-soft: #fef3c7;
+    --color-danger: #dc2626;
+    --color-danger-soft: #fee2e2;
+    --color-info: #0284c7;
+    --color-info-soft: #e0f2fe;
+    --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+    --shadow-lift: 0 2px 4px -1px rgb(15 23 42 / 0.06),
+      0 6px 14px -4px rgb(15 23 42 / 0.09);
+    --shadow-float: 0 10px 24px -8px rgb(15 23 42 / 0.14),
+      0 20px 48px -16px rgb(15 23 42 / 0.18);
+  }
 }
 
 html {
@@ -206,4 +282,81 @@ textarea:focus-visible {
   border: none;
   border-top: 1px solid var(--color-line);
   margin: 1.25rem 0;
+}
+
+/* ---------------- React Flow 导图画布令牌化（kb-mindmap-create §4） ----------------
+   画布内部件（点阵/连线/minimap/controls）全部接 --color-* 令牌，双主题自动换色；
+   关系边信号色见 lib/relation-types.ts 的 REL_EDGE_CLASS。 */
+
+.kb-edge-tree {
+  stroke: var(--color-line-strong);
+}
+.kb-edge-prerequisite {
+  stroke: var(--color-accent);
+}
+.kb-edge-contains {
+  stroke: var(--color-info);
+}
+.kb-edge-confusable {
+  stroke: var(--color-warn);
+}
+.kb-edge-spiral {
+  stroke: var(--color-success);
+}
+
+/* 章/节的 handle：树边照常渲染，但不允许从章/节拖线（关系线仅知识点之间） */
+.kb-handle-ghost {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 知识点 handle：令牌描边小圆点 */
+.react-flow__handle.kb-handle {
+  width: 9px;
+  height: 9px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-accent);
+}
+
+/* 画布点阵（Background 的 pattern 圆点） */
+.react-flow__background circle {
+  fill: var(--color-line);
+}
+
+/* minimap：中性灰节点（概览用途，双主题恒定）+ 令牌底 */
+.kb-minimap {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__minimap-mask {
+  fill: var(--color-canvas);
+  opacity: 0.82;
+}
+
+/* controls：缩放按钮组接令牌 */
+.react-flow__controls {
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+.react-flow__controls-button {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink-soft);
+}
+.react-flow__controls-button:hover {
+  background: var(--color-surface-2);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__attribution {
+  background: transparent;
+}
+.react-flow__attribution a {
+  color: var(--color-ink-faint);
 }

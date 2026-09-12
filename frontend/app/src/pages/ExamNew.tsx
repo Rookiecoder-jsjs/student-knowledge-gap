@@ -1,7 +1,7 @@
 import { Camera, Sparkle, Table, WarningCircle } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Button, Card, Field, Input, Page, PageHeader } from "../components/ui";
+import { Button, Card, Field, Input, Page, PageHeader, Select } from "../components/ui";
 import { createExam, listKps, photoTemplate, suggestQuestionTags } from "../lib/api";
 import { ACCENTS } from "../lib/theme";
 import type { QuestionCreate } from "../lib/types";
@@ -205,15 +205,11 @@ export default function ExamNew() {
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="类型">
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="rounded-md border border-line-strong bg-surface px-3 py-2.5 text-sm transition-colors focus:border-accent"
-            >
+            <Select value={type} onChange={(e) => setType(e.target.value)}>
               {TYPES.map((t) => (
                 <option key={t}>{t}</option>
               ))}
-            </select>
+            </Select>
           </Field>
         </div>
 

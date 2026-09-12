@@ -13,6 +13,7 @@ import { Button, Card, Input } from "../components/ui";
 import { useAuth } from "../lib/AuthContext";
 import { EXPIRED_KEY } from "../lib/auth";
 import { landingFor } from "../lib/portal";
+import { EASE } from "../lib/motion-tokens";
 import { ACCENTS } from "../lib/theme";
 
 /** 统一登录页（auth-roles-design §7）：教师/管理员/学生同一入口。
@@ -23,7 +24,6 @@ import { ACCENTS } from "../lib/theme";
 手机端左栏折叠为品牌锁定行。入场动效沿用全站 EASE，尊重 reduced-motion。
 设计系统对齐：深墨只出现在这一块品牌面板，其余保持「冷灰画布 + 纯白卡片」。
 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const ENDS = [
   {

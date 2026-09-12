@@ -1,16 +1,22 @@
 import {
   ArrowCounterClockwise,
+  CaretDown,
   FolderOpen,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
+import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef } from "react";
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
   InputHTMLAttributes,
   ReactNode,
+  SelectHTMLAttributes,
+  TdHTMLAttributes,
+  ThHTMLAttributes,
 } from "react";
+import { EASE } from "../lib/motion-tokens";
 
 /* ---------------- 页面模块色包裹器 ---------------- */
 
@@ -46,7 +52,7 @@ export function IconTile({
 }) {
   return (
     <span
-      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/12 text-accent-deep ${className}`}
+      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent-deep ${className}`}
     >
       {children}
     </span>
@@ -56,13 +62,21 @@ export function IconTile({
 /* ---------------- Button ---------------- */
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md" | "lg";
+
+/** 高度三档（saas-redesign §4.4）：32 紧凑 / 36 默认 / 40 页头 CTA。 */
+const SIZES: Record<Size, string> = {
+  sm: "h-8 rounded-lg px-3 text-[13px]",
+  md: "h-9 rounded-lg px-3.5 text-sm",
+  lg: "h-10 rounded-lg px-4 text-sm",
+};
 
 export function Button({
   variant = "primary",
+  size = "md",
   className = "",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  // 教育风：primary 带模块色光晕，其余靠填充/描边，hover 轻浮起
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   const styles: Record<Variant, string> = {
     primary:
       "bg-accent text-white shadow-[0_4px_14px_-6px] shadow-accent/60 hover:bg-accent-deep hover:shadow-lift disabled:bg-accent/40 disabled:shadow-none",
@@ -75,7 +89,7 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center gap-1.5 font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${SIZES[size]} ${styles[variant]} ${className}`}
       {...props}
     />
   );
@@ -87,7 +101,7 @@ export function Badge({
   tone = "neutral",
   children,
 }: {
-  tone?: "neutral" | "accent" | "warn" | "danger";
+  tone?: "neutral" | "accent" | "warn" | "danger" | "success" | "info";
   children: ReactNode;
 }) {
   const tones = {
@@ -95,10 +109,12 @@ export function Badge({
     accent: "bg-accent-soft text-accent-deep border-accent/25",
     warn: "bg-warn-soft text-warn border-warn/25",
     danger: "bg-danger-soft text-danger border-danger/25",
+    success: "bg-success-soft text-success border-success/25",
+    info: "bg-info-soft text-info border-info/25",
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
     >
       {children}
     </span>
@@ -116,12 +132,138 @@ export function Card({
   className?: string;
   interactive?: boolean;
 }) {
-  // 教育风：大圆角纯白卡片、无描边，靠底色差浮起；interactive 用 ring 而非描边
-  const base = "rounded-2xl bg-surface shadow-soft";
+  // 专业商务系（saas-redesign §4.4）：1px 细描边卡 + 轻阴影；interactive 才 lift
+  //（仅 transform/阴影/border-color，GPU 友好）
+  const base = "rounded-xl border border-line bg-surface shadow-soft";
   const hover = interactive
-    ? "transition-all duration-150 hover:shadow-lift hover:ring-2 hover:ring-accent/15"
+    ? "transition-all duration-150 hover:-translate-y-px hover:border-accent/40 hover:shadow-lift"
     : "";
   return <div className={`${base} ${hover} ${className}`}>{children}</div>;
+}
+
+/* ---------------- Select（替代原生裸 select，design-style §4） ---------------- */
+
+/** 下拉选择：样式与 Input 同族，自绘箭头；保留原生弹出（移动端友好）。
+ * sm=h-8 紧凑（行内/工具条场景），md=h-9 默认（design-style §4）。 */
+export function Select({
+  className = "",
+  size = "md",
+  children,
+  ...props
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & { size?: "sm" | "md" }) {
+  const sizing =
+    size === "sm"
+      ? "h-8 rounded-lg pl-2.5 pr-7 text-[13px]"
+      : "h-9 rounded-lg pl-3 pr-8 text-sm";
+  return (
+    <div className={`relative ${className}`}>
+      <select
+        className={`w-full appearance-none border border-line-strong bg-surface text-ink transition-colors focus:border-accent disabled:opacity-40 ${sizing}`}
+        {...props}
+      >
+        {children}
+      </select>
+      <CaretDown
+        size={size === "sm" ? 12 : 14}
+        className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-faint ${
+          size === "sm" ? "right-2" : "right-2.5"
+        }`}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
+/* ---------------- Tabs（分段页签，design-style §4：禁页内手写 tab） ---------------- */
+
+/** 胶囊分段页签：layoutId 滑动指示（active=模块色胶囊白字，与导航同语言）。 */
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+  ariaLabel,
+  layoutId,
+  className = "",
+}: {
+  tabs: readonly { key: T; label: string }[];
+  value: T;
+  onChange: (key: T) => void;
+  ariaLabel: string;
+  /** 同屏多组各自独立 id（framer 布局动画隔离）。 */
+  layoutId: string;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={`inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-surface p-1 ${className}`}
+    >
+      {tabs.map(({ key, label }) => {
+        const active = key === value;
+        return (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(key)}
+            className={`relative shrink-0 rounded-full px-4 py-1.5 text-sm transition-colors ${
+              active ? "font-semibold text-white" : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            {active && !reduce && (
+              <motion.span
+                layoutId={layoutId}
+                className="absolute inset-0 rounded-full bg-accent"
+                transition={{ type: "spring", stiffness: 320, damping: 30, ease: EASE }}
+                aria-hidden
+              />
+            )}
+            {active && reduce && (
+              <span className="absolute inset-0 rounded-full bg-accent" aria-hidden />
+            )}
+            <span className="relative">{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- Table（行高 40/13px/表头 surface-2，saas-redesign §4.4） ---------------- */
+
+export function Table({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`overflow-x-auto ${className}`}>
+      <table className="w-full border-collapse text-[13px] tabular-nums">{children}</table>
+    </div>
+  );
+}
+
+export function THead({ children }: { children: ReactNode }) {
+  return (
+    <thead className="bg-surface-2/70 text-left text-xs font-medium text-ink-soft">
+      {children}
+    </thead>
+  );
+}
+
+export function TR({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <tr className={`transition-colors hover:bg-surface-2/50 ${className}`}>{children}</tr>;
+}
+
+export function Th({ className = "", ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th
+      className={`whitespace-nowrap border-b border-line px-3 py-2 font-medium ${className}`}
+      {...props}
+    />
+  );
+}
+
+export function Td({ className = "", ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
+  return <td className={`border-b border-line px-3 py-2 align-middle ${className}`} {...props} />;
 }
 
 /* ---------------- 三态：加载 / 空 / 错误 ---------------- */
@@ -133,7 +275,7 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="h-11 rounded-xl skeleton-shimmer"
+          className="h-11 rounded-lg skeleton-shimmer"
           style={{ animationDelay: `${i * 120}ms` }}
         />
       ))}
@@ -144,7 +286,7 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/12">
+      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/12">
         <FolderOpen size={22} className="text-accent-deep" weight="thin" />
       </span>
       <p className="text-sm font-medium text-ink-soft">{title}</p>
@@ -162,7 +304,7 @@ export function ErrorState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center" role="alert">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-danger/12">
+      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-danger/12">
         <WarningCircle size={22} className="text-danger" weight="thin" />
       </span>
       <p className="max-w-[52ch] text-sm text-ink-soft">{message}</p>
@@ -247,9 +389,11 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    // 吸顶（saas-redesign §6）：top 取 --shell-top（Shell 移动端顶条 48px 让位，
+    // 缺省 0）；负外边距出血到主区内容边，底衬毛玻璃避免内容穿透。
+    <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-5 flex flex-wrap items-end justify-between gap-4 bg-canvas/90 px-4 py-3 backdrop-blur-md md:-mx-8 md:px-8">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-xl font-semibold leading-tight tracking-tight text-ink">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
@@ -336,8 +480,9 @@ export function Modal({
       aria-modal="true"
       aria-label={title}
     >
+      {/* 遮罩：双主题恒为暗色纱（硬编码白名单，design-style §7——唯一 bg-black） */}
       <div
-        className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden
       />
@@ -398,7 +543,7 @@ export function StatTile({
           ? "text-danger"
           : "text-ink";
   return (
-    <div className="rounded-2xl bg-surface px-4 py-3.5 shadow-soft">
+    <div className="rounded-xl border border-line bg-surface px-4 py-3.5 shadow-soft">
       {icon && <IconTile className="mb-2.5">{icon}</IconTile>}
       <p className={`font-display text-[28px] font-bold leading-tight tabular-nums tracking-tight ${val}`}>
         {value}

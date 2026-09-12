@@ -1,7 +1,7 @@
 import { Camera, CheckCircle, Images, Keyboard } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, Modal, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Modal, Select, Skeleton } from "../components/ui";
 import {
   assignBatchItem,
   batchJob,
@@ -445,7 +445,7 @@ function BatchCollect({
   const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
 
   return (
-    <Card className="mb-5 p-5">
+    <Card className="mb-5 p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <Images size={16} className="text-accent" />
@@ -535,10 +535,11 @@ function BatchCollect({
                   <span className="flex items-center gap-1">
                     {assignFor === it.id ? (
                       <>
-                        <select
+                        <Select
+                          size="sm"
                           value={assignTarget}
                           onChange={(e) => setAssignTarget(e.target.value)}
-                          className="rounded-lg border border-line bg-surface px-2 py-1 text-xs transition-colors focus:border-accent"
+                          className="w-40"
                         >
                           <option value="">选择学生…</option>
                           {students.map((s) => (
@@ -546,7 +547,7 @@ function BatchCollect({
                               {s.name_or_alias}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                         <Button variant="secondary" onClick={() => doAssign(it.id)} disabled={busy || !assignTarget}>
                           指派
                         </Button>

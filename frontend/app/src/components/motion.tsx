@@ -1,8 +1,6 @@
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Children, memo, type ReactNode } from "react";
-
-/** 利落减速曲线（案头 ease-out，比绿洲更干脆）。 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+import { EASE } from "../lib/motion-tokens";
 
 /** 大列表降级阈值：超过则不再逐项 stagger，改为整体淡入，避免长列表 2s+ 迟滞。 */
 const STAGGER_CAP = 16;

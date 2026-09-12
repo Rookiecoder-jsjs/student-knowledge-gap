@@ -18,6 +18,7 @@ import {
   Modal,
   Page,
   PageHeader,
+  Select,
   Skeleton,
 } from "../../components/ui";
 import {
@@ -334,11 +335,12 @@ export default function Accounts() {
                   </div>
                   <label className="flex items-center gap-2 text-xs text-ink-soft">
                     班主任
-                    <select
+                    <Select
+                      size="sm"
                       value={c.homeroom_teacher_id ?? ""}
                       disabled={hrBusy === c.class_id}
                       onChange={(e) => doHomeroom(c.class_id, e.target.value ? Number(e.target.value) : null)}
-                      className="rounded-md border border-line-strong bg-surface px-2 py-1.5 text-sm text-ink focus:border-accent"
+                      className="w-36"
                     >
                       <option value="">（未指派）</option>
                       {teacherOptions.map((t) => (
@@ -346,7 +348,7 @@ export default function Accounts() {
                           {t.name}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </label>
                 </div>
               ))}
@@ -391,7 +393,7 @@ export default function Accounts() {
               type="checkbox"
               checked={createForm.admin}
               onChange={(e) => setCreateForm({ ...createForm, admin: e.target.checked })}
-              className="accent-[#14b8a6]"
+              className="accent-accent"
             />
             设为管理员（全校可见 + 校务台）
           </label>
@@ -400,7 +402,7 @@ export default function Accounts() {
               type="checkbox"
               checked={createForm.kb_editor}
               onChange={(e) => setCreateForm({ ...createForm, kb_editor: e.target.checked })}
-              className="accent-[#14b8a6]"
+              className="accent-accent"
             />
             授予知识库编辑权（全校内容层；按学科管理请用「学科授权」）
           </label>

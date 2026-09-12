@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, ErrorState, Page, SectionTitle, Skeleton } from "../components/ui";
 import { qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { setBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
 
 /**
@@ -51,14 +52,14 @@ export default function ExamBrief() {
       {snap && (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Card className="p-5">
+            <Card className="p-4">
               <p className="text-xs text-ink-faint">提交 / 全班</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">
                 {snap.committed}
                 <span className="text-sm font-normal text-ink-faint"> / {snap.committed + snap.pending}</span>
               </p>
             </Card>
-            <Card className="p-5">
+            <Card className="p-4">
               <p className="text-xs text-ink-faint">平均得分率</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">
                 {meanRate != null ? `${Math.round(meanRate * 100)}%` : "—"}
@@ -67,7 +68,7 @@ export default function ExamBrief() {
                 均分 {snap.stats.mean ?? "—"} · 最高 {snap.stats.max ?? "—"} · 最低 {snap.stats.min ?? "—"}
               </p>
             </Card>
-            <Card className="p-5">
+            <Card className="p-4">
               <p className="text-xs text-ink-faint">共性待加强 Top 3</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {snap.common_weak.length === 0 && (
@@ -83,7 +84,7 @@ export default function ExamBrief() {
           </div>
 
           {/* 各题得分率条 */}
-          <Card className="mt-4 p-5">
+          <Card className="mt-4 p-4">
             <p className="text-sm font-semibold">各题得分率</p>
             <div className="mt-3 space-y-2">
               {snap.question_rates.map((q) => (
@@ -115,7 +116,10 @@ export default function ExamBrief() {
                 <ArrowRight size={15} />
               </Button>
             </Link>
-            <Link to={`/c/${cid}/quality?exam=${eid}`}>
+            <Link
+              to={`/c/${cid}/quality?exam=${eid}`}
+              onClick={() => setBackTarget(`/c/${cid}/quality`, `/c/${cid}/exams/${eid}/report`)}
+            >
               <Button variant="secondary">
                 <FileText size={15} />
                 本场完整报告

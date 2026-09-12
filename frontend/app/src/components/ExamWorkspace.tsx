@@ -40,8 +40,15 @@ export function ExamWorkspace({ stage, children }: { stage: number; children: Re
 
   return (
     <Page accent={ACCENTS.exam}>
+      {/* 返回链（2026-09-12 设计反馈）：工作区五阶共用，样式同 ExamNew/Diagnosis */}
+      <Link
+        to={`/c/${cid}/exams`}
+        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
+      >
+        ← 返回考试列表
+      </Link>
       {/* 考试上下文 + 流水线 stepper */}
-      <div className="mb-6 rounded-2xl bg-surface px-5 py-4 shadow-soft">
+      <div className="mb-6 rounded-2xl border border-line bg-surface px-5 py-4 shadow-soft">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold tracking-tight text-ink">

@@ -22,6 +22,7 @@ import {
   Modal,
   Page,
   PageHeader,
+  Select,
   Skeleton,
 } from "../components/ui";
 import { Reveal, StaggerItem, StaggerList } from "../components/motion";
@@ -519,15 +520,15 @@ export default function Kb() {
             />
           </Field>
           <Field label="重要度">
-            <select
+            <Select
               value={createImportance}
               onChange={(e) => setCreateImportance(e.target.value)}
-              className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+              className="w-full"
             >
               <option value="基础">基础（地基性，优先补强）</option>
               <option value="核心">核心（章节主干）</option>
               <option value="拓展">拓展（独立/高阶）</option>
-            </select>
+            </Select>
           </Field>
           {createErr && <p className="text-xs text-danger">{createErr}</p>}
         </div>

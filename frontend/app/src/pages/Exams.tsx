@@ -4,11 +4,12 @@ import {
   ActionPlanPanel,
   InterventionSummaryStrip,
 } from "../components/ActionPlan";
-import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Skeleton, StatusDot } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, StatusDot, Tabs } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import { classDiagnosisSheet, listClasses, listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
+import { setBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
 import type { ExamSummary } from "../lib/types";
 
@@ -50,11 +51,11 @@ export default function Exams() {
         desc="每场考试是一条流水线：建卷 → 审核 → 采集 → 提交 → 概况"
         actions={
           <span className="flex items-center gap-2">
-            <select
+            <Select
               name="class-switch"
               value={cid}
               onChange={(e) => nav(`/c/${e.target.value}/exams`)}
-              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+              className="w-36"
               aria-label="切换班级"
             >
               {(classes.data?.classes ?? []).map((c) => (
@@ -62,7 +63,7 @@ export default function Exams() {
                   {c.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <Link to={`/c/${cid}/exams/new`}>
               <Button>
                 <Plus size={15} />
@@ -73,27 +74,18 @@ export default function Exams() {
         }
       />
 
-      {/* 双 tab：考试 | 班级诊断单 */}
-      <div className="mb-5 inline-flex rounded-full border border-line bg-surface p-1" role="tablist" aria-label="考试模块视图">
-        {(
-          [
-            ["exams", "考试"],
-            ["diagnosis", "班级诊断单"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            onClick={() => setParams(key === "exams" ? {} : { tab: key })}
-            className={`rounded-full px-4 py-1.5 text-sm transition-colors ${
-              tab === key ? "bg-accent font-semibold text-white" : "text-ink-soft hover:text-ink"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* 双 tab：考试 | 班级诊断单（Tabs 原语，design-style §4 禁页内手写 tab） */}
+      <Tabs
+        ariaLabel="考试模块视图"
+        layoutId="exams-view-tab"
+        className="mb-5"
+        tabs={[
+          { key: "exams", label: "考试" },
+          { key: "diagnosis", label: "班级诊断单" },
+        ] as const}
+        value={tab}
+        onChange={(k) => setParams(k === "exams" ? {} : { tab: k })}
+      />
 
       {tab === "exams" ? (
         <ExamList data={data} loading={loading} error={error} reload={reload} cid={cid} />
@@ -143,7 +135,7 @@ function ExamList({
             return (
               <StaggerItem key={e.exam_id}>
                 <Link to={`/c/${cid}/exams/${e.exam_id}/${stage.to}`} className="block">
-                  <Card interactive className="h-full p-5">
+                  <Card interactive className="h-full p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-ink">
@@ -227,7 +219,7 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
   return (
     <div className="space-y-5">
       {/* 区块一：班级现状（滚动统计） */}
-      <Card className="p-5">
+      <Card className="p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-semibold">班级现状</p>
           <p className="text-xs text-ink-faint tabular-nums">
@@ -265,7 +257,7 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
 
       {/* 区块二：班级改进意见（最新一份，LLM/模板） */}
       {s.improvement_advice ? (
-        <Card className="p-5">
+        <Card className="p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-sm font-semibold">班级改进意见</p>
             <p className="flex items-center gap-2 text-xs text-ink-faint">
@@ -290,7 +282,7 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
 
       {/* 区块三：行动明细（待办队列——后端折叠排序，仅挂起建议 ≤10 条；
           行内一键确认/跳过，小组代表行按组批量落事实） */}
-      <Card className="p-5">
+      <Card className="p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-sm font-semibold">行动明细</p>
           <p className="text-xs text-ink-faint">
@@ -311,12 +303,18 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
 
       {/* 区块五：往期考试报告存档 */}
       {s.past_exams.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4">
           <p className="text-sm font-semibold">往期考试报告</p>
           <StaggerList className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {s.past_exams.map((e) => (
               <StaggerItem key={e.exam_id}>
-                <Link to={`/c/${cid}/quality?exam=${e.exam_id}`} className="block">
+                <Link
+                  to={`/c/${cid}/quality?exam=${e.exam_id}`}
+                  onClick={() =>
+                    setBackTarget(`/c/${cid}/quality`, `/c/${cid}/exams?tab=diagnosis`)
+                  }
+                  className="block"
+                >
                   <Card interactive className="p-4">
                     <p className="truncate text-sm font-medium text-ink">{e.name}</p>
                     <p className="mt-0.5 text-xs text-ink-faint tabular-nums">

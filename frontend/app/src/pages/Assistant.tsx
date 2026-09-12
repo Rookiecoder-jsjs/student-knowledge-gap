@@ -1,7 +1,7 @@
 import { Archive, ArrowUp, List, PlusCircle, Stop, X } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatMarkdown } from "../components/Markdown";
-import { Badge, Button, Card, Page, PageHeader } from "../components/ui";
+import { Badge, Button, Card, Page, PageHeader, Select } from "../components/ui";
 import { getToken } from "../lib/auth";
 import { ACCENTS } from "../lib/theme";
 
@@ -594,7 +594,7 @@ export default function Assistant() {
           title="AI 教研员"
           desc="基于班级真实数据的调查与研判助手（需教师/管理员登录）"
         />
-        <Card className="mx-auto max-w-md p-6">
+        <Card className="mx-auto max-w-md p-4">
           <div className="space-y-3">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-ink-faint">网关地址</span>
@@ -627,12 +627,13 @@ export default function Assistant() {
               历史
             </Button>
             {/* 模型选择（model/list 数据驱动；目录扩模型零代码） */}
-            <select
+            <Select
+              size="sm"
               value={modelId}
               onChange={(e) => changeModel(e.target.value)}
               aria-label="模型"
               title={currentModel?.description || "模型"}
-              className="max-w-[170px] rounded-full border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink transition-colors focus:border-accent"
+              className="w-44"
             >
               {models.length === 0 && <option value="">默认模型</option>}
               {models.map((m) => (
@@ -640,16 +641,17 @@ export default function Assistant() {
                   {m.displayName ?? m.id}
                 </option>
               ))}
-            </select>
+            </Select>
             {/* 思考强度（当前模型 supported_reasoning_levels） */}
-            <select
+            <Select
+              size="sm"
               value={effort}
               onChange={(e) => changeEffort(e.target.value)}
               aria-label="思考强度"
               title={
                 efforts.find((x) => x.reasoningEffort === effort)?.description ?? "思考强度"
               }
-              className="rounded-full border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink transition-colors focus:border-accent"
+              className="w-36"
             >
               {efforts.length === 0 && <option value="">默认</option>}
               {efforts.map((e) => (
@@ -657,7 +659,7 @@ export default function Assistant() {
                   思考·{EFFORT_LABELS[e.reasoningEffort] ?? e.reasoningEffort}
                 </option>
               ))}
-            </select>
+            </Select>
             <Button variant="secondary" onClick={newThread}>
               <PlusCircle size={15} />
               新对话
@@ -678,7 +680,7 @@ export default function Assistant() {
 
         {/* 对话区 */}
         <Card className="flex h-[calc(100vh-230px)] min-h-[420px] flex-col p-0">
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <div className="flex-1 space-y-4 overflow-y-auto p-4">
             {items.length === 0 && (
               <div className="flex flex-col items-center gap-4 py-14 text-center">
                 <p className="text-sm text-ink-faint">

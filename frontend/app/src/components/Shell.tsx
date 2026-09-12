@@ -1,23 +1,24 @@
 import {
   BookOpen,
-  Buildings,
   ChartBar,
   ChatCircleDots,
   Exam,
   House,
+  List,
   Student,
   Tray,
   TreeStructure,
   UserGear,
 } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import { inboxSummary, listClasses, type InboxSummary as InboxSummaryData } from "../lib/api";
 import { LAST_CLASS_KEY } from "../lib/auth";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
 import { roleFlags } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
+import { Select } from "./ui";
 import { AccountCluster } from "./TopBar";
 import { Sidebar, type SideNavGroup, type SideNavItem } from "./SideNav";
 
@@ -99,6 +100,12 @@ export function Shell({ children }: { children: ReactNode }) {
     }
   }, [routed, routedOk]);
 
+  // <md 抽屉开合（saas-redesign §6）：菜单条打开，导航点击/遮罩/路由切换收起
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
   // 手动计算激活态：考试模块也涵盖 /quality 直达入口
   const path = location.pathname;
   // 无可用班级时（cid=0）班级簇不指向 /c/0，退回班级选择页
@@ -118,15 +125,14 @@ export function Shell({ children }: { children: ReactNode }) {
     return <Navigate to="/" replace />;
   }
 
-  // 侧栏语境块（md+）：班级切换器（select 自身显示当前班级名）；
-  // rail（<md）收成跳班级选择页的图标钮。
+  // 侧栏语境块：班级切换器（Select 原语，design-style §4 禁原生 select）
   const hasClasses = (classes.data?.classes ?? []).length > 0;
   const classContext = hasClasses ? (
-    <select
+    <Select
       name="class-switch"
       value={cid}
       onChange={(e) => nav(`/c/${e.target.value}`)}
-      className="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent"
+      className="w-full"
       aria-label="切换班级"
     >
       {classes.data?.classes.map((c) => (
@@ -134,17 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {c.name}
         </option>
       ))}
-    </select>
-  ) : null;
-  const railClassSwitch = hasClasses ? (
-    <Link
-      to="/"
-      aria-label="切换班级"
-      title="切换班级"
-      className="flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-ink-soft transition-colors hover:border-accent/50 hover:text-ink"
-    >
-      <Buildings size={16} />
-    </Link>
+    </Select>
   ) : null;
 
   // 待签发角标：绝对定位于项右上角（rail 下盖在图标角上）
@@ -255,7 +251,6 @@ export function Shell({ children }: { children: ReactNode }) {
         title="薄弱点分析"
         subtitle="教师工作台"
         context={classContext}
-        railContext={railClassSwitch}
         navLabel="主导航"
         layoutId="shell-side-nav"
         groups={groups}
@@ -264,10 +259,35 @@ export function Shell({ children }: { children: ReactNode }) {
             <AccountCluster session={session} name={accountName || roleLabel} />
           ) : undefined
         }
+        mobileOpen={navOpen}
+        onMobileClose={() => setNavOpen(false)}
       />
-      <main className="min-w-0 flex-1">
-        <div className="mx-auto max-w-[1200px] px-6 py-7">{children}</div>
-      </main>
+      <div className="flex min-w-0 flex-1 flex-col [--shell-top:48px] md:[--shell-top:0px]">
+        {/* 移动端顶条（<md）：菜单钮开抽屉；md+ 由侧栏接管 */}
+        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur md:hidden">
+          <button
+            onClick={() => setNavOpen(true)}
+            aria-label="打开导航"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            <List size={18} />
+          </button>
+          <span className="text-sm font-semibold tracking-tight">薄弱点分析</span>
+        </header>
+        <main className="min-w-0 flex-1">
+          {/* 全幅工作台（saas-redesign §6）：撤 max-w 居中，数据视图自然铺满；
+              --shell-top 供 PageHeader 吸顶偏移（移动端让位顶条 48px） */}
+          <div className="px-4 py-6 md:px-8 md:py-7">{children}</div>
+        </main>
+      </div>
+      {/* 抽屉遮罩（<md） */}
+      {navOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setNavOpen(false)}
+          aria-hidden
+        />
+      )}
     </div>
   );
 }
