@@ -1,10 +1,12 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { EASE } from "./lib/motion-tokens";
 import { ExamWorkspace } from "./components/ExamWorkspace";
 import { Shell } from "./components/Shell";
 import { ApiError, listClasses } from "./lib/api";
 import { useAuth } from "./lib/AuthContext";
+import { watchSystemTheme } from "./lib/theme-mode";
 import { landingFor } from "./lib/portal";
 import { Guard, useRoleFlags } from "./components/PortalGuard";
 import ClassPicker from "./pages/ClassPicker";
@@ -27,36 +29,29 @@ import Students from "./pages/Students";
 import TemplateView from "./pages/TemplateView";
 import Usage from "./pages/Usage";
 import Wizard from "./pages/Wizard";
-import KbCreate from "./pages/KbCreate";
+import KbNew from "./pages/KbNew";
 import Accounts from "./pages/admin/Accounts";
 import KbPanel from "./pages/admin/KbPanel";
 
-/** 利落减速曲线（案头 ease-out）。 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
+/**
+ * 页面进入微动效（单段 ease-out）。无外层 AnimatePresence，exit 无消费方已移除。
+ * key=pathname：Shell 跨路由持久化后 motion.div 若不重挂，initial 不再重演 →
+ * 内容硬切瞬跳（2026-09-12 工具组反馈）。以 pathname 自 key 让页面段每次导航
+ * 重挂、重放进入动画——侧栏在 Shell 内，不受此 key 影响。
+ */
 function Animated({ children }: { children: ReactNode }) {
   const reduce = useReducedMotion();
+  const { pathname } = useLocation();
   if (reduce) return <>{children}</>;
   return (
     <motion.div
+      key={pathname}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
       transition={{ duration: 0.18, ease: EASE }}
     >
       {children}
     </motion.div>
-  );
-}
-
-/** 考试工作区阶段路由：stepper + 阶段面板。 */
-function ExamStage({ stage, children }: { stage: number; children: ReactNode }) {
-  return (
-    <Shell>
-      <Animated>
-        <ExamWorkspace stage={stage}>{children}</ExamWorkspace>
-      </Animated>
-    </Shell>
   );
 }
 
@@ -127,74 +122,85 @@ function AdminHome() {
  */
 function TeacherRoutes() {
   const flags = useRoleFlags();
-  const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<Animated><ClassPicker /></Animated>} />
-        <Route path="/wizard" element={<Animated><Wizard /></Animated>} />
-        {/* 知识库两页套 Shell（导航一致性 2026-09-11）：侧栏「知识库」项与
-            待签发/AI 教研员同为侧栏导航目的地，须保持侧栏 + 激活胶囊连续，
-            不再整页换壳；页内返回链（从哪进去回哪）保留 */}
-        <Route path="/kb" element={<Shell><Animated><Kb /></Animated></Shell>} />
-        <Route path="/kb/new" element={<Shell><Animated><KbCreate /></Animated></Shell>} />
+    // 侧栏切换不整树重挂（2026-09-12 设计反馈排查）：此前外包的
+    // <AnimatePresence mode="wait"> + <Routes key={pathname}> 会让 Shell（侧栏）
+    // 随每次导航销毁重建——layoutId 激活胶囊永远无法滑动、班级列表/待签发角标
+    // 重拉闪变，主区先淡出到全空再淡入（闪烁主体，总过渡时长翻倍）。Shell 现已
+    // 跨路由持久化，过渡只留每页 Animated 的单段进入动画。
+    <Routes>
+      <Route path="/" element={<Animated><ClassPicker /></Animated>} />
+      <Route path="/wizard" element={<Animated><Wizard /></Animated>} />
+      {/* 知识库两页套 Shell（导航一致性 2026-09-11）：侧栏「知识库」项与
+          待签发/AI 教研员同为侧栏导航目的地，须保持侧栏 + 激活胶囊连续，
+          不再整页换壳；页内返回链（从哪进去回哪）保留 */}
+      <Route path="/kb" element={<Shell><Animated><Kb /></Animated></Shell>} />
+      <Route path="/kb/new" element={<Shell><Animated><KbNew /></Animated></Shell>} />
 
-        <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
-        <Route path="/inbox" element={<Shell><Animated><Inbox /></Animated></Shell>} />
-        <Route path="/assistant" element={
+      <Route path="/c/:classId" element={<Shell><Animated><Overview /></Animated></Shell>} />
+      <Route path="/inbox" element={<Shell><Animated><Inbox /></Animated></Shell>} />
+      {/* Guard 必须在 Shell 内层（2026-09-12 工具组瞬跳排查）：Guard 可见时虽是
+          Fragment 透传，但 React 协调按元素类型比较——<Guard> ≠ <Shell>，套在
+          外层会让 Shell 每次进出 /assistant 整体重挂（侧栏瞬跳+角标重拉） */}
+      <Route path="/assistant" element={
+        <Shell>
           <Guard show={flags.assistantVisible}>
-            <Shell><Animated><Assistant /></Animated></Shell>
+            <Animated><Assistant /></Animated>
           </Guard>
-        } />
+        </Shell>
+      } />
 
-        <Route path="/c/:classId/exams" element={<Shell><Animated><Exams /></Animated></Shell>} />
-        <Route path="/c/:classId/exams/new" element={<Shell><Animated><ExamNew /></Animated></Shell>} />
+      <Route path="/c/:classId/exams" element={<Shell><Animated><Exams /></Animated></Shell>} />
+      <Route path="/c/:classId/exams/new" element={<Shell><Animated><ExamNew /></Animated></Shell>} />
 
-        {/* 考试工作区：5 阶流水线 */}
-        <Route path="/c/:classId/exams/:examId" element={<ExamStage stage={1}><TemplateView /></ExamStage>} />
-        <Route path="/c/:classId/exams/:examId/review" element={<ExamStage stage={2}><Review /></ExamStage>} />
-        <Route path="/c/:classId/exams/:examId/collect" element={<ExamStage stage={3}><Collect /></ExamStage>} />
-        <Route path="/c/:classId/exams/:examId/commit" element={<ExamStage stage={4}><CommitView /></ExamStage>} />
-        <Route path="/c/:classId/exams/:examId/report" element={<ExamStage stage={5}><ExamBrief /></ExamStage>} />
+      {/* 考试工作区：5 阶流水线。路由元素根类型必须是 <Shell> 本体（2026-09-12 同类
+          排查）：包一层 ExamStage 组件会让根类型 ≠ Shell，从考试列表进工作区时侧栏
+          整体重挂（胶囊瞬跳+角标重拉）。Shell/Animated/ExamWorkspace 就地内联。 */}
+      <Route path="/c/:classId/exams/:examId" element={<Shell><Animated><ExamWorkspace stage={1}><TemplateView /></ExamWorkspace></Animated></Shell>} />
+      <Route path="/c/:classId/exams/:examId/review" element={<Shell><Animated><ExamWorkspace stage={2}><Review /></ExamWorkspace></Animated></Shell>} />
+      <Route path="/c/:classId/exams/:examId/collect" element={<Shell><Animated><ExamWorkspace stage={3}><Collect /></ExamWorkspace></Animated></Shell>} />
+      <Route path="/c/:classId/exams/:examId/commit" element={<Shell><Animated><ExamWorkspace stage={4}><CommitView /></ExamWorkspace></Animated></Shell>} />
+      <Route path="/c/:classId/exams/:examId/report" element={<Shell><Animated><ExamWorkspace stage={5}><ExamBrief /></ExamWorkspace></Animated></Shell>} />
 
-        {/* 质量分析直达入口（不在工作区内，自带考试选择器） */}
-        <Route path="/c/:classId/quality" element={<Shell><Animated><Quality /></Animated></Shell>} />
+      {/* 质量分析直达入口（不在工作区内，自带考试选择器） */}
+      <Route path="/c/:classId/quality" element={<Shell><Animated><Quality /></Animated></Shell>} />
 
-        <Route path="/c/:classId/students" element={<Shell><Animated><Students /></Animated></Shell>} />
-        <Route path="/c/:classId/students/:studentId/diagnosis" element={<Shell><Animated><Diagnosis /></Animated></Shell>} />
-        <Route path="/c/:classId/students/:studentId/mastery" element={<Shell><Animated><Mastery /></Animated></Shell>} />
+      <Route path="/c/:classId/students" element={<Shell><Animated><Students /></Animated></Shell>} />
+      <Route path="/c/:classId/students/:studentId/diagnosis" element={<Shell><Animated><Diagnosis /></Animated></Shell>} />
+      <Route path="/c/:classId/students/:studentId/mastery" element={<Shell><Animated><Mastery /></Animated></Shell>} />
 
-        {/* 全局管理（side-nav §5，2026-09-12 设计反馈）：原独立校务台三页并入
-            教学 Shell——侧栏「全局管理」组直达，仅超管登录挂载（adminLogin）；
-            学科管理员的 KB 编辑走 /kb 自页，不再有校级面板入口 */}
-        {flags.adminLogin && (
-          <Route path="/admin" element={<AdminHome />} />
-        )}
-        {flags.adminLogin && (
-          <Route path="/admin/usage" element={<Shell><Animated><Usage /></Animated></Shell>} />
-        )}
-        {flags.adminLogin && (
-          <Route path="/admin/accounts" element={<Shell><Animated><Accounts /></Animated></Shell>} />
-        )}
-        {flags.adminLogin && (
-          <Route path="/admin/kb" element={<Shell><Animated><KbPanel /></Animated></Shell>} />
-        )}
+      {/* 全局管理（side-nav §5，2026-09-12 设计反馈）：原独立校务台三页并入
+          教学 Shell——侧栏「全局管理」组直达，仅超管登录挂载（adminLogin）；
+          学科管理员的 KB 编辑走 /kb 自页，不再有校级面板入口 */}
+      {/* /admin 仅是落地重定向（→ /admin/accounts）：同样套 Shell（2026-09-12 同类
+          排查）——重定向帧保住侧栏而非整屏空白，且根类型同为 Shell，跨跳转持久 */}
+      {flags.adminLogin && (
+        <Route path="/admin" element={<Shell><Animated><AdminHome /></Animated></Shell>} />
+      )}
+      {flags.adminLogin && (
+        <Route path="/admin/usage" element={<Shell><Animated><Usage /></Animated></Shell>} />
+      )}
+      {flags.adminLogin && (
+        <Route path="/admin/accounts" element={<Shell><Animated><Accounts /></Animated></Shell>} />
+      )}
+      {flags.adminLogin && (
+        <Route path="/admin/kb" element={<Shell><Animated><KbPanel /></Animated></Shell>} />
+      )}
 
-        {/* 学生门户预览（超级账号，admin-only）：挂教学树学生语境（独立壳，不套 Shell） */}
-        {flags.adminLogin && (
-          <>
-            <Route path="/c/:classId/students/:studentId/portal" element={<StudentPortalPreview />} />
-            <Route path="/c/:classId/students/:studentId/portal/study" element={<StudentPortalPreview />} />
-            <Route path="/c/:classId/students/:studentId/portal/mastery" element={<StudentPortalPreview />} />
-            <Route path="/c/:classId/students/:studentId/portal/reports" element={<StudentPortalPreview />} />
-            <Route path="/c/:classId/students/:studentId/portal/plan" element={<StudentPortalPreview />} />
-          </>
-        )}
+      {/* 学生门户预览（超级账号，admin-only）：挂教学树学生语境（独立壳，不套 Shell） */}
+      {flags.adminLogin && (
+        <>
+          <Route path="/c/:classId/students/:studentId/portal" element={<StudentPortalPreview />} />
+          <Route path="/c/:classId/students/:studentId/portal/study" element={<StudentPortalPreview />} />
+          <Route path="/c/:classId/students/:studentId/portal/mastery" element={<StudentPortalPreview />} />
+          <Route path="/c/:classId/students/:studentId/portal/reports" element={<StudentPortalPreview />} />
+          <Route path="/c/:classId/students/:studentId/portal/plan" element={<StudentPortalPreview />} />
+        </>
+      )}
 
-        {/* 未匹配：教师/管理端敲未知路径或学生路径 → 按 landingFor 弹回落地区 */}
-        <Route path="*" element={<StaffFallback />} />
-      </Routes>
-    </AnimatePresence>
+      {/* 未匹配：教师/管理端敲未知路径或学生路径 → 按 landingFor 弹回落地区 */}
+      <Route path="*" element={<StaffFallback />} />
+    </Routes>
   );
 }
 
@@ -225,6 +231,10 @@ function usePortalGate() {
 export default function App() {
   const { session, rebootstrap } = useAuth();
   const { mode, retry } = usePortalGate();
+
+  // 主题跟随系统（saas-redesign §5）：首绘由 index.html boot 脚本定，
+  // 此处只挂系统偏好变化监听（仅 system 模式生效）
+  useEffect(() => watchSystemTheme(), []);
 
   if (session === undefined || mode === "loading") {
     return (

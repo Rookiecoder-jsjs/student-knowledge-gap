@@ -1,66 +1,34 @@
 import { CaretRight, Plus, Trash } from "@phosphor-icons/react";
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Button, Card, Field, Input, Page, PageHeader, StatusDot } from "../components/ui";
-import { createKbVersion, createKp } from "../lib/api";
-import { getBackTarget, roleFlags, setBackTarget } from "../lib/portal";
-import { useAuth } from "../lib/AuthContext";
-import { ACCENTS } from "../lib/theme";
-
-/**
- * 图形化新建知识库向导（2026-09-11，frontend-ends-design §知识库）。
- *
- * 四步：基本信息（学科/教材/版本号/年级）→ 章节规划（批量粘贴，一行一个）→
- * 知识点录入（逐章；支持批量粘贴「编码 名称 | 描述」）→ 确认创建（先建空白
- * 草稿版本，再逐条写入；失败可重试）。建完跳回 /kb 并落在新版本上。
- * 写权门槛与 /kb 一致（非 kb_content_editable 见只读提示；后端 require_kb_editor 兜底）。
- */
-
-interface KpDraft {
-  chapter: string;
-  code: string;
-  name: string;
-  description: string;
-  importance: string;
-}
+import { useNavigate } from "react-router-dom";
+import { createKbLibrary } from "../../lib/kb-create";
+import type { KbBasic, KpDraft } from "../../lib/kb-create";
+import { parseKpLine } from "../../lib/kb-create";
+import { setBackTarget } from "../../lib/portal";
+import { Button, Card, Field, Input, PageHeader, StatusDot } from "../ui";
+import BasicInfoForm from "./BasicInfoForm";
 
 const STEPS = ["基本信息", "章节规划", "知识点录入", "确认创建"];
-
-const COMMON_SUBJECTS = ["数学", "语文", "英语", "物理", "化学", "生物", "历史", "地理", "道德与法治"];
-const COMMON_EDITIONS = ["人教版", "北师大版", "苏教版", "沪教版", "浙教版", "外研版", "译林版"];
-
-/** 批量粘贴行解析：「编码 名称」或「编码 名称 | 描述」（竖线后为描述）。 */
-function parseKpLine(line: string, chapter: string): KpDraft | null {
-  const [head, ...descParts] = line.split("|");
-  const tokens = head.trim().split(/\s+/);
-  if (tokens.length < 2 || !tokens[0] || !tokens[1]) return null;
-  return {
-    chapter,
-    code: tokens[0],
-    name: tokens.slice(1).join(" "),
-    description: descParts.join("|").trim(),
-    importance: "核心",
-  };
-}
 
 function parseLines(text: string): string[] {
   return [...new Set(text.split("\n").map((l) => l.trim()).filter(Boolean))];
 }
 
-export default function KbCreate() {
-  const editable = roleFlags(useAuth().session).kbContentEditable;
+/**
+ * 分步向导模式（原 KbCreate 的四步流程；kb-mindmap-create §4 抽出）：
+ * 基本信息与导图模式共用状态；创建走共享管道 createKbLibrary（无关系）。
+ */
+export default function KbWizard({
+  basic,
+  onBasicChange,
+  backTo,
+}: {
+  basic: KbBasic;
+  onBasicChange: (b: KbBasic) => void;
+  backTo: string;
+}) {
   const nav = useNavigate();
-  // 总面板「新建」预填（rbac-scopes-design §6）：从 /admin/kb 带学科/年级进来；
-  // 返回链走 sessionStorage 面包屑（getBackTarget——location.state 在本 app 不可靠）
-  const prefill = (useLocation().state as { kbSubject?: string; kbGrade?: number } | null) ?? null;
-  const backTo = getBackTarget("/kb/new", "/kb");
-  const backLabel = backTo === "/admin/kb" ? "返回知识库总览" : "返回知识库";
-
   const [step, setStep] = useState(1);
-  const [subject, setSubject] = useState(prefill?.kbSubject ?? "");
-  const [edition, setEdition] = useState("人教版");
-  const [version, setVersion] = useState("0.1.0");
-  const [grade, setGrade] = useState(prefill?.kbGrade ?? 7);
   const [chapters, setChapters] = useState<string[]>([]);
   const [kps, setKps] = useState<KpDraft[]>([]);
   const [busy, setBusy] = useState(false);
@@ -79,19 +47,6 @@ export default function KbCreate() {
     description: "",
   });
 
-  if (!editable) {
-    return (
-      <Page accent={ACCENTS.knowledge}>
-        <Link to={backTo} className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent">
-          ← {backLabel}
-        </Link>
-        <Card className="p-8 text-center text-sm text-ink-soft">
-          知识库创建需要内容编辑权限（管理员或被授权的 kb_editor 教师）。
-        </Card>
-      </Page>
-    );
-  }
-
   const codeSeen = new Set<string>();
   const duplicateCodes = kps.filter((k) => {
     if (codeSeen.has(k.code)) return true;
@@ -101,7 +56,7 @@ export default function KbCreate() {
   const invalidKps = kps.filter((k) => !k.code.trim() || !k.name.trim());
 
   function step1Ok() {
-    return subject.trim().length > 0 && edition.trim().length > 0 && version.trim().length > 0;
+    return basic.subject.trim().length > 0 && basic.edition.trim().length > 0 && basic.version.trim().length > 0;
   }
   function step3Problem(): string | null {
     if (kps.length === 0) return "至少录入一个知识点";
@@ -121,41 +76,19 @@ export default function KbCreate() {
     setBusy(true);
     setErr(null);
     try {
-      let kbId = createdId;
-      if (kbId == null) {
-        const r = await createKbVersion({
-          subject: subject.trim(),
-          grade,
-          textbook_edition: edition.trim(),
-          version: version.trim(),
-        });
-        kbId = r.id;
-        setCreatedId(r.id);
-      }
-      const failedLocal: KpDraft[] = [];
-      let done = 0;
-      for (const kp of list) {
-        try {
-          await createKp({
-            code: kp.code,
-            name: kp.name,
-            grade,
-            chapter: kp.chapter,
-            description: kp.description || undefined,
-            importance: kp.importance,
-            kb_version_id: kbId,
-          });
-        } catch {
-          failedLocal.push(kp);
-        }
-        done += 1;
-        setProgress({ done, total: list.length });
-      }
-      setFailed(failedLocal);
-      if (failedLocal.length === 0 && kbId != null) {
+      const r = await createKbLibrary(
+        basic,
+        list,
+        [],
+        (p) => setProgress({ done: p.done, total: p.total }),
+        createdId ?? undefined
+      );
+      setCreatedId(r.kbId);
+      setFailed(r.failedKps);
+      if (r.failedKps.length === 0) {
         // 落在工作台并链式保留返回来源；从 /kb 进来的清掉（避免返回指向自身）
         setBackTarget("/kb", backTo === "/kb" ? null : backTo);
-        nav("/kb", { state: { kbVersionId: kbId } });
+        nav("/kb", { state: { kbVersionId: r.kbId } });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "创建失败");
@@ -165,14 +98,8 @@ export default function KbCreate() {
   }
 
   return (
-    <Page accent={ACCENTS.knowledge}>
-      <Link
-        to={backTo}
-        className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
-      >
-        ← {backLabel}
-      </Link>
-      <PageHeader title="图形化新建知识库" desc="不用写 YAML：填基本信息 → 规划章节 → 录入知识点 → 一键创建草稿版本" />
+    <>
+      <PageHeader title="分步向导建库" desc="不用写 YAML：填基本信息 → 规划章节 → 录入知识点 → 一键创建草稿版本" />
 
       {/* 步骤指示 */}
       <div className="mb-5 flex flex-wrap items-center gap-4">
@@ -196,44 +123,8 @@ export default function KbCreate() {
 
       {/* 步骤 1：基本信息 */}
       {step === 1 && (
-        <Card className="max-w-xl space-y-4 p-6">
-          <Field label="学科" hint="同一学科内做版本治理；分析按班级学科取对应知识库">
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              list="common-subjects"
-              placeholder="如 数学"
-            />
-            <datalist id="common-subjects">
-              {COMMON_SUBJECTS.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="教材版本">
-            <Input
-              value={edition}
-              onChange={(e) => setEdition(e.target.value)}
-              list="common-editions"
-            />
-            <datalist id="common-editions">
-              {COMMON_EDITIONS.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="版本号" hint="草稿，之后可启用">
-              <Input value={version} onChange={(e) => setVersion(e.target.value)} />
-            </Field>
-            <Field label="年级（数字，如 7 = 初一）">
-              <Input
-                type="number"
-                value={grade}
-                onChange={(e) => setGrade(Number(e.target.value))}
-              />
-            </Field>
-          </div>
+        <Card className="max-w-xl space-y-4 p-4">
+          <BasicInfoForm value={basic} onChange={onBasicChange} />
           <div className="flex justify-end">
             <Button variant="primary" disabled={!step1Ok()} onClick={() => setStep(2)}>
               下一步：章节规划
@@ -244,7 +135,7 @@ export default function KbCreate() {
 
       {/* 步骤 2：章节规划 */}
       {step === 2 && (
-        <Card className="max-w-xl space-y-4 p-6">
+        <Card className="max-w-xl space-y-4 p-4">
           <Field label="批量粘贴章节（一行一个）" hint="也可在下方逐个添加；顺序即教材目录顺序">
             <textarea
               rows={6}
@@ -279,7 +170,7 @@ export default function KbCreate() {
           {chapters.map((ch) => {
             const list = kps.filter((k) => k.chapter === ch);
             return (
-              <Card key={ch} className="p-5">
+              <Card key={ch} className="p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-sm font-semibold text-ink">
                     {ch}
@@ -395,19 +286,19 @@ export default function KbCreate() {
 
       {/* 步骤 4：确认创建 */}
       {step === 4 && (
-        <Card className="max-w-2xl space-y-4 p-6">
+        <Card className="max-w-2xl space-y-4 p-4">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
             <p className="text-ink-faint">
-              学科<span className="ml-2 font-medium text-ink">{subject}</span>
+              学科<span className="ml-2 font-medium text-ink">{basic.subject}</span>
             </p>
             <p className="text-ink-faint">
-              教材<span className="ml-2 font-medium text-ink">{edition}</span>
+              教材<span className="ml-2 font-medium text-ink">{basic.edition}</span>
             </p>
             <p className="text-ink-faint">
-              版本号<span className="ml-2 font-medium text-ink tabular-nums">v{version}（草稿）</span>
+              版本号<span className="ml-2 font-medium text-ink tabular-nums">v{basic.version}（草稿）</span>
             </p>
             <p className="text-ink-faint">
-              年级<span className="ml-2 font-medium text-ink tabular-nums">{grade}</span>
+              年级<span className="ml-2 font-medium text-ink tabular-nums">{basic.grade}</span>
             </p>
             <p className="text-ink-faint">
               章节<span className="ml-2 font-medium text-ink tabular-nums">{chapters.length}</span>
@@ -452,6 +343,6 @@ export default function KbCreate() {
           </div>
         </Card>
       )}
-    </Page>
+    </>
   );
 }

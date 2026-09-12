@@ -223,6 +223,8 @@ export const createRelation = (body: {
   to_kp_id: number;
   type: string;
   weight?: number;
+  /** 显式目标版本（导图建库在 draft 内连线）；缺省 = active（旧行为） */
+  kb_version_id?: number;
 }) => request<KpRelationView>("/kb/relations", json(body));
 
 export const deleteRelation = (relId: number) =>

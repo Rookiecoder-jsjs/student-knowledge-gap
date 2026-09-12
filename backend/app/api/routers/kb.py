@@ -196,12 +196,16 @@ def kp_detail(kp_id: int, db: Session = Depends(get_db)):
     """单知识点详情：属性 + 前置链 + 直接前置 + 后继 + contains 关系（kb-edit §4.1）。
 
     聚合实现在 ``app.mcp_tools.get_kp_detail``（Agent 工具面共用一份，不复制）；
-    本端点只做 id 定位与 HTTP 异常翻译。
+    本端点只做 id 定位与 HTTP 异常翻译。图按知识点「所属版本」构建——
+    draft 版本的知识点此前因 active 建图读不出关系（思维导图建库验收发现）。
     """
     from app.mcp_tools import get_kp_detail as kp_detail_impl
 
+    kp = db.get(KnowledgePoint, kp_id)
+    if kp is None:
+        raise HTTPException(404, f"知识点 {kp_id} 不存在")
     try:
-        return kp_detail_impl(db, _graph(db, _active_kb(db).id), kp_id)
+        return kp_detail_impl(db, _graph(db, kp.kb_version_id), kp_id)
     except LookupError as e:
         raise HTTPException(404, str(e))
 
@@ -346,8 +350,21 @@ def create_relation(
     db: Session = Depends(get_db),
     ctx=Depends(require_kb_editor),
 ):
-    """新建关系：校验 type/weight/同版本/非自环（kb-edit §4.4/§6.3）。"""
-    kb = _active_kb(db)
+    """新建关系：校验 type/weight/同版本/非自环（kb-edit §4.4/§6.3）。
+
+    显式 kb_version_id 可写入 draft/reviewed 版本（思维导图建库在草稿内连线，
+    与 create_kp 的向导路径同语义）；缺省落 active；active 版本拒绝直写。
+    """
+    if req.kb_version_id is not None:
+        kb = db.get(KbVersion, req.kb_version_id)
+        if kb is None:
+            raise HTTPException(404, "知识库版本不存在")
+        if kb.status == "active":
+            raise HTTPException(
+                400, "不能直接写入启用中的版本；请先「基于当前版修订」出草稿"
+            )
+    else:
+        kb = _active_kb(db)
     _kb_write_guard(db, ctx, kb)
     graph = _graph(db, kb.id)
     try:

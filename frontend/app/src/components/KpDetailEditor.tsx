@@ -11,14 +11,7 @@ import {
   type KpNode,
   type KpPreviewImpact,
 } from "../lib/api";
-
-const RELATION_TYPES = ["prerequisite", "contains", "confusable", "spiral"];
-const REL_LABEL: Record<string, string> = {
-  prerequisite: "前置",
-  contains: "包含",
-  confusable: "易混",
-  spiral: "螺旋上升",
-};
+import { RELATION_TYPES, REL_LABEL, relLabel } from "../lib/relation-types";
 
 const inputCls =
   "rounded-md border border-line-strong bg-surface px-3 py-2 text-sm transition-colors focus:border-accent";
@@ -256,7 +249,7 @@ export function KpDetailEditor({
         id: p.id,
         code: p.code,
         name: p.name,
-        extra: REL_LABEL[p.type] ?? p.type,
+        extra: relLabel(p.type),
         relId: p.relation_id,
       })),
     },
@@ -266,7 +259,7 @@ export function KpDetailEditor({
         id: p.id,
         code: p.code,
         name: p.name,
-        extra: REL_LABEL[p.type] ?? p.type,
+        extra: relLabel(p.type),
         relId: p.relation_id,
       })),
     },
@@ -278,7 +271,7 @@ export function KpDetailEditor({
               id: p.id,
               code: p.code,
               name: p.name,
-              extra: REL_LABEL[p.type] ?? p.type,
+              extra: relLabel(p.type),
               relId: p.relation_id,
             })),
           },

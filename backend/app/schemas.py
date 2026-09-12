@@ -131,6 +131,8 @@ class RelationCreateRequest(BaseModel):
     to_kp_id: int
     type: str
     weight: float = 1.0
+    # 显式目标版本（思维导图建库在 draft 内连线）；缺省 = active（旧行为）
+    kb_version_id: int | None = None
 
 
 class RelationUpdateRequest(BaseModel):
