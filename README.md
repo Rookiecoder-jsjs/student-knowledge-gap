@@ -196,7 +196,9 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 **鉴权与网关联动**（见上「鉴权与权限」）：`SC_AUTH_SECRET`（安全模式下务必显式配置）/ `SC_AUTH_REQUIRED` / `SC_GATEWAY_URL` / `SC_TRIGGER_KEY`。预算护栏在网关 env 配置（`SC_BUDGET_MAX_TURNS` 等），钉钉经 `SC_DINGTALK_ENABLED` 开启——均见 `deploy/docker-compose.yml`。
 
-**部署相关变量**（`SC_CORS_ORIGINS` / `SC_BACKUP_*` / `SC_DATABASE_URL` 容器化语义等）见 [DEPLOY.md](DEPLOY.md) 与 `backend/.env.example`。
+**部署相关变量**（`SC_CORS_ORIGINS` / `SC_BACKUP_*` / `SC_DATABASE_URL` / LLM 路由与 HA 语义等）见 [DEPLOY.md](DEPLOY.md) 与 `backend/.env.example`。
+
+高并发、高可用设计与验收门禁见 [docs/llm-ha-acceptance.md](docs/llm-ha-acceptance.md)。所有路由器测试使用本地 Mock API，不会产生模型费用。
 
 ---
 

@@ -59,6 +59,9 @@ curl -X POST http://localhost:8080/api/kb/import \
 | `SC_BACKUP_DIR` | `/backups` | 备份落盘目录（compose 内为命名卷 `sc-backups`） |
 | `SC_LLM_AUDIT` | 开 | LLM 调用全程审计（`llm_call_log` 表，append-only）；`=0` 关闭 |
 | `SC_LLM_AUDIT_PAYLOAD` | 关 | `=1` 时审计额外存响应 JSON（调试用；输入原文任何情况不落库） |
+| `SC_LLM_ROUTER_URL` / `SC_LLM_ROUTER_TOKEN` | 空 | 统一 LLM 路由。后端与 Codex 只持内部令牌，供应商 key 注入 `llm-router` |
+| `SC_JOB_QUEUE_ENABLE` | 关 | `=1` 启用 PostgreSQL/SQLite 持久化报告任务，提交接口返回 `job_id` |
+| `SC_HA_ENABLED` / `SC_REDIS_URL` | 关/空 | `=1` 时 readiness 同时检查 Redis；HA overlay 使用 PostgreSQL + Redis + MinIO |
 | `TMPDIR` | `/data/tmp` | **compose 注入**：批量上传临时文件挂卷，重启后 failed item 可重试 |
 
 其余算法/质量参数（`SC_MIN_EVIDENCE_COUNT`、`SC_WEAKNESS_MODE` 等）见 `.env.example` 与 README，不改默认即用生产已转正的取值。
@@ -125,6 +128,7 @@ curl -s localhost:8080/ready
 |---|---|---|
 | liveness | `GET /health`（backend）、`GET /healthz`（nginx） | 进程 + HTTP 存活 |
 | readiness | `GET /ready`（backend，经 nginx `/ready` 透传） | DB 可达 = 200；**LLM 熔断 = 仍 200 但 `degraded:true`**（确定性路径不依赖 LLM）；DB 不可达 = 503 |
+| metrics | `GET /metrics`（backend/router） | Prometheus 兼容计数：任务成功/失败、路由拒绝、请求失败 |
 
 - compose 的 `backend` healthcheck 打 `/ready`，DB 不可达 → 不健康 → 触发重启自愈。
 - 日志为 **JSON 行 → stderr**（`docker compose logs -f` 直接可读），聚合器可直接摄取。
@@ -203,9 +207,24 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
    分析可读本班数据（第 5 批修复的既有缺口）；开放模式无教师时回落匿名。
 5. **token TTL = 7 天**：逐请求重验的必然（对齐 backend auth.py）；gateway 重部署即重签。
 
-## 9. 演进路径（明确不在本期交付）
+## 9. 高并发/高可用执行配置
 
-- **迁 PostgreSQL**：只改 `SC_DATABASE_URL`；备份脚本换成 `pg_dump`（`scripts/backup_db.py` 已留注释）。
-- **多实例**：需同时改造——`reconcile_stale` 加分布式互斥/leader 防止跨进程误判、批量临时文件改共享存储（对象存储或共享卷）、SQLite 换 PG、进程内线程池换持久化任务队列。
-- **可观测增强**：`/metrics`（Prometheus）端点、LLM 主备模型 fallback。
-- **鉴权/多租户**（G11）：部署形态明确后单独设计（含前端登录、全路由 `school_id` 授权）。
+四阶段基础设施已落库，默认仍是单机兼容模式；生产按需启用：
+
+1. **统一 LLM 路由**：`llm_router/` 提供 OpenAI-compatible `/v1/chat/completions`
+   与 `/v1/responses`。`LLM_ROUTER_KEYS` 只注入路由器，按 capability、全局/单 key
+   并发和 RPM/TPM 限额调度；429/5xx/超时按 `Retry-After` 退避，单 key 熔断后自动换 key。
+   backend/gateway 设置 `SC_LLM_ROUTER_URL` + `SC_LLM_ROUTER_TOKEN` 即可接入。
+2. **持久化任务队列**：`SC_JOB_QUEUE_ENABLE=1` 后考试提交返回 `job_id`，报告由
+   `async_job` 表中的 worker 领取；幂等键、重试、失败原因均落库。PostgreSQL 可运行多
+   个 backend 副本，SQLite 仅建议单副本。
+3. **HA 依赖**：`docker-compose.ha.yml` 提供 PostgreSQL、Redis、MinIO，并声明 backend
+   可扩展为多副本；gateway 目前保持单副本（其 app-server/SSE bridge 仍是实例内状态）。
+   以 `docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d --build` 启动；
+   `SC_HA_ENABLED=1` 时 `/ready` 会检查 Redis，数据库切换为 PostgreSQL。
+4. **观测与故障演练**：backend/router 暴露 `/metrics`，验收标准与 Mock API 故障场景
+   见 [docs/llm-ha-acceptance.md](docs/llm-ha-acceptance.md)；本地压测运行
+   `python scripts/load_test_llm_router.py`，不会调用真实模型。
+
+迁移到生产前仍需补齐组织级 secret manager、Prometheus/Grafana 告警、对象存储 S3
+实现和网关会话 Redis 适配；当前代码已提供接口、探针与可回滚的单机默认值。

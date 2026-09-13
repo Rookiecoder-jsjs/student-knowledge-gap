@@ -5,6 +5,8 @@
 - SC_LLM_API_KEY  = 供应商密钥（兼容别名：qwen_api_key）
 - SC_LLM_MODEL    = 默认模型（如 qwen3.7-flash / gpt-4o）
 - SC_LLM_BASE_URL = openai 兼容端点（兼容别名：base_url）
+- SC_LLM_ROUTER_URL = 统一 LLM 路由地址（可选；配置后后端不接触供应商密钥）
+- SC_LLM_ROUTER_TOKEN = 路由器内部访问令牌（可选）
 - SC_LLM_VISION_MODEL = 拍照解析专用模型（可选，需视觉能力；缺省用 SC_LLM_MODEL）
 - SC_LLM_TEXT_MODEL   = 报告叙述专用模型（可选；缺省用 SC_LLM_MODEL）
 """
@@ -102,10 +104,11 @@ class BaseClient:
 class OpenAICompatClient(BaseClient):
     """OpenAI 及兼容供应商（含国产视觉模型的 OpenAI 兼容端点）。"""
 
-    def __init__(self, api_key: str, model: str, base_url: str):
+    def __init__(self, api_key: str, model: str, base_url: str, capability: str = "text"):
         self.api_key = api_key
         self.model_version = model
         self.base_url = base_url.rstrip("/")
+        self.capability = capability
 
     def parse_json(self, system: str, user: str, image_bytes: bytes | None) -> dict:
         content: list[dict] = [{"type": "text", "text": user}]
@@ -115,6 +118,7 @@ class OpenAICompatClient(BaseClient):
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
             )
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        headers["X-SC-LLM-Capability"] = self.capability
         if LLM_IDEMPOTENCY_KEY:
             headers["Idempotency-Key"] = _idempotency_key(
                 self.model_version, system, user, image_bytes
@@ -226,6 +230,15 @@ def get_client(capability: str = "text") -> BaseClient:
     default_model = os.environ.get("SC_LLM_MODEL", "")
     cap_key = "SC_LLM_VISION_MODEL" if capability == "vision" else "SC_LLM_TEXT_MODEL"
     model = os.environ.get(cap_key) or default_model
+    router_url = os.environ.get("SC_LLM_ROUTER_URL", "").strip()
+    if router_url and provider != "anthropic":
+        # Provider credentials stay in the router.  The backend receives only the
+        # internal router token and capability metadata for fair scheduling.
+        router_token = os.environ.get("SC_LLM_ROUTER_TOKEN", "")
+        return wrap_client(
+            OpenAICompatClient(router_token, model or "gpt-4o", router_url, capability),
+            capability,
+        )
     if provider == "mock":
         raise LLMError(
             "未配置 LLM：请在 .env 设置 SC_LLM_PROVIDER=openai|anthropic 与密钥"
@@ -235,4 +248,4 @@ def get_client(capability: str = "text") -> BaseClient:
     base_url = os.environ.get("SC_LLM_BASE_URL") or os.environ.get(
         "base_url", "https://api.openai.com/v1"
     )
-    return wrap_client(OpenAICompatClient(api_key, model or "gpt-4o", base_url), capability)
+    return wrap_client(OpenAICompatClient(api_key, model or "gpt-4o", base_url, capability), capability)

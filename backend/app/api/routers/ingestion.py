@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from datetime import date
 
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session
 from app import auth as _auth
 from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.db import utcnow
+from app import jobs as job_queue
+from app.ha import ObjectStore
 # 批量模块经模块引用（batch_mod.X / batch_up.X）而非指名导入：测试会 monkeypatch
 # batch.submit_item 等模块属性（test_photo 的 test_batch_sync_guard），
 # 指名导入会把函数对象焊死在调用方，patch 失效。
@@ -154,6 +157,20 @@ def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get
     # 产品语义「提交即自动生成」：commit 只做状态机，报告生成在此显式组合（候选4）。
     result = commit_exam(db, exam_id)
     if result.committed_responses > 0:
+        if job_queue.enabled():
+            # The exam state and the durable job are committed together. The
+            # worker therefore never observes a job for an uncommitted exam.
+            job = job_queue.enqueue_exam_reports(db, exam_id)
+            db.commit()
+            return {
+                "committed_responses": result.committed_responses,
+                "evidence_events": result.evidence_events,
+                "quality_report": False,
+                "diagnoses": 0,
+                "reports_queued": True,
+                "job_id": job.id,
+                "skipped": result.skipped[:20],
+            }
         reports = generate_exam_reports(db, exam_id)
         result.quality_report = reports.quality
         result.diagnoses = reports.diagnoses
@@ -190,6 +207,25 @@ async def photo_template(
     guard_class(class_id, db, ctx)
     kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
     image = await file.read()
+    if job_queue.enabled():
+        digest = hashlib.sha256(image).hexdigest()
+        object_key = f"llm-jobs/{digest}.jpg"
+        ObjectStore().put(object_key, image)
+        job = job_queue.enqueue(
+            db,
+            "photo_template",
+            {
+                "object_key": object_key,
+                "kb_id": kb.id,
+                "class_id": class_id,
+                "name": name,
+                "exam_date": exam_date.isoformat(),
+                "type": type,
+            },
+            idempotency_key=f"photo_template:{class_id}:{name}:{exam_date.isoformat()}:{digest}",
+        )
+        db.commit()
+        return {"job_id": job.id, "status": "queued", "next": f"GET /jobs/{job.id}"}
     result = parse_template_from_photo(db, kb.id, class_id, name, exam_date, type, image)
     if result.exam_id is None:
         raise HTTPException(400, "; ".join(result.warnings) or "解析失败")
@@ -216,6 +252,22 @@ async def photo_response(
     if stu is not None:
         guard_class(stu.class_id, db, ctx)
     image = await file.read()
+    if job_queue.enabled():
+        digest = hashlib.sha256(image).hexdigest()
+        object_key = f"llm-jobs/{digest}.jpg"
+        ObjectStore().put(object_key, image)
+        job = job_queue.enqueue(
+            db,
+            "photo_response",
+            {
+                "object_key": object_key,
+                "exam_id": exam_id,
+                "student_id": student_id,
+            },
+            idempotency_key=f"photo_response:{exam_id}:{student_id}:{digest}",
+        )
+        db.commit()
+        return {"job_id": job.id, "status": "queued", "next": f"GET /jobs/{job.id}"}
     try:
         result = parse_student_response_from_photo(db, exam_id, student_id, image)
     except ValueError as e:

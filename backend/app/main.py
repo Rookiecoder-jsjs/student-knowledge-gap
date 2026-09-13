@@ -7,8 +7,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
-from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, kb, me, org, reports
+from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, jobs, kb, me, org, reports
 from app import mcp_http  # /mcp 挂载 + 逐请求教师鉴权（装车批第 5 批）
 from app.db import init_db
 from app.observability import setup_logging
@@ -30,6 +31,14 @@ async def lifespan(app: FastAPI):
         from app.llm.audit import start_audit_worker
 
         start_audit_worker(None)  # None -> 延迟取 SessionLocal（测试可注入工厂）
+    job_stop = None
+    job_task = None
+    if os.environ.get("SC_JOB_QUEUE_ENABLE", "").lower() in ("1", "true", "yes"):
+        import asyncio
+        from app.jobs import worker_loop
+
+        job_stop = asyncio.Event()
+        job_task = asyncio.create_task(worker_loop(job_stop))
     # 装车批第 5 批：sc MCP 迁入本进程（streamable-http 挂 /mcp，见 app.mcp_http）。
     # 每轮 lifespan 重建 manager——规避 FastMCP session_manager.run() once-only
     # （backend 测试每轮 with TestClient(app) 都进出 lifespan）。
@@ -40,6 +49,10 @@ async def lifespan(app: FastAPI):
     # ---- shutdown ----
     from app.ingestion.batch import shutdown as batch_shutdown
 
+    if job_stop is not None:
+        job_stop.set()
+        if job_task is not None:
+            await job_task
     batch_shutdown()
 
 
@@ -69,7 +82,7 @@ app.add_middleware(
 # + /mcp（MCP 走自己的逐请求教师 token 校验，见 app.mcp_http.mcp_auth）。裁决逻辑
 # 在 app.auth，这里只做「要不要拦/角色放行」的路径判定——开放模式（无凭据账号）
 # 整层透明。班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
-_EXEMPT_PREFIXES = ("/health", "/ready", "/auth/login", "/mcp")
+_EXEMPT_PREFIXES = ("/health", "/ready", "/metrics", "/auth/login", "/mcp")
 # 学生主体可触达的前缀（自服务只读面 + 会话探测）；其余一切路径教师/admin 专属。
 # 教师端点假定 kind=t，学生 token 在此层即被 403，端点无需各自防御。
 _STUDENT_ALLOWED_PREFIXES = ("/me", "/auth/me")
@@ -119,6 +132,21 @@ async def _auth_gate(request, call_next):  # noqa: ANN001
     return await call_next(request)
 
 
+@app.middleware("http")
+async def _request_metrics(request, call_next):  # noqa: ANN001
+    from app.metrics import inc
+
+    inc("http_requests_total")
+    try:
+        response = await call_next(request)
+    except Exception:
+        inc("http_errors_total")
+        raise
+    if response.status_code >= 500:
+        inc("http_errors_total")
+    return response
+
+
 # /mcp 逐请求教师鉴权（外层；/mcp 已在 _EXEMPT_PREFIXES，故 _auth_gate 让路）
 app.middleware("http")(mcp_http.mcp_auth)
 
@@ -129,9 +157,17 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+def metrics():
+    """Low-dependency Prometheus-compatible runtime counters."""
+    from app.metrics import render_prometheus
+
+    return Response(content=render_prometheus(), media_type="text/plain; version=0.0.4")
+
+
 @app.get("/ready")
 def ready():
-    """就绪探针：DB 可达 = 就绪（200）；LLM 熔断属「降级」，不构成不健康。
+    """就绪探针：DB 可达且（HA 模式下）Redis 可达 = 就绪（200）；LLM 熔断属「降级」，不构成不健康。
 
     设计：liveness（/health）只问进程死活；readiness（/ready）问依赖是否可用。
     LLM 断供时确定性路径（录入/推导/报告模板）仍工作，故降级返回 200 仅标
@@ -156,15 +192,24 @@ def ready():
     except Exception as exc:  # noqa: BLE001
         db_ok, db_err = False, str(exc)
 
+    from app.ha import check_redis, enabled as ha_enabled
+
+    if ha_enabled() and db_ok and dbmod.engine.url.drivername.startswith("sqlite"):
+        db_ok = False
+        db_err = "SC_HA_ENABLED=1 requires PostgreSQL; SQLite is single-writer only"
+
+    redis_ok, redis_err = check_redis()
+
     vision, text_state = get_vision_breaker().state, get_text_breaker().state
     body = {
         "status": "ok" if db_ok else "error",
         "database": "ok" if db_ok else "error",
+        "redis": "ok" if redis_ok else "error",
         "llm": {"vision": vision, "text": text_state},
-        "degraded": (not db_ok) or vision != "closed" or text_state != "closed",
+        "degraded": (not db_ok) or (not redis_ok) or vision != "closed" or text_state != "closed",
     }
-    if not db_ok:
-        body["detail"] = db_err
+    if not db_ok or not redis_ok:
+        body["detail"] = "; ".join(x for x in (db_err if not db_ok else "", redis_err if not redis_ok else "") if x)
         return JSONResponse(status_code=503, content=body)
     return body
 
@@ -178,6 +223,7 @@ app.include_router(analysis.router)
 app.include_router(intervention.router)
 app.include_router(reports.router)
 app.include_router(admin.router)
+app.include_router(jobs.router)
 
 # sc MCP streamable-http 端点（绝对路径 /mcp；并入 router——Mount 会剥前缀致 404）
 app.router.routes.append(mcp_http.mcp_route)

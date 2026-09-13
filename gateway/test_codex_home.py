@@ -131,6 +131,30 @@ def test_seed_key_precedence_deepseek_over_llm(tmp_path):
     assert 'experimental_bearer_token = "dk"' in (home / "config.toml").read_text(encoding="utf-8")
 
 
+def test_seed_router_mode_uses_internal_token_and_base_url(tmp_path):
+    assets = _assets(tmp_path)
+    (assets / "config.toml.template").write_text(
+        (assets / "config.toml.template").read_text(encoding="utf-8").replace(
+            "[model_providers.deepseek]", "[model_providers.deepseek]\nbase_url = \"{{LLM_BASE_URL}}\""
+        ),
+        encoding="utf-8",
+    )
+    home = tmp_path / "codex-home"
+    ch.seed_codex_home(
+        home,
+        assets,
+        env={
+            "SC_LLM_ROUTER_URL": "http://llm-router:8090/v1",
+            "SC_LLM_ROUTER_TOKEN": "router-token",
+            "SC_DEEPSEEK_API_KEY": "provider-key-must-not-be-used",
+        },
+    )
+    text = (home / "config.toml").read_text(encoding="utf-8")
+    assert 'base_url = "http://llm-router:8090/v1"' in text
+    assert 'experimental_bearer_token = "router-token"' in text
+    assert "provider-key-must-not-be-used" not in text
+
+
 def test_seed_no_key_still_renders(tmp_path):
     assets = _assets(tmp_path)
     home = tmp_path / "codex-home"

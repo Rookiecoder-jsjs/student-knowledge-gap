@@ -1,8 +1,8 @@
 # DeepSeek 接入 sc 壳的 config.toml 模板（Phase 1 §5.10；来源：DeepSeek 官方 Codex 接入指南
 # https://api-docs.deepseek.com/zh-cn/quick_start/agent_integrations/codex ，2026-08-25 抓取）。
 # 渲染：gateway 首启播种（gateway/codex_home.py）——$CODEX_HOME/config.toml 缺失时从本模板
-# 渲染并落 models.json；模板中 CODEX_HOME 与 DEEPSEEK_API_KEY 两个占位符在渲染时
-# 替换为运行时定值。管理员手写
+# 渲染并落 models.json；模板中 CODEX_HOME、LLM_BASE_URL 与 DEEPSEEK_API_KEY 占位符
+# 在渲染时替换为运行时定值。管理员手写
 # config.toml 永不被覆盖（旧 stdio 形含 school-authz-mcp 的配置由 codex_home.py 旋转重渲染）。
 # 纪律：真实部署写隔离 CODEX_HOME（绝不碰用户 ~/.codex）。
 #
@@ -23,7 +23,7 @@ model_catalog_json = "{{CODEX_HOME}}/models.json"
 
 [model_providers.deepseek]
 name = "deepseek"
-base_url = "https://api.deepseek.com/"
+base_url = "{{LLM_BASE_URL}}"
 wire_api = "responses"
 experimental_bearer_token = "{{DEEPSEEK_API_KEY}}"
 

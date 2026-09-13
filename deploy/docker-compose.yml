@@ -10,6 +10,30 @@
 #   sc-data    唯一不可丢失状态：sc.db(+WAL/SHM) + 批量上传临时文件（TMPDIR）
 #   sc-backups 备份产物（保留 N 份，与 DB 卷物理隔离，便于恢复演练）
 services:
+  # Shared model gateway: provider keys stay here, while backend/gateway use the
+  # internal router token. The scheduler is bounded even when a teacher opens
+  # many concurrent assistant tabs.
+  llm-router:
+    build: ../llm_router
+    image: sc-llm-router:latest
+    env_file: ../backend/.env
+    environment:
+      LLM_ROUTER_BASE_URL: ${LLM_ROUTER_BASE_URL:-}
+      LLM_ROUTER_KEYS: ${LLM_ROUTER_KEYS:-}
+      LLM_ROUTER_MAX_CONCURRENCY: ${LLM_ROUTER_MAX_CONCURRENCY:-16}
+      LLM_ROUTER_AGENT_CONCURRENCY: ${LLM_ROUTER_AGENT_CONCURRENCY:-4}
+      LLM_ROUTER_VISION_CONCURRENCY: ${LLM_ROUTER_VISION_CONCURRENCY:-3}
+      LLM_ROUTER_TEXT_CONCURRENCY: ${LLM_ROUTER_TEXT_CONCURRENCY:-4}
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
   site:
     build:
       context: ../frontend/site
@@ -27,6 +51,8 @@ services:
     env_file: ../backend/.env
     environment:
       SC_DATABASE_URL: "sqlite:////data/sc.db"   # 卷内持久化（覆盖 env_file）
+      SC_LLM_ROUTER_URL: ${SC_LLM_ROUTER_URL:-http://llm-router:8090/v1}
+      SC_JOB_QUEUE_ENABLE: ${SC_JOB_QUEUE_ENABLE:-0}
       TMPDIR: /data/tmp                          # 批量 tempfile 挂卷：重启后 failed item 可重试
     volumes:
       - sc-data:/data
@@ -41,6 +67,9 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    depends_on:
+      llm-router:
+        condition: service_healthy
 
   frontend:
     build:
@@ -97,6 +126,7 @@ services:
       SC_GATEWAY_APP_SERVER_ARGS: ""
       SC_GATEWAY_ASSETS: /app/assets/deepseek      # CODEX_HOME 首启播种模板位置
       SC_BACKEND_URL: http://backend:8000         # 月度软限额巡查数据源（§5.7）
+      SC_LLM_ROUTER_URL: ${SC_LLM_ROUTER_URL:-http://llm-router:8090/v1}
       SC_BUDGET_MAX_TURNS: "12"
       SC_BUDGET_MAX_TOKENS: "200000"
       SC_BUDGET_MONTHLY_LIMIT: "0"                # 0=不限；学校按需设
@@ -116,6 +146,8 @@ services:
       - "127.0.0.1:8100:8100"                    # 同 backend：仅本机调试，生产走 nginx 反代
     depends_on:
       backend:
+        condition: service_healthy
+      llm-router:
         condition: service_healthy
     restart: unless-stopped
     stop_grace_period: 60s                       # > app-server 单 turn 收尾余量

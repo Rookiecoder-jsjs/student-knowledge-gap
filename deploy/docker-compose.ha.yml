@@ -1,0 +1,83 @@
+# Multi-instance overlay. Run:
+#   docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d --build --scale backend=2
+# PostgreSQL is the source of truth for jobs and domain data; Redis is used for
+# readiness now and is the shared-state extension point for sessions/rate limits.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sc}
+      POSTGRES_USER: ${POSTGRES_USER:-sc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+    volumes:
+      - sc-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sc} -d ${POSTGRES_DB:-sc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - sc-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sc}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-in-production}
+    volumes:
+      - sc-object:/data
+
+  backend:
+    environment:
+      SC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sc}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/${POSTGRES_DB:-sc}
+      SC_REDIS_URL: redis://redis:6379/0
+      SC_HA_ENABLED: "1"
+      SC_JOB_QUEUE_ENABLE: "1"
+      SC_OBJECT_STORAGE_DIR: /data/object-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      llm-router:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  gateway:
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SC_REDIS_URL: redis://redis:6379/0
+      SC_HA_ENABLED: "1"
+    # Bridge/app-server processes and SSE subscriptions are still local to a
+    # gateway instance; keep one replica until the Redis session adapter lands.
+    deploy:
+      replicas: 1
+
+  llm-router:
+    # Keep one router replica until a Redis scheduler backend is selected; this
+    # avoids splitting the configured key budget across independent schedulers.
+    environment:
+      LLM_ROUTER_REDIS_URL: redis://redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  sc-postgres:
+  sc-redis:
+  sc-object:

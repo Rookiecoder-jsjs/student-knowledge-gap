@@ -476,6 +476,37 @@ class ParseJob(Base):
     cost: Mapped[float] = mapped_column(Float, default=0.0)
 
 
+class AsyncJob(Base):
+    """Durable application job used for work that must outlive a request.
+
+    Rows are claimed transactionally by workers, so PostgreSQL deployments can
+    run multiple backend replicas without duplicating report generation. SQLite
+    remains supported as a single-writer development fallback.
+    """
+
+    __tablename__ = "async_job"
+    __table_args__ = (
+        Index("ix_async_job_status_available", "status", "available_at"),
+        UniqueConstraint("kind", "idempotency_key", name="uq_async_job_idempotency"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(50))
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    locked_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class ParseBatchItem(Base):
     """批量拍照录入的单文件项（DESIGN 批量录入 v0.3）。
 

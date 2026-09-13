@@ -54,6 +54,7 @@ def render_config_toml(
     codex_home: str,
     api_key: str,
     mcp_bearer_line: str = "",
+    base_url: str = "https://api.deepseek.com/",
 ) -> str:
     """把模板占位符替换为运行时定值(缺占位符原样通过,不改模板语义)。
 
@@ -64,6 +65,7 @@ def render_config_toml(
     replacements = {
         "CODEX_HOME": codex_home,
         "DEEPSEEK_API_KEY": api_key,
+        "LLM_BASE_URL": base_url,
         "MCP_BEARER_LINE": mcp_bearer_line,
     }
     for key, value in replacements.items():
@@ -135,7 +137,15 @@ def seed_codex_home(
         logger.warning("[codex-home] 模板缺失 %s,跳过播种", template_path)
         return False
 
-    api_key = env.get("SC_DEEPSEEK_API_KEY") or env.get("SC_LLM_API_KEY") or ""
+    router_url = (env.get("SC_LLM_ROUTER_URL") or "").strip()
+    if router_url:
+        # Codex receives only the internal router token; provider keys remain in
+        # the router process and are never copied into a driver home.
+        api_key = env.get("SC_LLM_ROUTER_TOKEN") or ""
+        base_url = router_url.rstrip("/")
+    else:
+        api_key = env.get("SC_DEEPSEEK_API_KEY") or env.get("SC_LLM_API_KEY") or ""
+        base_url = env.get("SC_LLM_BASE_URL") or "https://api.deepseek.com/"
     secured = bool(env.get("SC_AUTH_SECRET"))
     mcp_bearer_line = (
         'bearer_token_env_var = "SC_SCHOOL_AUTH_TOKEN"' if secured else ""
@@ -146,6 +156,7 @@ def seed_codex_home(
         codex_home=str(codex_home),
         api_key=api_key,
         mcp_bearer_line=mcp_bearer_line,
+        base_url=base_url,
     )
     config_path.write_text(rendered, encoding="utf-8")
     models_src = assets_dir / "models.json"

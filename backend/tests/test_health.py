@@ -73,3 +73,10 @@ def test_ready_degraded_when_llm_breaker_open(client):
     assert body["degraded"] is True
     assert body["llm"]["vision"] == "open"
     assert body["llm"]["text"] == "closed"
+
+
+def test_ready_rejects_sqlite_in_ha_mode(client, monkeypatch):
+    monkeypatch.setenv("SC_HA_ENABLED", "1")
+    resp = client.get("/ready")
+    assert resp.status_code == 503
+    assert "requires PostgreSQL" in resp.json()["detail"]
