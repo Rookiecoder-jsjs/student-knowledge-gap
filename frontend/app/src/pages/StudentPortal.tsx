@@ -224,8 +224,8 @@ function WeakTab({ source }: { source: PortalSource }) {
       )}
       {data?.weak.map((w: WeakItem) => (
         <Card key={w.code} className="p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex min-w-0 items-start justify-between gap-4">
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold">{w.name}</span>
                 <Badge>{w.code}</Badge>
@@ -236,11 +236,11 @@ function WeakTab({ source }: { source: PortalSource }) {
               </div>
               <p className="mt-1 text-xs text-ink-faint">{w.criterion}</p>
             </div>
-            {w.mastery != null && <Pct value={w.mastery} />}
+            {w.mastery != null && <span className="shrink-0"><Pct value={w.mastery} /></span>}
           </div>
           {/* 自学入口（study-loop-design）：修复段学生自驱——AI 按该生错因生成方案 */}
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
-            <span className="text-[11px] text-ink-faint">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
+            <span className="min-w-0 text-[11px] text-ink-faint">
               生成针对你的讲解与变式练习，学完自行标记进度
             </span>
             <Link
@@ -287,7 +287,7 @@ function StudyList({ source }: { source: PortalSource }) {
         to={`${studyBase(source)}?kp_code=${encodeURIComponent(r.kp_code)}`}
         className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-surface-2/60"
       >
-        <div>
+        <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             {r.kp_name}
             <Badge>{r.kp_code}</Badge>
@@ -456,11 +456,11 @@ function MasteryTab({ source }: { source: PortalSource }) {
       )}
       {sorted.map((m: MasteryItem) => (
         <Card key={m.code} className="flex items-center justify-between gap-4 p-4">
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{m.name}</span>
+          <div className="min-w-0 flex items-center gap-2">
+            <span className="truncate font-medium">{m.name}</span>
             <span className="text-[11px] text-ink-faint">{m.code}</span>
           </div>
-          <Pct value={m.mastery} />
+          <span className="shrink-0"><Pct value={m.mastery} /></span>
         </Card>
       ))}
     </div>
@@ -514,7 +514,7 @@ function ReportsTab({
             onClick={() => setOpenId(openId === r.report_id ? null : r.report_id)}
             className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-surface-2/60"
           >
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold">{r.type_label ?? r.type}</p>
               <p className="text-[11px] text-ink-faint">
                 {r.generated_at?.replace("T", " ").slice(0, 16)}

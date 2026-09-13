@@ -16,7 +16,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
@@ -147,24 +147,30 @@ def list_interventions(
         if stu is None:
             raise HTTPException(404, "学生不存在")
         guard_class(stu.class_id, db, ctx)
-    stmt = select(Intervention).order_by(Intervention.id.desc())
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= 200:
+        raise HTTPException(400, "limit 必须在 1 到 200 之间")
+
+    conds = []
     if class_id is not None:
-        stmt = stmt.where(Intervention.class_id == class_id)
+        conds.append(Intervention.class_id == class_id)
     else:
         allowed = auth_mod.allowed_class_ids(db, ctx)
         if allowed is not None:
-            stmt = stmt.where(Intervention.class_id.in_(allowed or [-1]))
+            conds.append(Intervention.class_id.in_(allowed or [-1]))
     if student_id is not None:
-        stmt = stmt.where(Intervention.student_id == student_id)
+        conds.append(Intervention.student_id == student_id)
     if status is not None:
         if status not in ("suggested", "done", "skipped"):
             raise HTTPException(400, f"非法状态过滤值：{status}")
-        stmt = stmt.where(Intervention.status == status)
-    rows_all = list(db.scalars(stmt))
-    page = rows_all[offset : offset + min(limit, 200)]
+        conds.append(Intervention.status == status)
+    total = db.scalar(select(func.count(Intervention.id)).where(*conds)) or 0
+    stmt = select(Intervention).where(*conds).order_by(Intervention.id.desc())
+    page = list(db.scalars(stmt.offset(offset).limit(limit)))
     graph = None
-    if rows_all:
-        _row_cls = db.get(Class, rows_all[0].class_id)
+    if page:
+        _row_cls = db.get(Class, page[0].class_id)
         kb = _active_kb(
             db,
             _auth.class_subject(db, ctx, _row_cls) if _row_cls is not None else None,
@@ -179,7 +185,13 @@ def list_interventions(
             else None
         )
         items.append(_row_view(db, r, graph, loop=loop))
-    return {"total": len(rows_all), "items": items}
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(items) < total,
+        "items": items,
+    }
 
 
 def _student_loop(

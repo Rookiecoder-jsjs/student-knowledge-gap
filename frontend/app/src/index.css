@@ -4,47 +4,47 @@
 @import "@xyflow/react/dist/style.css";
 
 /* ===================================================================
-   双主题令牌（saas-redesign §4，2026-09-12 定稿）
+   C+B 设计令牌（2026-09-13）：暖纸墨青的教育气质 + 浅色数据界面的清晰度。
    @theme = 亮色默认（Tailwind 4 由 --color-* 生成同名工具类，工具类引用
    var() → :root[data-theme="dark"] 覆盖变量即全站换色，页面不写暗色分支）。
    主题切换机制见 §5：index.html boot 脚本首绘前设 data-theme（防 FOUC），
    lib/theme-mode.ts 负责运行时三态（跟随系统/亮/暗）。
    =================================================================== */
 @theme {
-  /* 中性色（专业商务系冷灰族；暗面见下方 dark 块） */
-  --color-canvas: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-surface-2: #f2f4f7;
+  /* 暖纸中性色：避免冷灰 SaaS 模板感，仍保持高密度数据页的清晰层级。 */
+  --color-canvas: #f6f2e9;
+  --color-surface: #fffdf8;
+  --color-surface-2: #f0ece2;
 
-  --color-line: #e4e7ec;
-  --color-line-strong: #d0d5dd;
+  --color-line: #e4ded0;
+  --color-line-strong: #cec5b3;
 
-  --color-ink: #1d2939;
-  --color-ink-soft: #475467;
-  --color-ink-faint: #667085;
+  --color-ink: #20302a;
+  --color-ink-soft: #52615a;
+  --color-ink-faint: #727d76;
 
   /* 模块色单一来源是 src/lib/theme.ts 的 ACCENTS（Shell 导航胶囊 + 各页 <Page accent> 共用）。
      此处只保留页面 accent 默认值 = 工作台青绿；soft/deep 见下方 :root 派生块。 */
-  --color-accent: #14b8a6;
+  --color-accent: #0f766e;
   --color-accent-deep: #0f766e;
   --color-accent-soft: #ccfbf1;
 
   /* 语义色（saas-redesign §4.3）：success/info 本轮补齐成体系 */
-  --color-success: #16a34a;
-  --color-success-soft: #dcfce7;
-  --color-warn: #d97706;
-  --color-warn-soft: #fef3c7;
-  --color-danger: #dc2626;
-  --color-danger-soft: #fee2e2;
-  --color-info: #0284c7;
-  --color-info-soft: #e0f2fe;
+  --color-success: #287a5f;
+  --color-success-soft: #deefe7;
+  --color-warn: #a16207;
+  --color-warn-soft: #f7ecd0;
+  --color-danger: #b33b31;
+  --color-danger-soft: #f7e4de;
+  --color-info: #356a8a;
+  --color-info-soft: #e1edf3;
 
   /* 柔和分层：层级主要靠描边 + 底色差，阴影只做轻托举（暗面覆盖见 dark 块） */
-  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.05);
-  --shadow-lift: 0 2px 4px -1px rgb(15 23 42 / 0.06),
-    0 6px 14px -4px rgb(15 23 42 / 0.09);
-  --shadow-float: 0 10px 24px -8px rgb(15 23 42 / 0.14),
-    0 20px 48px -16px rgb(15 23 42 / 0.18);
+  --shadow-soft: 0 1px 2px rgb(56 48 33 / 0.05), 0 8px 24px -20px rgb(56 48 33 / 0.24);
+  --shadow-lift: 0 2px 4px -1px rgb(56 48 33 / 0.08),
+    0 14px 28px -16px rgb(56 48 33 / 0.22);
+  --shadow-float: 0 16px 32px -14px rgb(33 42 36 / 0.22),
+    0 32px 64px -28px rgb(33 42 36 / 0.3);
 
   --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     system-ui, sans-serif;
@@ -57,8 +57,11 @@
 /* 模块色派生（亮，saas-redesign §4.2）：soft = 主色 14% 兑白，deep = 主色 82% 兑黑。
    var() 在使用处才求值——页面覆盖 --color-accent 后，soft/deep 自动跟随换色。 */
 :root {
-  --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, white);
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 13%, #fffdf8);
   --color-accent-deep: color-mix(in srgb, var(--color-accent) 82%, black);
+  --brand-night: #0d2a27;
+  --brand-night-2: #16463f;
+  --brand-annot: #b7791f;
 }
 
 /* 暗色主题（saas-redesign §4.1/§4.2）：蓝黑族不用纯黑、文本不用纯白；
@@ -66,18 +69,18 @@
    语义色主色统一提亮一档，soft 走同一 mix 兑暗面；阴影加深
    （暗面层级主要靠 surface 亮度阶 + 描边，阴影只兜底）。 */
 :root[data-theme="dark"] {
-  --color-canvas: #0f141d;
-  --color-surface: #161d29;
-  --color-surface-2: #1f2836;
+  --color-canvas: #0a0e16;
+  --color-surface: #121923;
+  --color-surface-2: #1b2431;
 
-  --color-line: #273143;
-  --color-line-strong: #3a4763;
+  --color-line: #263143;
+  --color-line-strong: #3a4860;
 
-  --color-ink: #e7ebf3;
-  --color-ink-soft: #9aa7bf;
-  --color-ink-faint: #6b7893;
+  --color-ink: #edf2f0;
+  --color-ink-soft: #a2b0aa;
+  --color-ink-faint: #7d8b86;
 
-  --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, #161d29);
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, #121923);
   --color-accent-deep: color-mix(in srgb, var(--color-accent) 55%, white);
 
   --color-success: #34d399;
@@ -137,8 +140,42 @@ html {
 
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  background:
+    radial-gradient(900px 360px at 86% -16%, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 70%),
+    var(--color-canvas);
+}
+
+/* 页面内容沿一条安静的阅读轴排布；公共 Page 组件挂此类，所有端统一受益。 */
+.page-surface {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+}
+
+.brand-band {
+  position: relative;
+  overflow: hidden;
+  color: white;
+  background: linear-gradient(135deg, var(--brand-night), var(--brand-night-2));
+  box-shadow: 0 22px 52px -30px rgb(13 42 39 / 0.7);
+}
+
+.brand-band::after {
+  content: "";
+  position: absolute;
+  inset: auto -8% -72% 42%;
+  height: 210%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(94 234 212 / 0.12), transparent 64%);
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .brand-band::after { display: none; }
 }
 
 /* 标题族统一走 display 字体（Outfit，几何利落偏亲和） */

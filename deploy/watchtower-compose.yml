@@ -39,7 +39,7 @@ services:
       TZ: Asia/Shanghai
     restart: unless-stopped
 
-# 主 compose 三服务需打 label 才会被接管（叠加此 override 或装机时改主文件）：
-#   backend/frontend/gateway/backup 各加:
+# 主 compose 五服务需打 label 才会被接管（叠加此 override 或装机时改主文件）：
+#   site/backend/frontend/gateway/backup 各加:
 #     labels:
 #       sc.enable-watchtower: "true"

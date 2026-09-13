@@ -45,16 +45,38 @@ jobs:
         working-directory: frontend/app
         run: npm run build
 
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/site/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend/site
+        run: npm ci
+      - name: Lint
+        working-directory: frontend/site
+        run: npx oxlint .
+      - name: Build
+        working-directory: frontend/site
+        run: npm run build
+
   docker:
     # 防镜像/compose bit-rot：镜像可构建 + compose 语法正确性进 CI
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    needs: [backend, frontend, site]
     steps:
       - uses: actions/checkout@v4
       - name: Build backend image
         run: docker build --pull -t sc-backend:ci ./backend
       - name: Build frontend image
         run: docker build -t sc-frontend:ci ./frontend/app
+      - name: Build site image
+        run: docker build -t sc-site:ci ./frontend/site
       - name: Validate docker compose
         run: |
           touch backend/.env   # env_file 占位；真实值由运维本地提供（见 DEPLOY.md）

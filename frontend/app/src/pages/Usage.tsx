@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Card, Page, PageHeader, Skeleton } from "../components/ui";
+import { useEffect, useState } from "react";
+import { Card, ErrorState, Page, PageHeader, Skeleton } from "../components/ui";
 import { ACCENTS } from "../lib/theme";
 import { adminUsage, type UsageLedger } from "../lib/api";
 
@@ -18,17 +18,28 @@ export default function Usage() {
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<UsageLedger | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loadedFor, setLoadedFor] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
-  if (loadedFor !== month) {
-    setLoadedFor(month);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    setData(null);
     adminUsage(month)
       .then((d) => {
-        setData(d);
-        setError(null);
+        if (alive) setData(d);
       })
-      .catch((e) => setError((e as Error).message));
-  }
+      .catch((e) => {
+        if (alive) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [month, reloadNonce]);
 
   const tasks = data ? Object.entries(data.by_task) : [];
 
@@ -48,23 +59,21 @@ export default function Usage() {
         }
       />
 
-      {error && (
-        <Card className="mb-4 border-danger/30 bg-danger/5 p-3 text-sm text-danger">{error}</Card>
-      )}
-
-      {!data ? (
+      {error && !data ? (
+        <ErrorState message={error} onRetry={() => setReloadNonce((n) => n + 1)} />
+      ) : loading && !data ? (
         <Skeleton rows={5} />
       ) : (
         <div className="space-y-5">
           {/* 合计卡片 */}
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
-              { label: "调用次数", value: fmt(data.total.calls) },
-              { label: "输入 tokens", value: fmt(data.total.prompt_tokens) },
-              { label: "输出 tokens", value: fmt(data.total.completion_tokens) },
+              { label: "调用次数", value: fmt(data!.total.calls) },
+              { label: "输入 tokens", value: fmt(data!.total.prompt_tokens) },
+              { label: "输出 tokens", value: fmt(data!.total.completion_tokens) },
               {
                 label: "总 tokens",
-                value: fmt(data.total.prompt_tokens + data.total.completion_tokens),
+                value: fmt(data!.total.prompt_tokens + data!.total.completion_tokens),
               },
             ].map((s) => (
               <Card key={s.label} className="p-4">
@@ -106,7 +115,7 @@ export default function Usage() {
           </Card>
 
           {/* 按日明细 */}
-          {data.days.length > 0 && (
+          {data!.days.length > 0 && (
             <Card className="overflow-x-auto p-0">
               <table className="w-full text-sm">
                 <thead>
@@ -118,7 +127,7 @@ export default function Usage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.days.map((d) => (
+                  {data!.days.map((d) => (
                     <tr key={d.date} className="border-b border-line/50 last:border-0">
                       <td className="px-4 py-2.5 font-medium text-ink">{d.date.slice(5)}</td>
                       <td className="px-4 py-2.5 text-ink-soft">{d.totals.calls}</td>

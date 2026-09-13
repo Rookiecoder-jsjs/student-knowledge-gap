@@ -36,7 +36,7 @@ export function Page({
 }) {
   const style = accent ? ({ "--color-accent": accent } as CSSProperties) : undefined;
   return (
-    <div className={className} style={style}>
+    <div className={`page-surface ${className}`} style={style}>
       {children}
     </div>
   );
@@ -79,9 +79,9 @@ export function Button({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   const styles: Record<Variant, string> = {
     primary:
-      "bg-accent text-white shadow-[0_4px_14px_-6px] shadow-accent/60 hover:bg-accent-deep hover:shadow-lift disabled:bg-accent/40 disabled:shadow-none",
+      "bg-accent text-white ring-1 ring-inset ring-black/5 shadow-[0_8px_18px_-10px] shadow-accent/70 hover:bg-accent-deep hover:shadow-lift disabled:bg-accent/40 disabled:shadow-none",
     secondary:
-      "bg-surface text-ink border border-line-strong hover:border-accent/50 hover:text-accent hover:bg-surface-2 disabled:opacity-40",
+      "bg-surface text-ink border border-line-strong shadow-soft hover:border-accent/45 hover:text-accent-deep hover:bg-surface-2 disabled:opacity-40",
     ghost:
       "text-ink-soft hover:bg-accent/10 hover:text-accent disabled:opacity-40",
     danger:
@@ -89,7 +89,7 @@ export function Button({
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center gap-1.5 font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${SIZES[size]} ${styles[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center justify-center gap-1.5 font-semibold transition-[transform,background-color,border-color,color,box-shadow] duration-150 active:scale-[0.98] disabled:cursor-not-allowed ${SIZES[size]} ${styles[variant]} ${className}`}
       {...props}
     />
   );
@@ -114,7 +114,7 @@ export function Badge({
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold ${tones[tone]}`}
     >
       {children}
     </span>
@@ -134,9 +134,9 @@ export function Card({
 }) {
   // 专业商务系（saas-redesign §4.4）：1px 细描边卡 + 轻阴影；interactive 才 lift
   //（仅 transform/阴影/border-color，GPU 友好）
-  const base = "rounded-xl border border-line bg-surface shadow-soft";
+  const base = "rounded-[14px] border border-line bg-surface shadow-soft";
   const hover = interactive
-    ? "transition-all duration-150 hover:-translate-y-px hover:border-accent/40 hover:shadow-lift"
+    ? "transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-accent/40 hover:shadow-lift"
     : "";
   return <div className={`${base} ${hover} ${className}`}>{children}</div>;
 }
@@ -198,7 +198,7 @@ export function Tabs<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={`inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-surface p-1 ${className}`}
+      className={`inline-flex max-w-full overflow-x-auto rounded-xl border border-line bg-surface p-1 shadow-soft ${className}`}
     >
       {tabs.map(({ key, label }) => {
         const active = key === value;
@@ -208,20 +208,20 @@ export function Tabs<T extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(key)}
-            className={`relative shrink-0 rounded-full px-4 py-1.5 text-sm transition-colors ${
+            className={`relative min-h-9 shrink-0 rounded-lg px-4 py-1.5 text-sm transition-colors ${
               active ? "font-semibold text-white" : "text-ink-soft hover:text-ink"
             }`}
           >
             {active && !reduce && (
               <motion.span
                 layoutId={layoutId}
-                className="absolute inset-0 rounded-full bg-accent"
+                className="absolute inset-0 rounded-lg bg-accent"
                 transition={{ type: "spring", stiffness: 320, damping: 30, ease: EASE }}
                 aria-hidden
               />
             )}
             {active && reduce && (
-              <span className="absolute inset-0 rounded-full bg-accent" aria-hidden />
+              <span className="absolute inset-0 rounded-lg bg-accent" aria-hidden />
             )}
             <span className="relative">{label}</span>
           </button>
@@ -243,7 +243,7 @@ export function Table({ children, className = "" }: { children: ReactNode; class
 
 export function THead({ children }: { children: ReactNode }) {
   return (
-    <thead className="bg-surface-2/70 text-left text-xs font-medium text-ink-soft">
+    <thead className="bg-surface-2/80 text-left text-xs font-semibold text-ink-soft">
       {children}
     </thead>
   );
@@ -318,6 +318,65 @@ export function ErrorState({
   );
 }
 
+/* ---------------- 分页 ---------------- */
+
+/** 统一列表分页控件：页码从 1 开始，服务端列表可用 hasMore 覆盖 total 推导。 */
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  hasMore,
+  onPageChange,
+  disabled = false,
+  className = "",
+}: {
+  page: number;
+  pageSize: number;
+  total?: number;
+  hasMore?: boolean;
+  onPageChange: (page: number) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const safePage = Math.max(1, page);
+  const totalPages = total == null ? null : Math.max(1, Math.ceil(total / pageSize));
+  const canPrev = safePage > 1;
+  const canNext = hasMore ?? (totalPages != null ? safePage < totalPages : false);
+  if (!canPrev && !canNext && (total ?? 0) <= pageSize) return null;
+
+  return (
+    <nav
+      aria-label="列表分页"
+      className={`flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 ${className}`}
+    >
+      <p className="text-xs text-ink-faint">
+        {totalPages != null ? `第 ${safePage} / ${totalPages} 页` : `第 ${safePage} 页`}
+        {total != null ? ` · 共 ${total} 条` : ""}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled || !canPrev}
+          onClick={() => onPageChange(safePage - 1)}
+          aria-label="上一页"
+        >
+          上一页
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled || !canNext}
+          onClick={() => onPageChange(safePage + 1)}
+          aria-label="下一页"
+        >
+          下一页
+        </Button>
+      </div>
+    </nav>
+  );
+}
+
 /* ---------------- 表单 ---------------- */
 
 export function Field({
@@ -345,7 +404,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;
   return (
     <input
-      className={`rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
+      className={`min-h-9 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink shadow-[inset_0_1px_0_rgb(255_255_255/.04)] tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
       {...rest}
     />
   );
@@ -364,9 +423,9 @@ export function SectionTitle({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-2.5 flex items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-        <span className="h-3 w-[3px] rounded-full bg-accent" aria-hidden />
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <h2 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+        <span className="h-3.5 w-[3px] rounded-full bg-accent" aria-hidden />
         {children}
         {count !== undefined && (
           <span className="font-normal normal-case tracking-normal text-ink-faint">（{count}）</span>
@@ -391,9 +450,10 @@ export function PageHeader({
   return (
     // 吸顶（saas-redesign §6）：top 取 --shell-top（Shell 移动端顶条 48px 让位，
     // 缺省 0）；负外边距出血到主区内容边，底衬毛玻璃避免内容穿透。
-    <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-5 flex flex-wrap items-end justify-between gap-4 bg-canvas/90 px-4 py-3 backdrop-blur-md md:-mx-8 md:px-8">
+    <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-line/70 bg-canvas/92 px-4 py-4 shadow-[0_12px_24px_-28px_rgba(33,42,36,.7)] backdrop-blur-xl md:-mx-8 md:px-8">
       <div>
-        <h1 className="font-display text-xl font-semibold leading-tight tracking-tight text-ink">{title}</h1>
+        <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-accent">薄弱点分析</p>
+        <h1 className="font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-ink">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
@@ -543,7 +603,7 @@ export function StatTile({
           ? "text-danger"
           : "text-ink";
   return (
-    <div className="rounded-xl border border-line bg-surface px-4 py-3.5 shadow-soft">
+    <div className="relative overflow-hidden rounded-[14px] border border-line bg-surface px-4 py-3.5 shadow-soft before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent/55">
       {icon && <IconTile className="mb-2.5">{icon}</IconTile>}
       <p className={`font-display text-[28px] font-bold leading-tight tabular-nums tracking-tight ${val}`}>
         {value}

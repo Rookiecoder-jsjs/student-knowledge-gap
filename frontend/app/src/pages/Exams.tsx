@@ -1,10 +1,11 @@
 import { ArrowRight, Plus } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ActionPlanPanel,
   InterventionSummaryStrip,
 } from "../components/ActionPlan";
-import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Select, Skeleton, StatusDot, Tabs } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Skeleton, StatusDot, Tabs } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import { classDiagnosisSheet, listClasses, listExams } from "../lib/api";
@@ -41,7 +42,16 @@ export default function Exams() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "diagnosis" ? "diagnosis" : "exams";
-  const { data, loading, error, reload } = useAsync(() => listExams(cid), [cid]);
+  const PAGE_SIZE = 12;
+  const [page, setPage] = useState(1);
+  const { data, loading, error, reload } = useAsync(
+    () => listExams(cid, { offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
+    [cid, page],
+  );
+  useEffect(() => setPage(1), [cid]);
+  useEffect(() => {
+    if (data && data.exams.length === 0 && data.total && page > 1) setPage((p) => p - 1);
+  }, [data, page]);
   const classes = useAsync(() => listClasses(), []);
 
   return (
@@ -88,7 +98,7 @@ export default function Exams() {
       />
 
       {tab === "exams" ? (
-        <ExamList data={data} loading={loading} error={error} reload={reload} cid={cid} />
+        <ExamList data={data} loading={loading} error={error} reload={reload} cid={cid} page={page} pageSize={PAGE_SIZE} onPageChange={setPage} />
       ) : (
         <ClassDiagnosisTab cid={cid} />
       )}
@@ -103,12 +113,18 @@ function ExamList({
   error,
   reload,
   cid,
+  page,
+  pageSize,
+  onPageChange,
 }: {
-  data: { exams: ExamSummary[] } | null;
+  data: { exams: ExamSummary[]; total?: number; has_more?: boolean } | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
   cid: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
 }) {
   return (
     <>
@@ -150,13 +166,13 @@ function ExamList({
                     </div>
 
                     {/* 阶段进度点 */}
-                    <div className="mt-4 flex items-center gap-1.5">
+                    <div className="mt-4 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-1">
                       {STAGE_LABELS.map((label, i) => {
                         const n = i + 1;
                         const isDone = done[n];
                         const isCurrent = n === stage.current;
                         return (
-                          <div key={label} className="flex items-center gap-1.5">
+                          <div key={label} className="flex min-w-max items-center gap-1.5">
                             <span
                               className="flex items-center gap-1 text-[11px]"
                               title={`第 ${n} 阶·${label}`}
@@ -200,6 +216,17 @@ function ExamList({
             );
           })}
         </StaggerList>
+      )}
+      {data && data.exams.length > 0 && (
+        <Pagination
+          className="mt-5"
+          page={page}
+          pageSize={pageSize}
+          total={data.total ?? data.exams.length}
+          hasMore={data.has_more}
+          onPageChange={onPageChange}
+          disabled={loading}
+        />
       )}
     </>
   );

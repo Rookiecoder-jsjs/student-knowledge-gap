@@ -86,6 +86,17 @@ def test_list_classes_students_progress(client):
     assert [s["student_id"] for s in stu] == student_ids  # 名单原序
     assert all("score" not in s for s in stu)  # 列表接口不得携带分数字段
 
+    page = c.get(
+        f"/classes/{class_id}/students", params={"offset": 1, "limit": 1}
+    )
+    assert page.status_code == 200
+    assert page.json()["total"] == 2
+    assert page.json()["students"][0]["student_id"] == student_ids[1]
+    assert page.json()["has_more"] is False
+    assert c.get(
+        f"/classes/{class_id}/students", params={"limit": 0}
+    ).status_code == 400
+
     assert c.get("/classes/999/students").status_code == 404
 
     assert c.post(
@@ -104,6 +115,12 @@ def test_exam_list_detail_responses_matrix(client):
     exams = c.get(f"/exams?class_id={class_id}").json()["exams"]
     assert len(exams) == 1
     assert exams[0]["question_count"] == 2
+    exam_page = c.get(
+        "/exams", params={"class_id": class_id, "offset": 0, "limit": 1}
+    )
+    assert exam_page.status_code == 200
+    assert exam_page.json()["total"] == 1
+    assert exam_page.json()["has_more"] is False
     # 手工建卷的标注视为已审核，不进审核台
     assert exams[0]["unreviewed_tags"] == 0
 

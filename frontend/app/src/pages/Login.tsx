@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ChalkboardTeacher,
   ChatCircleDots,
   ShieldCheck,
@@ -15,6 +16,7 @@ import { EXPIRED_KEY } from "../lib/auth";
 import { landingFor } from "../lib/portal";
 import { EASE } from "../lib/motion-tokens";
 import { ACCENTS } from "../lib/theme";
+import { WEBSITE_URL } from "../lib/site";
 
 /** 统一登录页（auth-roles-design §7）：教师/管理员/学生同一入口。
 
@@ -152,28 +154,34 @@ export default function Login() {
   };
 
   const form = (
-    <form onSubmit={submit} className="space-y-3">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-ink-soft">用户名</span>
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <label htmlFor="login-username" className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold text-ink-soft">用户名</span>
         <Input
+          id="login-username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? "login-error" : undefined}
           placeholder="教师/学生登录名（如学籍号）"
           autoComplete="username"
           autoFocus
         />
       </label>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-medium text-ink-soft">口令</span>
+      <label htmlFor="login-password" className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold text-ink-soft">口令</span>
         <Input
+          id="login-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? "login-error" : undefined}
           autoComplete="current-password"
           placeholder="••••••"
         />
       </label>
-      {error && <p className="text-xs text-danger">{error}</p>}
+      {error && <p id="login-error" role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       <Button
         type="submit"
         disabled={!username.trim() || !password || busy}
@@ -186,29 +194,30 @@ export default function Login() {
   );
 
   return (
-    <div className="grid min-h-[100dvh] bg-canvas lg:grid-cols-[1.15fr_1fr]">
+    <div className="grid min-h-[100dvh] bg-canvas lg:grid-cols-[1.08fr_1fr]">
       {/* 左：墨面品牌栏（lg 以上展示）——深墨底吃住三团模块色光斑，
           图谱线稿补纹理层级；内容分品牌 / 陈述 / 信任三段 justify-between */}
-      <aside className="relative hidden flex-col justify-between overflow-hidden bg-[#111827] px-14 py-12 lg:flex">
+      <aside className="brand-band relative hidden flex-col justify-between overflow-hidden px-14 py-12 lg:flex">
         {/* 模块色光斑：低透明度大面积模糊（旧饱和渐变的替代，质感主来源） */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <span
             className="absolute -top-24 -right-16 h-[28rem] w-[28rem] rounded-full blur-[110px]"
-            style={{ background: ACCENTS.dashboard, opacity: 0.17 }}
+            style={{ background: "#5eead4", opacity: 0.11 }}
           />
           <span
             className="absolute -left-24 bottom-[16%] h-[24rem] w-[24rem] rounded-full blur-[110px]"
-            style={{ background: ACCENTS.knowledge, opacity: 0.14 }}
+            style={{ background: "#d6a34f", opacity: 0.09 }}
           />
           <span
             className="absolute -bottom-32 right-[10%] h-[26rem] w-[26rem] rounded-full blur-[120px]"
-            style={{ background: ACCENTS.student, opacity: 0.13 }}
+            style={{ background: "#86b8ad", opacity: 0.08 }}
           />
         </div>
         <GraphSketch />
 
         {/* 品牌行 */}
         <Reveal className="relative flex items-center gap-3">
+          <a href={WEBSITE_URL} aria-label="返回官网" className="flex items-center gap-3 rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-white/80">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
             <TreeStructure size={22} weight="bold" className="text-white" />
           </span>
@@ -218,6 +227,7 @@ export default function Login() {
             </p>
             <p className="text-[11px] text-white/55">教学质量分析平台</p>
           </div>
+          </a>
         </Reveal>
 
         {/* display 大字陈述 + 三端列表（hairline 分隔，不再用玻璃卡） */}
@@ -265,12 +275,14 @@ export default function Login() {
       <main className="flex min-h-[100dvh] flex-col items-center justify-center px-6 py-12">
         {/* 移动端品牌锁定行：小尺寸复刻左栏品牌段，替代旧渐变横幅 */}
         <Reveal className="mb-10 flex items-center gap-2.5 lg:hidden">
+          <a href={WEBSITE_URL} aria-label="返回官网" className="flex items-center gap-2.5 rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-accent">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-white">
             <TreeStructure size={18} weight="bold" />
           </span>
           <p className="font-display text-base font-bold tracking-tight text-ink">
             薄弱点分析
           </p>
+          </a>
         </Reveal>
 
         <Reveal delay={0.08} className="w-full max-w-sm">
@@ -280,8 +292,8 @@ export default function Login() {
           <p className="mt-1.5 text-[13px] text-ink-soft">
             一个入口 · 三种身份，登录后按角色进入对应端
           </p>
-          <Card className="mt-5 p-6">
-            {expired && <p className="mb-3 text-xs text-warn">登录已过期，请重新登录</p>}
+          <Card className="mt-6 border-line-strong/70 p-6 shadow-lift sm:p-7">
+            {expired && <p role="status" className="mb-3 rounded-lg bg-warn-soft px-3 py-2 text-xs text-warn">登录已过期，请重新登录</p>}
             {form}
           </Card>
         </Reveal>
@@ -290,6 +302,13 @@ export default function Login() {
           <p className="mt-6 max-w-[42ch] text-center text-xs leading-relaxed text-ink-faint">
             教师 / 管理员 / 学生账号均由校内管理员开通；学生登录名默认为学籍号。
           </p>
+          <a
+            href={WEBSITE_URL}
+            className="mx-auto mt-5 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold text-accent transition-colors hover:bg-accent/8 hover:text-accent-deep focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <ArrowLeft size={14} aria-hidden />
+            返回官网
+          </a>
         </Reveal>
       </main>
     </div>

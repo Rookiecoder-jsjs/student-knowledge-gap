@@ -1,7 +1,7 @@
 import { ChartBar, Eye, FirstAidKit, Key, ListChecks } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Page, PageHeader, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Page, PageHeader, Pagination, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { enableStudentAccount, listInterventions, listStudents } from "../lib/api";
 import type { StudentInfo } from "../lib/types";
@@ -14,11 +14,20 @@ import { ACCENTS } from "../lib/theme";
 export default function Students() {
   const { classId } = useParams();
   const cid = Number(classId);
-  const { data, loading, error, reload } = useAsync(() => listStudents(cid), [cid]);
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(1);
+  const { data, loading, error, reload } = useAsync(
+    () => listStudents(cid, { offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE }),
+    [cid, page],
+  );
+  useEffect(() => setPage(1), [cid]);
+  useEffect(() => {
+    if (data && data.students.length === 0 && data.total && page > 1) setPage((p) => p - 1);
+  }, [data, page]);
   const flags = roleFlags(useAuth().session);
   // 干预摘要（intervention-loop §6）：每行 chip「N 项建议 · M 已执行」——聚合一次
   const iv = useAsync(
-    () => listInterventions({ class_id: cid }).catch(() => ({ total: 0, items: [] })),
+    () => listInterventions({ class_id: cid, limit: 200 }),
     [cid]
   );
   const byStudent = new Map<number, { suggested: number; done: number; awaiting: number }>();
@@ -62,6 +71,13 @@ export default function Students() {
         desc={`按名单原序展示；诊断单先看进步，再看待加强项${flags.isHomeroom(cid) ? " · 你是本班班主任（可开通本班学生自服务账号）" : ""}`}
       />
 
+      {iv.error && (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-2 border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+          <span>干预摘要加载失败，学生名单仍可使用。</span>
+          <Button size="sm" variant="secondary" onClick={iv.reload}>重试</Button>
+        </Card>
+      )}
+
       {loading && <Skeleton rows={5} />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && data.students.length === 0 && (
@@ -82,7 +98,7 @@ export default function Students() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{s.name_or_alias}</p>
-                <p className="flex items-center gap-2 text-xs text-ink-faint">
+                <p className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">
                   {s.external_code}
                   {s.has_account && <Badge tone="neutral">自服务已开通</Badge>}
                   {stat && (stat.suggested > 0 || stat.done > 0) && (
@@ -96,7 +112,7 @@ export default function Students() {
                   )}
                 </p>
               </div>
-              <span className="flex items-center gap-2">
+              <span className="flex min-w-0 flex-wrap items-center justify-end gap-2">
                 {flags.canEnableStudent(cid) && (
                   <Button
                     variant="ghost"
@@ -148,6 +164,15 @@ export default function Students() {
             );
           })}
           </Card>
+          <Pagination
+            className="mt-4"
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={data.total ?? data.students.length}
+            hasMore={data.has_more}
+            onPageChange={setPage}
+            disabled={loading}
+          />
         </Reveal>
       )}
 

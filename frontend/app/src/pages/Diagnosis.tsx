@@ -5,7 +5,7 @@ import {
   ActionPlanPanel,
   LoopStateChip,
 } from "../components/ActionPlan";
-import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, SectionTitle, Skeleton } from "../components/ui";
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pagination, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
 import {
@@ -48,10 +48,18 @@ export default function Diagnosis() {
   );
   const student = students.data?.students.find((s) => s.student_id === sid);
   // 该生的干预记录（个体视角唯一版面：状态 + 效果 chip，链接回班级诊断单）
+  const IV_PAGE_SIZE = 20;
+  const [ivPage, setIvPage] = useState(1);
   const interventions = useAsync(
-    () => listInterventions({ student_id: sid }).catch(() => ({ total: 0, items: [] })),
-    [sid]
+    () => listInterventions({ student_id: sid, offset: (ivPage - 1) * IV_PAGE_SIZE, limit: IV_PAGE_SIZE }),
+    [sid, ivPage]
   );
+  useEffect(() => setIvPage(1), [sid]);
+  useEffect(() => {
+    if (interventions.data && interventions.data.items.length === 0 && interventions.data.total > 0 && ivPage > 1) {
+      setIvPage((p) => p - 1);
+    }
+  }, [interventions.data, ivPage]);
   // 改进单视图数据
   const plan = useAsync(
     () => (view === "plan" ? studentActionPlan(sid) : Promise.resolve(null)),
@@ -268,20 +276,33 @@ export default function Diagnosis() {
 
           {/* 该生的干预记录卡（intervention-loop §6）：状态 + 效果，链接回班级诊断单 */}
           <div>
-            <SectionTitle count={interventions.data?.items.length ?? 0}>该生的干预记录</SectionTitle>
-            {(interventions.data?.items.length ?? 0) === 0 ? (
+            <SectionTitle count={interventions.data?.total ?? 0}>该生的干预记录</SectionTitle>
+            {interventions.loading && <Skeleton rows={3} />}
+            {interventions.error && <ErrorState message={interventions.error} onRetry={interventions.reload} />}
+            {!interventions.loading && !interventions.error && (interventions.data?.total ?? 0) === 0 ? (
               <Card className="p-4">
                 <p className="text-sm text-ink-faint">
                   暂无干预记录。行动建议由系统在每次考试提交后生成。
                 </p>
               </Card>
-            ) : (
+            ) : !interventions.loading && !interventions.error && interventions.data ? (
+              <>
               <ActionPlanPanel
-                rows={interventions.data!.items}
+                rows={interventions.data.items}
                 onChanged={interventions.reload}
                 emptyHint=""
               />
-            )}
+              <Pagination
+                className="mt-3"
+                page={ivPage}
+                pageSize={IV_PAGE_SIZE}
+                total={interventions.data.total}
+                hasMore={interventions.data.has_more}
+                onPageChange={setIvPage}
+                disabled={interventions.loading}
+              />
+              </>
+            ) : null}
             <p className="mt-2 text-xs text-ink-faint">
               全班行动方向见{" "}
               <a href={`/c/${cid}/exams?tab=diagnosis`} className="text-accent hover:text-accent-deep">

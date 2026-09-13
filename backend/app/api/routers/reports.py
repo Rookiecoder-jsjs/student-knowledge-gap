@@ -100,22 +100,23 @@ def inbox_list(
 
     安全模式未传 class_id 时按授权班级收敛。
     """
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= inbox.MAX_PAGE:
+        raise HTTPException(400, f"limit 必须在 1 到 {inbox.MAX_PAGE} 之间")
+
+    allowed = auth_mod.allowed_class_ids(db, ctx)
     if class_id is not None:
         guard_class(class_id, db, ctx)
     else:
-        allowed = auth_mod.allowed_class_ids(db, ctx)
         if allowed is not None and len(allowed) == 1:
             class_id = allowed[0]
     try:
         data = inbox.list_drafts(db, class_id=class_id, status=status,
-                                 offset=offset, limit=limit)
+                                 offset=offset, limit=limit,
+                                 class_ids=allowed if class_id is None else None)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    allowed = auth_mod.allowed_class_ids(db, ctx)
-    if allowed is not None and class_id is None:
-        want = set(allowed)
-        data["items"] = [i for i in data["items"] if i.get("class_id") in want]
-        data["total"] = len(data["items"])
     return data
 
 

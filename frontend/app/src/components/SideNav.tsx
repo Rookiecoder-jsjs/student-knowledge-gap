@@ -79,7 +79,7 @@ export function Sidebar({
   const reduce = useReducedMotion();
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-60 shrink-0 flex-col border-r border-line bg-surface transition-transform duration-200 md:sticky md:top-0 md:self-start md:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-64 shrink-0 flex-col border-r border-line bg-surface/95 shadow-[8px_0_32px_-28px_rgba(33,42,36,.45)] backdrop-blur transition-transform duration-200 md:sticky md:top-0 md:self-start md:translate-x-0 ${
         mobileOpen ? "translate-x-0 shadow-float" : "-translate-x-full"
       }`}
     >
@@ -87,18 +87,18 @@ export function Sidebar({
       <Link
         to={brandTo}
         onClick={onMobileClose}
-        className="flex shrink-0 items-center gap-2.5 px-4 py-4 transition-opacity hover:opacity-80"
+        className="relative flex shrink-0 items-center gap-3 border-b border-line/70 px-5 py-5 transition-colors hover:bg-surface-2/60"
       >
         <span
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white ${
-            brandAccent ? "" : "bg-accent shadow-[0_4px_14px_-2px] shadow-accent/50"
+            brandAccent ? "" : "bg-[#0d2a27] shadow-[0_8px_20px_-10px_rgba(13,42,39,.75)]"
           }`}
           style={brandAccent ? { background: brandAccent } : undefined}
         >
-          <TreeStructure size={18} weight="bold" />
+          <TreeStructure size={18} weight="bold" aria-hidden />
         </span>
         <span className="min-w-0 leading-tight">
-          <span className="block truncate text-sm font-semibold tracking-tight">{title}</span>
+          <span className="block truncate font-display text-[15px] font-bold tracking-tight">{title}</span>
           {subtitle && (
             <span className="block truncate text-[11px] text-ink-faint">{subtitle}</span>
           )}
@@ -106,24 +106,24 @@ export function Sidebar({
       </Link>
 
       {/* 语境块（班级切换器） */}
-      {context && <div className="flex shrink-0 flex-col gap-2 px-4 pb-2">{context}</div>}
+      {context && <div className="flex shrink-0 flex-col gap-2 px-4 pb-3 pt-4">{context}</div>}
 
       {/* 分组导航：纵向胶囊，激活项模块色 */}
-      <nav className="min-h-0 flex-1 overflow-y-auto px-4 py-1" aria-label={navLabel}>
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2" aria-label={navLabel}>
         {groups.map((g) => (
-          <div key={g.label} className="mb-3 last:mb-0">
-            <p className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+          <div key={g.label} className="mb-4 last:mb-0">
+            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-faint">
               {g.label}
             </p>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {g.items.map(({ id, to, label, icon: Icon, accent, active, trailing }) => (
                 <Link
                   key={id ?? label}
                   to={to}
                   onClick={onMobileClose}
                   aria-current={active ? "page" : undefined}
-                  className={`relative flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-colors ${
-                    active ? "text-white" : "text-ink-soft hover:bg-surface-2 hover:text-ink"
+                  className={`relative flex min-h-10 items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                    active ? "text-white shadow-soft" : "text-ink-soft hover:bg-surface-2 hover:text-ink"
                   }`}
                 >
                   {active && !reduce && (
@@ -153,7 +153,7 @@ export function Sidebar({
       </nav>
 
       {/* 沉底簇：账号/返回链 */}
-      {footer && <div className="shrink-0 border-t border-line/70 px-4 py-3">{footer}</div>}
+      {footer && <div className="shrink-0 border-t border-line/70 bg-surface-2/35 px-4 py-3">{footer}</div>}
     </aside>
   );
 }

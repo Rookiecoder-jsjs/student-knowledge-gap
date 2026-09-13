@@ -2,7 +2,7 @@
 
 一个面向中学教师的**学情诊断工具**🎓。长期追踪学生每次考试/练习表现，估计各知识点的掌握度，归因薄弱点的成因，并生成可直接用于讲评课、家长会、教务汇报的文档，通过复测形成闭环。考试一提交，班级报告与个人诊断就**自动生成并落库**——一次生成，随时回看 💾。试点学科是初一数学（人教版七上）📐——不过年级只是知识库数据层参数，换个 YAML 就能切换学科。
 
-> 📌 设计依据、改进方案、诊断有效性验证、知识图谱改进等设计文档仅保留本地（`docs/`），不入库（唯一例外：`docs/architecture-fix-plan.md` 随架构方案交付入库）。
+> 📌 设计依据、改进方案、诊断有效性验证、知识图谱改进等文档集中在 `docs/`；其中大部分按仓库策略仅保留本地，已入库的架构与 Agent 产品设计文档作为交付基线。
 
 ---
 
@@ -26,7 +26,7 @@
 
 1. 📝 **一键考后质量分析文档**（班级，可编辑、可导出）——替代教师已有工作；
 2. 🧑‍🎓 **个人诊断单**（薄弱点 + 证据 + 建议）；
-3. 📊 **三张单信息架构**——考试页只看「这场考试的大体状况」（第 5 阶概况）；「这个班/这个学生接下来怎么变好」移到两张滚动更新的单上（班级诊断单 = 考试模块第二 tab；学生诊断单），见 `docs/diagnosis-sheet-redesign.md`；
+3. 📊 **三张单信息架构**——考试页只看「这场考试的大体状况」（第 5 阶概况）；「这个班/这个学生接下来怎么变好」移到两张滚动更新的单上（班级诊断单 = 考试模块第二 tab；学生诊断单），实现见 `frontend/app/src/pages/Exams.tsx` 与 `StudentPortal.tsx`；
 4. 💾 **提交即自动生成**——考试提交后，班级质量报告、班级改进意见、全班学生诊断自动落库并关联该场考试，一次生成、永久查看；
 5. 🔄 **干预闭环**（intervention-loop-design）——诊断之后怎么办：结构化行动方向（全班重讲/小组补学/个体建议三层）、学生改进单（教师代发）、一键确认执行、复测后效果验证（基线调整对冲均值回归），北极星「干预提升率」落地度量；
 6. ✍️ **LLM 生成层**（`SC_LLM_PLAN_ENABLE=1` 开启，默认关）——学生诊断单与班级改进意见正文由 LLM 基于确定性证据包研判落笔，模板渲染降为保底；校验失败/未配 key 自动回落模板，前端无感。
@@ -59,11 +59,11 @@
 | 层 | 选型 |
 |---|---|
 | 后端 | Python 3.11 · FastAPI · SQLAlchemy 2.0 · SQLite（MVP，可迁 PostgreSQL）· networkx（知识图谱内存遍历）· openpyxl（Excel）|
-| 前端 | Vite · React 19 · TypeScript · Tailwind CSS 4 · react-router 7 · framer-motion · react-markdown · Inter（等宽数字）|
+| 前端 | Vite · React 19 · TypeScript · Tailwind CSS 4 · react-router 7 · framer-motion · react-markdown；业务端 Inter/Outfit，官网 Outfit 单页 |
 | LLM | provider 无关接口层（vision + text 双能力），云端 API；试点用 DashScope `qwen3.7-flash` |
 | 知识库源 | YAML + Git，导入脚本入库 |
 | 图计算 | 关系表存储 + networkx 内存遍历（百级节点，无需图数据库）|
-| 部署 | Docker（后端/前端镜像）+ docker compose 三服务编排（backend / frontend / backup）· nginx `/api` 反代 · 单 uvicorn 进程（架构不变量）· SQLite 热备 |
+| 部署 | Docker（官网 / 应用 / 后端 / 网关镜像）+ docker compose 五服务编排（site / frontend / backend / gateway / backup）· nginx `/api` 反代 · 单 uvicorn 进程（架构不变量）· SQLite 热备 |
 
 ---
 
@@ -71,7 +71,7 @@
 
 ```
 sc/
-├── backend/                  # Python 后端（FastAPI，五层管线，56 端点）
+├── backend/                  # Python 后端（FastAPI，五层管线，67 路径 / 76 操作）
 │   ├── app/
 │   │   ├── api/routers/      #   路由（org / auth / ingestion / kb / analysis / intervention / reports / admin）+ deps（依赖注入）
 │   │   ├── ingestion/        #   采集：excel / photo / batch（批量）/ pii / commit / templates
@@ -103,13 +103,17 @@ sc/
 │   │   ├── src/{pages,components,lib}/   # components/ActionPlan.tsx = 行动明细/效果chip/闭环条共享组件
 │   │   ├── Dockerfile        #   前端镜像（node 构建 -> nginx 托管 dist + /api 反代）
 │   │   └── nginx.conf        #   /api 前缀剥离反代 backend（与 Vite dev 代理等价）
+│   └── site/                 #   官网单页（产品 / 方案 / 安全部署 / 关于均在首页锚点）
+│       ├── src/{pages,components,lib}/
+│       ├── Dockerfile        #   官网镜像（node 构建 -> nginx 静态托管）
+│       └── nginx.conf        #   SPA fallback + /healthz
 ├── deploy/
-│   └── docker-compose.yml    #   单机「基础可靠」部署编排（backend / frontend / backup 三服务 + 卷）
+│   └── docker-compose.yml    #   单机「基础可靠」部署编排（site / frontend / backend / gateway / backup 五服务 + 卷）
 ├── DEPLOY.md                 #   部署与运维文档（备份恢复三步法 / 单进程原理 / 演进路径）
 └── .venv/                    #   Python 3.11 虚拟环境（项目根，backend 共用）
 ```
 
-> ⚠️ 设计文档（`docs/`、`frontend/design/`、`design-system/`）仅本地保留，已加入 `.gitignore` 不入库（`docs/architecture-fix-plan.md` 为例外，已入库）。
+> ⚠️ 设计草稿（`frontend/design/`、`design-system/` 及 `docs/` 中未列入白名单的文件）仅本地保留；`docs/architecture-fix-plan.md` 与 `docs/agent-product-design.md` 为已入库的交付基线。
 
 ---
 
@@ -134,7 +138,21 @@ npm install
 npm run dev                                       # 🖥️ 启动前端开发服务器（/api 代理到后端）
 ```
 
-> 🐳 **容器化部署**（基础可靠 / 单机，三服务编排 backend + frontend + backup）见 [DEPLOY.md](DEPLOY.md)。
+官网（另开终端）：
+
+```bash
+cd frontend/site
+npm install
+npm run dev                                       # 🌐 启动官网单页（默认 :5174）
+```
+
+> 🐳 **容器化部署**（基础可靠 / 单机，site + frontend + backend + gateway + backup 五服务）见 [DEPLOY.md](DEPLOY.md)。
+
+官网与应用入口（Docker 默认端口）：
+
+- 官网单页：<http://localhost:5174>（内容纵向一次展示；页脚提供 `#product`、`#solutions`、`#security`、`#about` 锚点）
+- 教师 / 管理 / 学生应用：<http://localhost:8080>
+- 旧官网路径 `/product`、`/solutions`、`/security`、`/about` 会兼容重定向到首页对应锚点。
 
 ## ⚙️ 配置（backend/.env）
 
@@ -243,7 +261,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - **保留期限**：`SC_RETENTION_ROLLOUT_DAYS`（默认 0=永不删，保护一班一线程记忆）；备份旧份 gzip 归档 `SC_BACKUP_COMPRESS_DAYS`（默认关）
 - **watchtower 升级链**：规模期镜像分发后叠加 `deploy/watchtower-compose.yml` 启用定时拉取升级（试点期手动装机不启用）；回滚=上一版 tag 一条命令退回
 
-**🖥️ 前端页面**：3 项导航（工作台 / 考试 / 学生）+ **考试 5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，顶部 stepper 串联，告别页面跳来跳去）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时选日期回看任意时点（报告与弱项面板同一时间基准）。视觉为「案头 Workbench」🎨——暖灰中性底 + 单一松青主色 + 等宽数字 + 紧栅格，设计系统源文件 `design-system/sc-teacher/MASTER.md`（本地）。含选班级、首次使用向导、知识库编辑等共 14 个路由。
+**🖥️ 前端页面**：教师 / 管理 / 学生共用一套应用壳，按角色分流；教师端保留工作台、考试、学生、知识库、待签发、AI 教研员与全局管理等路由，考试使用 **5 阶流水线工作区**（建卷 → 审核 → 采集 → 提交 → 报告，stepper 串联）。提交成功后提示「已自动生成班级报告 + N 份学生诊断」并直达报告；诊断页默认展示最近一场考试的已存诊断，可随时按日期回看。官网为独立的**单页站**：产品、方案、安全与部署、关于四个内容区均在 `/` 页面纵向展示，顶部不再放分区 tab，页脚可定位锚点。
 
 ---
 

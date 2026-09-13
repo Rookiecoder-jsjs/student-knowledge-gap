@@ -26,7 +26,7 @@ export default function Overview() {
   const exams = useAsync(() => listExams(cid), [cid]);
   // 行动方向待确认数（intervention-loop-design §6：工作台只有链接卡 + 计数）
   const actions = useAsync(
-    () => classActionPlan(cid).catch(() => null),
+    () => classActionPlan(cid),
     [cid]
   );
 
@@ -50,7 +50,7 @@ export default function Overview() {
         actions={
           <Link
             to={`/c/${cid}/exams/new`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-soft transition-[background-color,box-shadow,transform] hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
           >
             <FileArrowUp size={15} />
             录入新考试
@@ -146,6 +146,14 @@ export default function Overview() {
               全量行动只在班级诊断单一处出现；角标 = 待确认行动数。 */}
           <div>
             <SectionTitle>班级状态</SectionTitle>
+            {actions.error && (
+              <p className="mb-2 text-xs text-danger" role="alert">
+                班级行动摘要加载失败 ·{" "}
+                <button className="font-medium underline transition-colors hover:text-accent hover:no-underline active:opacity-70" onClick={actions.reload}>
+                  重试
+                </button>
+              </p>
+            )}
             <Link to={`/c/${cid}/exams?tab=diagnosis`} className="block">
               <Card interactive className="flex items-center gap-3 p-4">
                 <div className="min-w-0 flex-1">

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -145,15 +145,35 @@ def classes_overview(ctx=Depends(require_teacher), db: Session = Depends(get_db)
 
 
 @router.get("/classes/{class_id}/students")
-def list_students(class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+def list_students(
+    class_id: int,
+    offset: int | None = None,
+    limit: int | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     _guard(db, ctx, class_id)
-    students = db.scalars(
-        select(Student).where(Student.class_id == class_id).order_by(Student.id)
-    )
+    stmt = select(Student).where(Student.class_id == class_id).order_by(Student.id)
+    paged = offset is not None or limit is not None
+    if paged:
+        if offset is not None and offset < 0:
+            raise HTTPException(400, "offset 不能小于 0")
+        if limit is not None and not 1 <= limit <= 200:
+            raise HTTPException(400, "limit 必须在 1 到 200 之间")
+        page_offset = offset or 0
+        page_limit = limit or 50
+        stmt = stmt.offset(page_offset).limit(page_limit)
+        total = db.scalar(
+            select(func.count(Student.id)).where(Student.class_id == class_id)
+        ) or 0
+    else:
+        page_offset = 0
+        total = None
+    students = db.scalars(stmt)
     # 名单原序返回；禁止按分数排序由前端约束，此处不提供任何分数字段。
     # has_account/username（frontend-ends-design §D）：登录名即学籍号，教师可见
     # 「谁已开通自服务」不泄密（口令不在此）；null = 未开通。
-    return {
+    data = {
         "class_id": class_id,
         "students": [
             {
@@ -166,6 +186,16 @@ def list_students(class_id: int, ctx=Depends(require_teacher), db: Session = Dep
             for s in students
         ],
     }
+    if paged:
+        data.update(
+            {
+                "total": total,
+                "offset": page_offset,
+                "limit": limit or 50,
+                "has_more": page_offset + len(data["students"]) < total,
+            }
+        )
+    return data
 
 
 @router.get("/classes/{class_id}/progress")
@@ -220,6 +250,8 @@ def patch_progress(
 @router.get("/exams")
 def list_exams(
     class_id: int | None = None,
+    offset: int | None = None,
+    limit: int | None = None,
     ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
@@ -230,14 +262,33 @@ def list_exams(
     from app.api.deps import _auth as auth_mod
 
     allowed = auth_mod.allowed_class_ids(db, ctx)
+    paged = offset is not None or limit is not None
+    if paged:
+        if offset is not None and offset < 0:
+            raise HTTPException(400, "offset 不能小于 0")
+        if limit is not None and not 1 <= limit <= 200:
+            raise HTTPException(400, "limit 必须在 1 到 200 之间")
+    page_offset = offset or 0
+    page_limit = limit or 50
+
     if allowed is not None:
         want = set(allowed)
         if class_id is not None and class_id not in want:
             raise HTTPException(403, "无权查看该班级考试")
         rows = query_exams.exams_list(db, class_id)
         rows = [e for e in rows if e.get("class_id") in want]
+    else:
+        rows = query_exams.exams_list(db, class_id)
+    if not paged:
         return {"exams": rows}
-    return {"exams": query_exams.exams_list(db, class_id)}
+    page = rows[page_offset : page_offset + page_limit]
+    return {
+        "exams": page,
+        "total": len(rows),
+        "offset": page_offset,
+        "limit": page_limit,
+        "has_more": page_offset + len(page) < len(rows),
+    }
 
 
 @router.get("/exams/{exam_id}")

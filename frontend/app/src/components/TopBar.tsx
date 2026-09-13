@@ -59,22 +59,22 @@ export function TopBar({
   right?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-line/70 bg-surface/80 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-4 px-6">
+    <header className="sticky top-0 z-40 border-b border-line/80 bg-canvas/88 shadow-[0_8px_24px_-24px_rgba(33,42,36,.45)] backdrop-blur-xl">
+      <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between gap-4 px-4 sm:px-6">
         <Link
           to={brandTo}
-          className="flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-80"
+          className="flex shrink-0 items-center gap-2.5 rounded-xl transition-opacity hover:opacity-80"
         >
           <span
             className={`flex h-9 w-9 items-center justify-center rounded-xl text-white ${
-              brandAccent ? "" : "bg-accent shadow-[0_4px_14px_-2px] shadow-accent/50"
+              brandAccent ? "" : "bg-[#0d2a27] shadow-[0_8px_20px_-10px_rgba(13,42,39,.75)]"
             }`}
             style={brandAccent ? { background: brandAccent } : undefined}
           >
-            <TreeStructure size={18} weight="bold" />
+            <TreeStructure size={18} weight="bold" aria-hidden />
           </span>
           <div className="leading-tight">
-            <p className="flex items-center gap-2 text-sm font-semibold tracking-tight">{title}</p>
+            <p className="flex items-center gap-2 font-display text-sm font-bold tracking-tight">{title}</p>
             {subtitle && <p className="text-[11px] text-ink-faint">{subtitle}</p>}
           </div>
         </Link>
@@ -106,8 +106,8 @@ export function TopBarNav({
           key={id ?? label}
           to={to}
           aria-current={active ? "page" : undefined}
-          className={`relative flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-            active ? "text-white" : "text-ink-soft hover:text-ink"
+          className={`relative flex min-h-10 shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+            active ? "text-white shadow-soft" : "text-ink-soft hover:bg-surface-2/70 hover:text-ink"
           }`}
         >
           {active && !reduce && (

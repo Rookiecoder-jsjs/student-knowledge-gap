@@ -345,11 +345,41 @@ export const listClasses = () => request<{ classes: ClassSummary[] }>("/classes"
 export const listClassesOverview = () =>
   request<{ classes: ClassOverview[] }>("/classes/overview");
 
-export const listStudents = (classId: number) =>
-  request<{ class_id: number; students: StudentInfo[] }>(`/classes/${classId}/students`);
+export const listStudents = (
+  classId: number,
+  options?: { offset?: number; limit?: number },
+) => {
+  const q = new URLSearchParams();
+  if (options?.offset != null) q.set("offset", String(options.offset));
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  return request<{
+    class_id: number;
+    students: StudentInfo[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+  }>(`/classes/${classId}/students${qs ? `?${qs}` : ""}`);
+};
 
-export const listExams = (classId?: number) =>
-  request<{ exams: ExamSummary[] }>(`/exams${classId ? `?class_id=${classId}` : ""}`);
+export const listExams = (
+  classId?: number,
+  options?: { offset?: number; limit?: number },
+) => {
+  const q = new URLSearchParams();
+  if (classId) q.set("class_id", String(classId));
+  if (options?.offset != null) q.set("offset", String(options.offset));
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  return request<{
+    exams: ExamSummary[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+  }>(`/exams${qs ? `?${qs}` : ""}`);
+};
 
 export const examDetail = (examId: number) => request<ExamDetail>(`/exams/${examId}`);
 
@@ -522,9 +552,15 @@ export const reportDetail = (reportId: number) =>
   request<{ report_id: number; markdown: string; type: string }>(`/reports/${reportId}`);
 
 // 收件箱与 draft 流（§5.3）
-export const inboxList = (status = "draft", classId?: number) => {
+export const inboxList = (
+  status = "draft",
+  classId?: number,
+  options?: { offset?: number; limit?: number },
+) => {
   const q = new URLSearchParams({ status });
   if (classId) q.set("class_id", String(classId));
+  if (options?.offset != null) q.set("offset", String(options.offset));
+  if (options?.limit != null) q.set("limit", String(options.limit));
   return request<InboxList>(`/inbox?${q.toString()}`);
 };
 
@@ -744,13 +780,23 @@ export const listInterventions = (params: {
   class_id?: number;
   student_id?: number;
   status?: string;
+  offset?: number;
+  limit?: number;
 }) => {
   const q = new URLSearchParams();
   if (params.class_id) q.set("class_id", String(params.class_id));
   if (params.student_id) q.set("student_id", String(params.student_id));
   if (params.status) q.set("status", params.status);
+  if (params.offset != null) q.set("offset", String(params.offset));
+  if (params.limit != null) q.set("limit", String(params.limit));
   const qs = q.toString();
-  return request<{ total: number; items: InterventionRow[] }>(
+  return request<{
+    total: number;
+    items: InterventionRow[];
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+  }>(
     `/interventions${qs ? `?${qs}` : ""}`
   );
 };

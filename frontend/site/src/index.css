@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/* 官网 C+B 设计令牌：与产品端共享暖纸、墨青、琥珀和低眩光暗面。 */
+@theme {
+  --color-paper: #f6f2e9;
+  --color-surface: #fffdf8;
+  --color-ink: #20302a;
+  --color-ink-soft: #52615a;
+  --color-ink-faint: #727d76;
+  --color-line: #e4ded0;
+  --color-line-strong: #cec5b3;
+  --color-primary: #0f766e;
+  --color-primary-deep: #115e59;
+  --color-annot: #b7791f;
+  --color-night: #0d2a27;
+  --color-night-2: #16463f;
+  --color-mint: #5eead4;
+  --font-display: "Outfit", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Noto Sans SC", "Outfit", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --color-paper: #0a0e16;
+  --color-surface: #121923;
+  --color-ink: #edf2f0;
+  --color-ink-soft: #a2b0aa;
+  --color-ink-faint: #7d8b86;
+  --color-line: #263143;
+  --color-line-strong: #3a4860;
+  --color-primary: #2dd4bf;
+  --color-primary-deep: #5eead4;
+  --color-annot: #f0b44d;
+  --color-night: #070b11;
+  --color-night-2: #0f191f;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    min-width: 320px;
+    min-height: 100vh;
+    background-image: radial-gradient(900px 380px at 86% -14%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+  /* 减弱动效：全站兜底（组件级另用 useReducedMotion 关位移） */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.paper-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+@media print {
+  :root[data-theme="dark"] {
+    --color-paper: #fff;
+    --color-surface: #fff;
+    --color-ink: #20302a;
+    --color-ink-soft: #52615a;
+    --color-ink-faint: #727d76;
+    --color-line: #e4ded0;
+    --color-line-strong: #cec5b3;
+    --color-primary: #0f766e;
+    --color-primary-deep: #115e59;
+  }
+}

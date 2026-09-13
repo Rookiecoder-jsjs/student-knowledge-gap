@@ -419,6 +419,10 @@ class Bridge:
     _reader: asyncio.Task | None = None
     last_used: float = field(default_factory=time.time)
 
+    def is_alive(self) -> bool:
+        """进程和 stdout 读取任务都必须存活，才算可继续承载 RPC/SSE。"""
+        return self.proc.poll() is None and self._reader is not None and not self._reader.done()
+
     @classmethod
     async def spawn(cls, teacher_id: int = 0) -> "Bridge":
         # 最小权限 env（装车批第 5 批）：白名单 + 该教师的签名 token（见 _child_env）——
@@ -450,27 +454,41 @@ class Bridge:
     async def _read_loop(self) -> None:
         loop = asyncio.get_running_loop()
         assert self.proc.stdout
-        while True:
-            line = await loop.run_in_executor(None, self.proc.stdout.readline)
-            if not line:
-                break
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            self.last_used = time.time()
-            if "id" in msg and ("result" in msg or "error" in msg):
-                fut = self._pending.pop(msg["id"], None)
-                if fut and not fut.done():
-                    if "error" in msg:
-                        fut.set_exception(RuntimeError(f"rpc error: {msg['error']}"))
-                    else:
-                        fut.set_result(msg.get("result"))
-            else:  # 通知 → 护栏观察 → 广播给所有 SSE 订阅者
-                self._observe_budget(msg)
-                event = json.dumps({"type": "event", **msg}, ensure_ascii=False)
-                for q in list(self.subscribers):
-                    q.put_nowait(event)
+        try:
+            while True:
+                line = await loop.run_in_executor(None, self.proc.stdout.readline)
+                if not line:
+                    break
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                self.last_used = time.time()
+                if "id" in msg and ("result" in msg or "error" in msg):
+                    fut = self._pending.pop(msg["id"], None)
+                    if fut and not fut.done():
+                        if "error" in msg:
+                            fut.set_exception(RuntimeError(f"rpc error: {msg['error']}"))
+                        else:
+                            fut.set_result(msg.get("result"))
+                else:  # 通知 → 护栏观察 → 广播给所有 SSE 订阅者
+                    self._observe_budget(msg)
+                    event = json.dumps({"type": "event", **msg}, ensure_ascii=False)
+                    for q in list(self.subscribers):
+                        q.put_nowait(event)
+        finally:
+            # stdout 提前关闭时，不能让 turn/start 一直等到 180s 超时；立即唤醒
+            # 所有挂起 RPC，由上层重建桥或把可读错误反馈给前端。
+            error = RuntimeError("app-server 连接已关闭")
+            for fut in list(self._pending.values()):
+                if not fut.done():
+                    fut.set_exception(error)
+            self._pending.clear()
+            # 同时结束旧 SSE 生成器。否则旧连接会永远等在自己的 queue 上，浏览器
+            # 以为连接仍健康，重建后的桥事件也无法抵达这个订阅。
+            for q in list(self.subscribers):
+                q.put_nowait(None)
+            self.subscribers.clear()
 
     def _observe_budget(self, msg: dict) -> None:
         """§5.7 token 闸：thread/tokenUsage/updated 累计，超预算自动收尾本轮。"""
@@ -534,11 +552,13 @@ _BRIDGES: dict[str, Bridge] = {}  # username | "trigger.<tid>" -> bridge
 # 返回，事件通道却空转，keepalive 还在）。in-flight future 合并并发首建：同键
 # 并发只 spawn 一次，其余等待同一结果。
 _SPAWNING: dict[str, asyncio.Future] = {}
+# 桥首次建立期间先登记 SSE queue，避免 turn/start 抢在 SSE 完成订阅前发出事件。
+_PENDING_SUBSCRIBERS: dict[str, set[asyncio.Queue]] = {}
 
 
 async def _get_or_spawn_bridge(key: str, teacher_id: int) -> Bridge:
     br = _BRIDGES.get(key)
-    if br is not None and br.proc.poll() is None:
+    if br is not None and br.is_alive():
         br.last_used = time.time()
         return br
     if br is not None:  # 死桥：回收后重建（重建同样过单飞，防并发重复 spawn）
@@ -558,6 +578,9 @@ async def _get_or_spawn_bridge(key: str, teacher_id: int) -> Bridge:
         fut.set_exception(e)
         raise
     else:
+        pending = _PENDING_SUBSCRIBERS.pop(key, None)
+        if pending:
+            br.subscribers.update(pending)
         _BRIDGES[key] = br
         fut.set_result(br)
     finally:
@@ -609,8 +632,21 @@ async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
 @app.get("/threads/{thread_id}/events")
 async def thread_events(thread_id: str, sess: Session = Depends(require_auth)):
     """SSE：该教师 app-server 的全部通知流（浏览器按 threadId 自行过滤）。"""
-    bridge = await get_bridge(sess.username, sess.teacher_id)
     queue: asyncio.Queue = asyncio.Queue()
+    pending = _PENDING_SUBSCRIBERS.setdefault(sess.username, set())
+    pending.add(queue)
+    try:
+        bridge = await get_bridge(sess.username, sess.teacher_id)
+    except BaseException:
+        pending.discard(queue)
+        if not pending:
+            _PENDING_SUBSCRIBERS.pop(sess.username, None)
+        raise
+    # 若桥在等待期间已完成首建，queue 会被上面的 transfer 提前接管；这里的
+    # discard 是幂等的，覆盖桥已存在的普通订阅路径。
+    pending.discard(queue)
+    if not pending:
+        _PENDING_SUBSCRIBERS.pop(sess.username, None)
     bridge.subscribers.add(queue)
 
     async def gen():
@@ -620,6 +656,8 @@ async def thread_events(thread_id: str, sess: Session = Depends(require_auth)):
             while True:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=30)
+                    if item is None:
+                        break
                     yield f"data: {item}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"

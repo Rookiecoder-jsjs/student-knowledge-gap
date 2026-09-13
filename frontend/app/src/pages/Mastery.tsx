@@ -108,7 +108,7 @@ export default function Mastery() {
                     <p className="mt-0.5 font-mono text-xs text-ink-faint">{k.code}</p>
                     <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-surface-2">
                       <div
-                        className={`h-full rounded-full transition-all duration-500 ${
+                        className={`h-full rounded-full transition-[width] duration-500 ${
                           mid ? "bg-accent" : "bg-danger"
                         }`}
                         style={{ width: `${Math.max(4, k.mastery * 100)}%` }}

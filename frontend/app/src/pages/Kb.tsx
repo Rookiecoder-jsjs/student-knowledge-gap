@@ -399,7 +399,7 @@ export default function Kb() {
             知识点（{chapters.reduce((n, [, ns]) => n + ns.length, 0)}）· 点开章节浏览，点击知识点看详情
             {!editable && " · 只读，由授权教师与管理员维护"}
           </p>
-          <Card className="divide-y divide-line px-3 py-1">
+          <Card className="max-h-[65vh] divide-y divide-line overflow-y-auto px-3 py-1">
             <StaggerList>
               {chapters.map(([ch, nodes]) => {
                 const open = isOpen(ch);

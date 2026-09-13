@@ -1,0 +1,9 @@
+# 本地端口避让覆盖（不入库）：同宿主其他容器（如 chromadb_kg）占用 8000 时，
+# 把 sc backend 的宿主调试端口挪到 18000。!override 使本列表**替换**而非合并主文件的
+# ports，原 127.0.0.1:8000 绑定不生效。仅影响宿主侧调试端口——容器网络内 backend:8000
+# 不变，:8080 部署形态完全不受影响。
+# 用法：docker compose -f deploy/docker-compose.yml -f deploy/compose.local-override.yml up -d
+services:
+  backend:
+    ports: !override
+      - "127.0.0.1:18000:8000"

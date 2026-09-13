@@ -1,14 +1,26 @@
 # sc 单机「基础可靠」部署（非多实例 HA；演进路径见 DEPLOY.md 末尾）。
 # 用法：cp backend/.env.example backend/.env  →  填 SC_LLM_*  →  cd deploy && docker compose up -d --build
 #
-# 三个服务：
+# 五个服务：
 #   backend  单 uvicorn 进程（架构不变量，见 DEPLOY.md「单进程原理」），崩溃自愈靠 restart
 #   frontend nginx 托管 SPA + /api 前缀剥离反代 backend（同源，免 CORS）
 #   backup   复用后端镜像跑备份循环（SQLite 热备，只读源库写独立 .bak，不构成第二写者）
+#   site     官网 SPA（独立入口，登录页通过构建参数回链到此服务）
 # 卷：
 #   sc-data    唯一不可丢失状态：sc.db(+WAL/SHM) + 批量上传临时文件（TMPDIR）
 #   sc-backups 备份产物（保留 N 份，与 DB 卷物理隔离，便于恢复演练）
 services:
+  site:
+    build:
+      context: ../frontend/site
+      args:
+        VITE_APP_URL: ${VITE_APP_URL:-http://127.0.0.1:8080}
+    image: sc-site:latest
+    ports:
+      - "127.0.0.1:5174:80"
+    restart: unless-stopped
+    stop_grace_period: 30s
+
   backend:
     build: ../backend
     image: sc-backend:latest
@@ -31,7 +43,10 @@ services:
       retries: 3
 
   frontend:
-    build: ../frontend/app
+    build:
+      context: ../frontend/app
+      args:
+        VITE_SITE_URL: ${VITE_SITE_URL:-http://127.0.0.1:5174}
     image: sc-frontend:latest
     ports:
       - "8080:80"

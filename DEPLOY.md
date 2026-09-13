@@ -13,7 +13,7 @@
 # 1) 准备环境变量（模板见 backend/.env.example；填 SC_LLM_* 才能真实调用 LLM）
 cp backend/.env.example backend/.env
 
-# 2) 构建并启动（backend + frontend + backup + gateway 四服务；compose 位于 deploy/ 目录）
+# 2) 构建并启动（site + backend + frontend + backup + gateway 五服务；compose 位于 deploy/ 目录）
 #    gateway 是会话网关（agent-product-design §10.1），首次构建前置一步：
 #    ① stage runtime 壳二进制（需本地代理已开，见文末「会话网关 gateway」）
 #    装车批第 5 批起 gateway 自包含（独立 requirements.txt），无 backend 先建顺序。
@@ -22,11 +22,15 @@ cd deploy
 docker compose up -d --build && cd ..
 
 # 3) 访问
+#    官网  : http://localhost:5174
 #    前端  : http://localhost:8080
 #    网关  : http://127.0.0.1:8100（Phase 1 会话网关；教师经前端登录后走 RPC/SSE）
 #    后端直连: http://127.0.0.1:8000（仅本机，不对外）  Swagger: /docs
 #    健康  : http://localhost:8080/healthz（nginx） /ready（就绪探针，经 nginx 透传）
 ```
+
+> 本地若存在 `deploy/compose.local-override.yml` 并叠加启动，后端宿主调试端口会改为
+> `127.0.0.1:18000`；官网 `:5174` 与应用 `:8080` 不变。
 
 首次使用先**导入知识库**（知识库 YAML 只负责导入，导入后 DB 即真源）：
 
@@ -45,7 +49,9 @@ curl -X POST http://localhost:8080/api/kb/import \
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `SC_DATABASE_URL` | `sqlite:///./sc.db` | 容器内 compose 固定为 `sqlite:////data/sc.db`（卷持久化）。迁 PG 只改此项 |
-| `SC_CORS_ORIGINS` | 空 | 逗号分隔允许来源；空 = 开发默认 `localhost:5173`。生产同源经 nginx，留空即可 |
+| `SC_CORS_ORIGINS` | 空 | 逗号分隔允许来源；空 = 开发默认 `localhost:5173`。Docker 应用经 nginx 同源反代，通常留空即可 |
+| `VITE_APP_URL` | `http://127.0.0.1:8080` | 官网构建参数：官网「登录」链接指向应用入口；有域名时在构建前覆盖 |
+| `VITE_SITE_URL` | `http://127.0.0.1:5174` | 应用构建参数：登录页「返回官网」链接；有域名时在构建前覆盖 |
 | `SC_USE_ALEMBIC` | 关 | `=1` 走 `alembic upgrade head`（G10），否则 `create_all` 兜底 |
 | `SC_LOG_LEVEL` | `INFO` | JSON 行日志级别（输出 stderr，容器友好） |
 | `SC_BACKUP_INTERVAL_HOURS` | `24` | 热备间隔小时 |
@@ -127,15 +133,15 @@ curl -s localhost:8080/ready
 ## 7. 常见运维（均在 `deploy/` 目录内执行）
 
 ```bash
-docker compose ps                            # 三服务状态（backend 应 healthy）
+docker compose ps                            # 五服务状态（backend 应 healthy）
 docker compose logs -f backend               # 后端结构化日志
 docker compose restart backend               # 手动重启（数据在卷中，安全）
-docker compose build && docker compose up -d # 升级（含前端重建）
+docker compose build && docker compose up -d # 升级（含官网与应用前端重建）
 ```
 
 ## 8. 会话网关 gateway（Phase 1 §10.1；装车批第 3 步 = runtime 魔改壳，第 5 步 = 容器级隔离）
 
-四服务之一：浏览器侧教师经网关（鉴权 RPC + SSE）连到 codex 壳；网关每教师 spawn 一个
+五服务之一：浏览器侧教师经网关（鉴权 RPC + SSE）连到 codex 壳；网关每教师 spawn 一个
 `codex-app-server` 子进程（stdio JSON-RPC）。壳经 `[mcp_servers.sc]`（CODEX_HOME
 config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 backend 进程（/mcp），
 教师身份逐请求经 `Authorization: Bearer`（网关按教师签发的 HMAC token）由 backend 验签；
@@ -145,7 +151,7 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
   不再 COPY backend） + runtime 壳二进制（codex-app-server/exec-server）。
 - **构建前置**：`deploy/stage-gateway-runtime.sh`（容器化 bazel 出两二进制到
   gateway/.runtime，需本地代理）。无 backend 先建顺序。镜像不构建于 CI（CI docker job
-  只 build backend/frontend + compose config）。
+  会校验 backend/frontend/site 镜像与 compose config；gateway runtime 仍需本地 staging）。
 - **env**：`env_file: ../backend/.env`（网关**进程**侧要 SC_AUTH_SECRET 签教师 token、
   SC_TRIGGER_KEY 验 /internal/*、SC_LLM_API_KEY 供播种取 key）；`environment` 覆盖
   `SC_GATEWAY_APP_SERVER=codex-app-server`（无子命令，args 空）。**agent 子进程 env 是

@@ -77,13 +77,17 @@ export function Shell({ children }: { children: ReactNode }) {
 
   // 待签发角标：进入页面与路由切换时刷新（§4.3 收件箱入口）
   const [draftCount, setDraftCount] = useState<number | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
+    setDraftError(null);
     inboxSummary()
       .then((s: InboxSummaryData) => {
         if (alive) setDraftCount(s.draft);
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if (alive) setDraftError(e instanceof Error ? e.message : "加载失败");
+      });
     return () => {
       alive = false;
     };
@@ -148,6 +152,14 @@ export function Shell({ children }: { children: ReactNode }) {
     (draftCount ?? 0) > 0 ? (
       <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white">
         {draftCount}
+      </span>
+    ) : draftError ? (
+      <span
+        className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-warn px-1 text-[10px] font-semibold text-white"
+        title="待签发数量加载失败"
+        aria-label="待签发数量加载失败"
+      >
+        !
       </span>
     ) : undefined;
 

@@ -41,9 +41,9 @@ export default function ClassPicker() {
 
       <div className="mx-auto w-full max-w-[1200px] flex-1 px-6 pb-12 pt-8">
         {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
-        <header className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f766e] via-[#14b8a6] to-[#2563eb] px-8 py-9 text-white shadow-lift">
+        <header className="brand-band mb-10 rounded-[18px] px-7 py-8 text-white sm:px-9 sm:py-10">
           <div className="flex items-center gap-4">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white backdrop-blur">
               <TreeStructure size={24} weight="bold" />
             </span>
             <div>
@@ -72,7 +72,7 @@ export default function ClassPicker() {
             </div>
             <Link
               to="/wizard"
-              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-[background-color,box-shadow,transform] hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
             >
               <PlusCircle size={17} />
               开始初始化（约 5 分钟）
@@ -109,13 +109,13 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group flex w-full flex-col rounded-xl border border-line bg-surface p-5 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:border-accent/40 hover:shadow-lift active:scale-[0.99]"
+      className="group flex w-full flex-col rounded-xl border border-line bg-surface p-5 text-left shadow-soft transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-1 hover:border-accent/40 hover:shadow-lift active:scale-[0.99]"
     >
       <div className="flex items-start justify-between">
         <p className="text-lg font-semibold tracking-tight">{c.name}</p>
         <ArrowRight
           size={18}
-          className="text-ink-faint transition-all group-hover:translate-x-0.5 group-hover:text-accent"
+          className="text-ink-faint transition-[color,transform] group-hover:translate-x-0.5 group-hover:text-accent"
         />
       </div>
       <p className="mt-1 text-xs text-ink-faint">
@@ -161,7 +161,7 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
         {total > 0 && (
           <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
             <div
-              className="h-full rounded-full bg-accent transition-all duration-500"
+              className="h-full rounded-full bg-accent transition-[width] duration-500"
               style={{ width: `${pct}%` }}
             />
           </div>

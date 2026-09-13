@@ -62,6 +62,7 @@ def list_drafts(
     status: str = "draft",
     offset: int = 0,
     limit: int = MAX_PAGE,
+    class_ids: list[int] | None = None,
 ) -> dict:
     """收件箱列表：默认待签发草稿，含差异预览（markdown 前 200 字）。"""
     if status not in VALID_STATUSES:
@@ -69,6 +70,8 @@ def list_drafts(
     conds = [Report.status == status]
     if class_id is not None:
         conds.append(Report.class_id == class_id)
+    elif class_ids is not None:
+        conds.append(Report.class_id.in_(class_ids or [-1]))
     total = session.scalar(select(func.count(Report.id)).where(*conds)) or 0
     rows = list(
         session.scalars(

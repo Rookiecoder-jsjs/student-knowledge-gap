@@ -1,6 +1,6 @@
 import { CheckCircle, XCircle } from "@phosphor-icons/react";
-import { useState } from "react";
-import { Badge, Button, Card, Page, PageHeader, Skeleton } from "../components/ui";
+import { useCallback, useEffect, useState } from "react";
+import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Skeleton } from "../components/ui";
 import { ACCENTS } from "../lib/theme";
 import {
   inboxList,
@@ -19,28 +19,43 @@ import {
  */
 
 export default function Inbox() {
+  const PAGE_SIZE = 20;
   const [items, setItems] = useState<InboxItem[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [full, setFull] = useState<ReportFull | null>(null);
 
-  const reload = async () => {
+  const loadPage = useCallback(async (targetPage: number) => {
+    setLoading(true);
+    setError(null);
     try {
-      const data = await inboxList("draft");
+      const data = await inboxList("draft", undefined, {
+        offset: (targetPage - 1) * PAGE_SIZE,
+        limit: PAGE_SIZE,
+      });
       setItems(data.items);
       setTotal(data.total);
+      setHasMore(data.has_more);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  // 首次加载（避免 useAsync 依赖签发后的刷新逻辑）
-  const [loaded, setLoaded] = useState(false);
-  if (!loaded) {
-    setLoaded(true);
-    void reload();
-  }
+  const reload = useCallback(() => loadPage(page), [loadPage, page]);
+
+  useEffect(() => {
+    void loadPage(page);
+  }, [loadPage, page]);
+  useEffect(() => {
+    if (items && items.length === 0 && total > 0 && page > 1) setPage((p) => p - 1);
+  }, [items, page, total]);
+  useEffect(() => setFull(null), [page]);
 
   const doIssue = async (id: number) => {
     setBusyId(id);
@@ -79,21 +94,23 @@ export default function Inbox() {
         desc="Agent 起草的报告在此等待教师确认；签发即生效，打回需附理由"
       />
 
-      {error && (
-        <Card className="mb-4 border-danger/30 bg-danger/5 p-3 text-sm text-danger">
-          {error}
+      {error && (items ? (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-2 border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+          <span>{error}（当前显示的是上一次成功加载的结果）</span>
+          <Button size="sm" variant="secondary" onClick={reload}>重试</Button>
         </Card>
-      )}
+      ) : <ErrorState message={error} onRetry={reload} />)}
 
-      {!items ? (
+      {!items && !error ? (
         <Skeleton rows={4} />
-      ) : items.length === 0 ? (
-        <Card className="p-10 text-center text-sm text-ink-faint">
-          暂无待签发的草稿。AI 起草的班级诊断单、改进意见会出现在这里。
-        </Card>
+      ) : items && items.length === 0 ? (
+        <Card><EmptyState title="暂无待签发草稿" hint="AI 起草的班级诊断单、改进意见会出现在这里。" /></Card>
       ) : (
         <div className="space-y-4">
-          <p className="text-xs text-ink-faint">共 {total} 份草稿待处理</p>
+          <div className="flex items-center justify-between gap-2 text-xs text-ink-faint">
+            <span>共 {total} 份草稿待处理</span>
+            {loading && <span role="status">刷新中…</span>}
+          </div>
 
           {/* 全文视图（点开某份草稿时） */}
           {full && (
@@ -115,7 +132,7 @@ export default function Inbox() {
             </Card>
           )}
 
-          {items.map((it) => (
+          {(items ?? []).map((it) => (
             <Card key={it.report_id} className="p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -167,6 +184,14 @@ export default function Inbox() {
               </p>
             </Card>
           ))}
+          <Pagination
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            hasMore={hasMore}
+            onPageChange={setPage}
+            disabled={loading}
+          />
         </div>
       )}
     </Page>
