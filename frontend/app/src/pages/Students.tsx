@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Page, PageHeader, Pagination, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
-import { enableStudentAccount, listInterventions, listStudents } from "../lib/api";
+import { enableStudentAccount, listAllInterventions, listStudents } from "../lib/api";
 import type { StudentInfo } from "../lib/types";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
@@ -27,11 +27,11 @@ export default function Students() {
   const flags = roleFlags(useAuth().session);
   // 干预摘要（intervention-loop §6）：每行 chip「N 项建议 · M 已执行」——聚合一次
   const iv = useAsync(
-    () => listInterventions({ class_id: cid, limit: 200 }),
+    () => listAllInterventions(cid),
     [cid]
   );
   const byStudent = new Map<number, { suggested: number; done: number; awaiting: number }>();
-  for (const row of iv.data?.items ?? []) {
+  for (const row of iv.data ?? []) {
     if (row.student_id == null) continue;
     const slot = byStudent.get(row.student_id) ?? { suggested: 0, done: 0, awaiting: 0 };
     if (row.status === "suggested") slot.suggested += 1;

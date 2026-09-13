@@ -134,28 +134,29 @@ def class_diagnosis_sheet(
         events_by_sk = get_events_batch(
             session, student_ids, list(graph.grade7_kp_ids()), as_of
         )
+        committed_student_ids = set(
+            session.scalars(
+                select(ExamResponse.student_id).where(
+                    ExamResponse.exam_template_id == latest.id,
+                    ExamResponse.status == "已提交",
+                )
+            )
+        )
         weak_kp_ids: set[int] = set()
         weak_count: dict[int, int] = {}
         n_assessed: dict[int, int] = {}
         per_class_common: dict[int, dict] = {}
-        for sid in [s for s in student_ids]:
-            resp = session.scalar(
-                select(ExamResponse.id).where(
-                    ExamResponse.exam_template_id == latest.id,
-                    ExamResponse.student_id == sid,
-                    ExamResponse.status == "已提交",
-                )
-            )
-            if resp is None:
+        for sid in student_ids:
+            if sid not in committed_student_ids:
                 continue
             for a in assess_student_kps(
                 session, graph, sid, class_id, as_of, events_by_sk=events_by_sk
             ):
                 if a.gate is not None or a.mastery is None:
                     continue
-                weak_kp_ids.add(a.kp_id)
                 n_assessed[a.kp_id] = n_assessed.get(a.kp_id, 0) + 1
                 if a.is_weak:
+                    weak_kp_ids.add(a.kp_id)
                     weak_count[a.kp_id] = weak_count.get(a.kp_id, 0) + 1
                     st = per_class_common.setdefault(
                         a.kp_id, {"name": a.kp_name, "values": [], "n": 0}

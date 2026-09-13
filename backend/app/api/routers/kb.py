@@ -9,11 +9,11 @@ from __future__ import annotations
 import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
-from app.api.deps import _active_kb, _graph, get_db, require_kb_editor, require_teacher
+from app.api.deps import _active_kb, _graph, get_db, guard_class, require_kb_editor, require_teacher
 from app.kb import edit as kb_edit
 from app.kb import versioning as kb_ver
 from app.kb.compatibility import compatibility
@@ -22,7 +22,7 @@ from app.kb.graph import KpGraph
 from app.kb.resolver import active_kb
 from app.ingestion.templates import suggest_question_tags
 from app.kb.loader import KbImportError, import_kb
-from app.models import KbVersion, KnowledgePoint, KpRelation
+from app.models import Class, KbVersion, KnowledgePoint, KpRelation
 from app.queries import kb as query_kb
 from app.schemas import (
     KbImportRequest,
@@ -83,6 +83,17 @@ def _kb_write_guard(db: Session, ctx, kb: KbVersion, *, govern: bool = False) ->
         raise HTTPException(
             403,
             f"知识库写权不含 {kb.subject}（{grade_txt}）：{kb.textbook_edition} v{kb.version}",
+        )
+
+
+def _kb_read_guard(db: Session, ctx, kb: KbVersion) -> None:
+    """范围教师的 KB 读取裁决（普通教师/admin 保持全校可读语义）。"""
+    if not _auth.can_read_kb(db, ctx, kb.subject, kb.grade):
+        grade_txt = f"年级{kb.grade}" if kb.grade is not None else "全年级"
+        raise HTTPException(
+            403,
+            f"知识库读取范围不含 {kb.subject}（{grade_txt}）："
+            f"{kb.textbook_edition} v{kb.version}",
         )
 
 
@@ -166,33 +177,82 @@ def list_kb_versions(
     versions = query_kb.kb_versions_list(db)
     scopes = _auth.subject_scopes(db, ctx)
     if scopes:
-        allowed = {s for s, _g in scopes}
-        versions = [v for v in versions if v.get("subject") in allowed]
+        versions = [
+            v for v in versions
+            if _auth.can_read_kb(db, ctx, v.get("subject"), v.get("grade"))
+        ]
     return {"versions": versions}
 
 
 @router.get("/kb/kps")
-def list_kps(kb_version_id: int | None = None, db: Session = Depends(get_db)):
+def list_kps(
+    kb_version_id: int | None = None,
+    class_id: int | None = None,
+    offset: int = 0,
+    limit: int = 200,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """知识库全部知识点（完整字段）。缺省取 active；?kb_version_id= 查指定版本。
 
     供向导进度勾选 / 审核台闭集选择器 / 知识库浏览页使用。
     """
-    if kb_version_id is not None:
+    if class_id is not None:
+        clazz = db.get(Class, class_id)
+        if clazz is None:
+            raise HTTPException(404, "班级不存在")
+        guard_class(class_id, db, ctx)
+        if kb_version_id is not None:
+            kb = db.get(KbVersion, kb_version_id)
+            if kb is None:
+                raise HTTPException(404, "知识库版本不存在")
+            expected = _auth.class_subject(db, ctx, clazz)
+            if kb.subject != expected:
+                raise HTTPException(400, "知识库版本与班级学科不匹配")
+            if kb.grade is not None and kb.grade != clazz.grade:
+                raise HTTPException(400, "知识库版本与班级年级不匹配")
+        else:
+            kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    elif kb_version_id is not None:
         kb = db.get(KbVersion, kb_version_id)
         if kb is None:
             raise HTTPException(404, "知识库版本不存在")
     else:
         kb = _active_kb(db)
+    _kb_read_guard(db, ctx, kb)
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= 200:
+        raise HTTPException(400, "limit 必须在 1 到 200 之间")
+    total = db.scalar(
+        select(func.count(KnowledgePoint.id)).where(
+            KnowledgePoint.kb_version_id == kb.id
+        )
+    ) or 0
     rows = db.scalars(
         select(KnowledgePoint)
         .where(KnowledgePoint.kb_version_id == kb.id)
         .order_by(KnowledgePoint.code)
+        .offset(offset)
+        .limit(limit)
     )
-    return {"kb_version_id": kb.id, "kps": [_kp_brief(k) for k in rows]}
+    kps = [_kp_brief(k) for k in rows]
+    return {
+        "kb_version_id": kb.id,
+        "kps": kps,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(kps) < total,
+    }
 
 
 @router.get("/kb/kps/{kp_id}")
-def kp_detail(kp_id: int, db: Session = Depends(get_db)):
+def kp_detail(
+    kp_id: int,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """单知识点详情：属性 + 前置链 + 直接前置 + 后继 + contains 关系（kb-edit §4.1）。
 
     聚合实现在 ``app.mcp_tools.get_kp_detail``（Agent 工具面共用一份，不复制）；
@@ -204,6 +264,10 @@ def kp_detail(kp_id: int, db: Session = Depends(get_db)):
     kp = db.get(KnowledgePoint, kp_id)
     if kp is None:
         raise HTTPException(404, f"知识点 {kp_id} 不存在")
+    kb = db.get(KbVersion, kp.kb_version_id)
+    if kb is None:
+        raise HTTPException(404, "知识点所属版本不存在")
+    _kb_read_guard(db, ctx, kb)
     try:
         return kp_detail_impl(db, _graph(db, kp.kb_version_id), kp_id)
     except LookupError as e:
@@ -211,7 +275,11 @@ def kp_detail(kp_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/kb/relations")
-def list_relations(kb_version_id: int | None = None, db: Session = Depends(get_db)):
+def list_relations(
+    kb_version_id: int | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """关系列表，按端点 kp 归属版本过滤（隐式版本隔离，kb-edit §4.1/§6.3）。"""
     if kb_version_id is not None:
         kb = db.get(KbVersion, kb_version_id)
@@ -219,6 +287,7 @@ def list_relations(kb_version_id: int | None = None, db: Session = Depends(get_d
             raise HTTPException(404, "知识库版本不存在")
     else:
         kb = _active_kb(db)
+    _kb_read_guard(db, ctx, kb)
     graph = _graph(db, kb.id)
     version_kp_ids = graph.kp_ids()
     out = []
@@ -483,7 +552,11 @@ def create_kb_version(
 
 
 @router.get("/kb/versions/{version_id}/compatibility")
-def kb_compatibility(version_id: int, db: Session = Depends(get_db)):
+def kb_compatibility(
+    version_id: int,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """与**同学科**当前 active 的 code 差集 + 〔v0.2〕属性 diff（切换前预览）。
 
     多学科口径：全局 active 会跨学科比错对象；同学科无 active（首激活）→
@@ -492,6 +565,7 @@ def kb_compatibility(version_id: int, db: Session = Depends(get_db)):
     target = db.get(KbVersion, version_id)
     if target is None:
         raise HTTPException(404, "版本不存在")
+    _kb_read_guard(db, ctx, target)
     active = active_kb(db, target.subject)
     if active is None or active is target:
         return {
@@ -548,7 +622,11 @@ def patch_kb_version(
 
 
 @router.get("/kb/export")
-def export_kb(kb_version_id: int | None = None, db: Session = Depends(get_db)):
+def export_kb(
+    kb_version_id: int | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """从 DB 现状生成 YAML（对齐 loader 可读回，kb-edit §4.6）。"""
     if kb_version_id is not None:
         kb = db.get(KbVersion, kb_version_id)
@@ -556,6 +634,7 @@ def export_kb(kb_version_id: int | None = None, db: Session = Depends(get_db)):
             raise HTTPException(404, "版本不存在")
     else:
         kb = _active_kb(db)
+    _kb_read_guard(db, ctx, kb)
     yaml_text = kb_ver.export_kb_yaml(db, kb)
     return Response(
         content=yaml_text,

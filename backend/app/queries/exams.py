@@ -24,11 +24,18 @@ from app.models import (
 )
 
 
-def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
-    stmt = select(ExamTemplate).order_by(ExamTemplate.exam_date.desc(), ExamTemplate.id)
+def _exam_filters(
+    class_id: int | None = None, class_ids: list[int] | None = None
+) -> list:
+    filters = []
     if class_id is not None:
-        stmt = stmt.where(ExamTemplate.class_id == class_id)
-    exams = list(session.scalars(stmt))
+        filters.append(ExamTemplate.class_id == class_id)
+    if class_ids is not None:
+        filters.append(ExamTemplate.class_id.in_(class_ids))
+    return filters
+
+
+def _aggregate_exam_rows(session: Session, exams: list[ExamTemplate]) -> list[dict]:
     exam_ids = [t.id for t in exams]
     if not exam_ids:
         return []
@@ -89,6 +96,39 @@ def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
             }
         )
     return out
+
+
+def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
+    """Return all exams, preserving the legacy unpaged response shape."""
+    stmt = select(ExamTemplate).where(*_exam_filters(class_id)).order_by(
+        ExamTemplate.exam_date.desc(), ExamTemplate.id
+    )
+    return _aggregate_exam_rows(session, list(session.scalars(stmt)))
+
+
+def exams_page(
+    session: Session,
+    class_id: int | None = None,
+    class_ids: list[int] | None = None,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict], int]:
+    """Return a database-paginated exam page and its total matching count."""
+    filters = _exam_filters(class_id, class_ids)
+    total = session.scalar(
+        select(func.count(ExamTemplate.id)).where(*filters)
+    ) or 0
+    if total == 0:
+        return [], 0
+    stmt = (
+        select(ExamTemplate)
+        .where(*filters)
+        .order_by(ExamTemplate.exam_date.desc(), ExamTemplate.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return _aggregate_exam_rows(session, list(session.scalars(stmt))), total
 
 
 def exam_detail(session: Session, exam_id: int) -> dict | None:

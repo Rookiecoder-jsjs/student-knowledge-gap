@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Card, EmptyState, ErrorState, Page, SectionTitle, Select, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { ReportMarkdown, ReportTOC } from "../components/Markdown";
-import { listExams, qualityReport } from "../lib/api";
+import { listAllExams, qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { getBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
@@ -19,7 +19,7 @@ export default function Quality() {
   const presetExamId = routeExamId ? Number(routeExamId) : null;
   const [params] = useSearchParams();
 
-  const exams = useAsync(() => listExams(cid), [cid]);
+  const exams = useAsync(async () => ({ exams: await listAllExams(cid) }), [cid]);
   // 工作区入口带 exam 参数时预设本场；直达入口默认最近一场
   const initialExam =
     presetExamId ??

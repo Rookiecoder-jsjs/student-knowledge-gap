@@ -27,7 +27,7 @@ from app.intervention import (
     intervention_effect,
     intervention_summary,
 )
-from app.models import Class, Intervention, Student
+from app.models import Class, Intervention, KnowledgePoint, Student
 from app.pipeline.progress import loop_states_for_student, row_loop_state
 
 router = APIRouter()
@@ -168,14 +168,6 @@ def list_interventions(
     total = db.scalar(select(func.count(Intervention.id)).where(*conds)) or 0
     stmt = select(Intervention).where(*conds).order_by(Intervention.id.desc())
     page = list(db.scalars(stmt.offset(offset).limit(limit)))
-    graph = None
-    if page:
-        _row_cls = db.get(Class, page[0].class_id)
-        kb = _active_kb(
-            db,
-            _auth.class_subject(db, ctx, _row_cls) if _row_cls is not None else None,
-        )
-        graph = _graph(db, kb.id)
     loop_cache: dict[int, dict[int, str]] = {}
     items = []
     for r in page:
@@ -184,7 +176,7 @@ def list_interventions(
             if r.student_id is not None
             else None
         )
-        items.append(_row_view(db, r, graph, loop=loop))
+        items.append(_row_view(db, r, loop=loop))
     return {
         "total": total,
         "offset": offset,
@@ -217,7 +209,14 @@ def _student_loop(
 def _row_view(
     db: Session, r: Intervention, graph=None, loop: dict[int, str] | None = None
 ) -> dict:
-    kp = graph.kp(r.kp_id) if graph is not None else None
+    # 干预行可能来自多个学科/历史版本；直接按 kp_id 回查，避免用第一页记录
+    # 的 graph 解释整页数据，导致混学科时错误名称或 KeyError。
+    kp = db.get(KnowledgePoint, r.kp_id)
+    if kp is None and graph is not None:
+        try:
+            kp = graph.kp(r.kp_id)
+        except KeyError:
+            kp = None
     alias = None
     if r.student_id is not None:
         stu = db.get(Student, r.student_id)

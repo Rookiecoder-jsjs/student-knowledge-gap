@@ -144,8 +144,14 @@ class KpGraph:
 
     def grade7_kp_ids(self) -> list[int]:
         """本年级（grade==图谱主年级）非容器知识点，排除小学衔接与已归档（分析层不纳入 archived）。"""
+        return self.grade_kp_ids(None)
+
+    def grade_kp_ids(self, grade: int | None = None) -> list[int]:
+        """返回指定年级的非容器知识点；缺省沿用图谱主年级口径。"""
         grades = {kp.grade for kp in self._kp.values()}
-        target = max(grades)  # 主年级 = 图谱中最高年级
+        if not grades:
+            return []
+        target = grade if grade in grades else max(grades)
         return [
             kp.id
             for kp in self._kp.values()

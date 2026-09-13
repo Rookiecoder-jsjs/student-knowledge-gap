@@ -213,7 +213,6 @@ def _reset_for_tests() -> None:
             _queue.get_nowait()
         except queue.Empty:
             break
-    _worker_started = False
 
 
 def _write_row(session_factory, row: LlmCallLog) -> bool:

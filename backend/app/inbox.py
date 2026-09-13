@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -149,11 +148,12 @@ def transition(
     }
 
 
-def inbox_summary(session: Session) -> dict:
-    """角标计数：各状态报告数（前端导航「待签发」徽标数据源）。"""
-    counts = dict(
-        session.execute(select(Report.status, func.count(Report.id)).group_by(Report.status)).all()
-    )
+def inbox_summary(session: Session, class_ids: list[int] | None = None) -> dict:
+    """角标计数；传入授权班级时只汇总该范围，避免跨班级元数据泄露。"""
+    stmt = select(Report.status, func.count(Report.id)).group_by(Report.status)
+    if class_ids is not None:
+        stmt = stmt.where(Report.class_id.in_(class_ids or [-1]))
+    counts = dict(session.execute(stmt).all())
     return {
         "draft": counts.get("draft", 0),
         "issued": counts.get("issued", 0),

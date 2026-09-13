@@ -7,7 +7,7 @@
   逐工具拒」更彻底）；带有效教师 token → 通过鉴权门（非 401/421）；开放模式无
   token → 匿名放行（非 401）；
 - 挂载冒烟：带 token 走完整 initialize + notifications/initialized + tools/list →
-  sc 的 9 工具在场（/mcp 挂载 + 逐请求鉴权端到端）。
+  sc 的 10 个工具在场（/mcp 挂载 + 逐请求鉴权端到端）。
 """
 
 from __future__ import annotations
@@ -19,7 +19,15 @@ from fastapi.testclient import TestClient
 
 from app import auth
 from app.db import Base
-from app.models import Class, KbVersion, School, Student, Teacher, TeacherClass
+from app.models import (
+    Class,
+    KbVersion,
+    School,
+    Student,
+    Teacher,
+    TeacherClass,
+    TeacherSubjectScope,
+)
 
 
 @pytest.fixture()
@@ -89,6 +97,13 @@ def test_contextvar_teacher_resolves_and_guards(adb):
         auth.assert_class_access(adb, ctx, c1.id)
         with pytest.raises(auth.PermissionError_):
             auth.assert_class_access(adb, ctx, c2.id)
+        # 无 class_id 的知识点详情也必须受学科范围约束，不能只靠调用方自觉传班级。
+        from app.mcp_server import ToolInputError, _guard_kb_read
+
+        adb.add(TeacherSubjectScope(teacher_id=jia.id, subject="语文", grade=7))
+        adb.commit()
+        with pytest.raises(ToolInputError):
+            _guard_kb_read(adb, kb.id)
     finally:
         auth.set_mcp_teacher_id(None)
 

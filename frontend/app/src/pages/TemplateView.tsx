@@ -1,7 +1,7 @@
 import { ArrowRight, SealCheck } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Button, Card, ErrorState, SectionTitle, Skeleton } from "../components/ui";
-import { examDetail, listExams } from "../lib/api";
+import { examDetail, findExamSummary } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 
 /** 阶段 1·建卷：试卷结构概览（题目、满分、知识点标注），只读。 */
@@ -10,8 +10,8 @@ export default function TemplateView() {
   const cid = Number(classId);
   const eid = Number(examId);
   const detail = useAsync(() => examDetail(eid), [eid]);
-  const exams = useAsync(() => listExams(cid), [cid]);
-  const unreviewed = exams.data?.exams.find((e) => e.exam_id === eid)?.unreviewed_tags ?? 0;
+  const exam = useAsync(() => findExamSummary(cid, eid), [cid, eid]);
+  const unreviewed = exam.data?.unreviewed_tags ?? 0;
 
   const totalScore = detail.data?.questions.reduce((s, q) => s + q.full_score, 0) ?? 0;
   const kpSet = new Set<string>();

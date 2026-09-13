@@ -15,6 +15,7 @@ import secrets
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
@@ -171,6 +172,17 @@ def test_can_write_and_govern_kb_scope_matching(adb):
     assert auth.can_govern_kb(adb, ctx_ker, "数学", 7) is False
 
 
+def test_can_read_kb_scope_matching(adb):
+    scoped = _teacher(adb, "科管", "krm")
+    adb.add(TeacherSubjectScope(teacher_id=scoped.id, subject="数学", grade=7))
+    adb.flush()
+    ctx = auth.AccessContext(teacher=scoped)
+    assert auth.can_read_kb(adb, ctx, "数学", 7) is True
+    assert auth.can_read_kb(adb, ctx, "数学", 8) is False
+    assert auth.can_read_kb(adb, ctx, "物理", 7) is False
+    assert auth.can_read_kb(adb, ctx, "数学", None) is True
+
+
 # ---------------------------------------------------------------------------
 # API 层
 # ---------------------------------------------------------------------------
@@ -210,14 +222,14 @@ def rbac_client(tmp_path):
                              grade=7, semester=1, cog_levels_expected=["应用"],
                              difficulty_prior=0.5, mastery_floor=0.6))
 
-    root = _teacher(s, "管理员", "root", admin=True)
+    _teacher(s, "管理员", "root", admin=True)
     krm = _teacher(s, "科管", "krm")
     s.add(TeacherSubjectScope(teacher_id=krm.id, subject="数学", grade=7))
     ban = _teacher(s, "班主任", "ban")
     c1.homeroom_teacher_id = ban.id
     ker = _teacher(s, "kb编辑", "ker")
     ker.kb_editor = True
-    plain = _teacher(s, "普通", "plain")
+    _teacher(s, "普通", "plain")
     stu1 = Student(school_id=school.id, class_id=c1.id, name_or_alias="学生一", external_code="S001")
     stu2 = Student(school_id=school.id, class_id=c2.id, name_or_alias="学生二", external_code="S002")
     s.add_all([stu1, stu2])
@@ -279,6 +291,58 @@ def test_versions_list_filtered_by_scope(rbac_client):
     ker = _login(client, "ker")["token"]
     subjects_ker = {v["subject"] for v in client.get("/kb/versions", headers=_H(ker)).json()["versions"]}
     assert subjects_ker == {"数学", "物理"}
+
+
+def test_scoped_teacher_read_routes_are_subject_filtered(rbac_client):
+    client, S, ids = rbac_client
+    krm = _login(client, "krm")["token"]
+    headers = _H(krm)
+    with S() as s:
+        phys_kp = s.scalar(
+            select(KnowledgePoint).where(
+                KnowledgePoint.kb_version_id == ids["phys_active"]
+            )
+        )
+        assert phys_kp is not None
+
+    for path in (
+        f"/kb/kps?kb_version_id={ids['phys_active']}",
+        f"/kb/kps/{phys_kp.id}",
+        f"/kb/relations?kb_version_id={ids['phys_active']}",
+        f"/kb/versions/{ids['phys_active']}/compatibility",
+        f"/kb/export?kb_version_id={ids['phys_active']}",
+    ):
+        assert client.get(path, headers=headers).status_code == 403, path
+
+    assert client.get(
+        f"/kb/kps?kb_version_id={ids['math_active']}", headers=headers
+    ).status_code == 200
+
+
+def test_exam_creation_rejects_cross_subject_kb(rbac_client):
+    client, _S, ids = rbac_client
+    root = _login(client, "root")["token"]
+    payload = {
+        "kb_version_id": ids["phys_active"],
+        "class_id": ids["c1"],
+        "name": "错误学科考试",
+        "exam_date": "2026-09-13",
+        "type": "单元",
+        "questions": [
+            {"idx": 1, "stem": "题目", "q_type": "解答", "full_score": 10, "kps": []}
+        ],
+    }
+    r = client.post("/exams", headers=_H(root), json=payload)
+    assert r.status_code == 400
+    assert "学科" in r.json()["detail"]
+
+
+def test_list_kps_can_resolve_class_subject(rbac_client):
+    client, _S, ids = rbac_client
+    root = _login(client, "root")["token"]
+    r = client.get("/kb/kps", params={"class_id": ids["c1"]}, headers=_H(root))
+    assert r.status_code == 200
+    assert r.json()["kb_version_id"] == ids["math_active"]
 
 
 def test_kb_write_matrix_by_scope(rbac_client):

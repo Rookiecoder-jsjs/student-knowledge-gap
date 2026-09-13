@@ -102,6 +102,13 @@ interface HistoryTurn {
   error?: { message?: string } | null;
 }
 
+interface ServerRequest {
+  id: number | string;
+  method: string;
+  params: Record<string, unknown>;
+  kind: "approval" | "elicitation";
+}
+
 /** 思考强度中文短标（models.json 描述为英文；未知档位回退原值）。 */
 const EFFORT_LABELS: Record<string, string> = {
   minimal: "最简",
@@ -136,8 +143,9 @@ const TOOL_LABELS: Record<string, string> = {
   get_teaching_progress: "核对教学进度",
   get_student_progress: "对账干预进度",
   list_students: "核对学生范围",
-  create_report_draft: "起草报告草稿",
-  record_intervention: "记录干预建议",
+  // MCP 注册名包含 _tool 后缀，必须与 item.mcpToolCall.tool 完全一致。
+  create_report_draft_tool: "起草报告草稿",
+  record_intervention_tool: "记录干预建议",
 };
 
 function toolLabel(tool: string): string {
@@ -191,6 +199,7 @@ export default function Assistant() {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [serverRequest, setServerRequest] = useState<ServerRequest | null>(null);
   const [streamState, setStreamState] = useState<"connecting" | "connected" | "reconnecting">("connecting");
   const threadIdRef = useRef<string | null>(null);
   const turnSeqRef = useRef(0);
@@ -239,6 +248,43 @@ export default function Assistant() {
       return body.result;
     },
     [base, token],
+  );
+
+  const respondToServerRequest = useCallback(
+    async (request: ServerRequest, result: object) => {
+      if (!token) throw new Error("未登录");
+      const r = await fetch(`${base}/rpc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: request.id, result }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(body.detail ?? `响应审批请求失败（HTTP ${r.status}）`);
+      }
+    },
+    [base, token],
+  );
+
+  const resolveServerRequest = useCallback(
+    async (decision: "accept" | "decline" | "cancel") => {
+      if (!serverRequest) return;
+      try {
+        const result =
+          serverRequest.kind === "elicitation"
+            ? {
+                action: decision === "accept" ? "accept" : decision,
+                content: decision === "accept" ? {} : null,
+              }
+            : { decision };
+        await respondToServerRequest(serverRequest, result);
+        setServerRequest(null);
+      } catch (e) {
+        setItems((prev) => [...prev, { kind: "notice", text: `审批响应失败：${(e as Error).message}` }]);
+      }
+    },
+    [respondToServerRequest, serverRequest],
   );
 
   const loadThreads = useCallback(async (append = false) => {
@@ -432,7 +478,7 @@ export default function Assistant() {
               buf = buf.slice(idx + 2);
               const line = frame.split("\n").find((l) => l.startsWith("data: "));
               if (!line) continue;
-              let ev: { method?: string; params?: Record<string, unknown> };
+              let ev: { id?: number | string; method?: string; params?: Record<string, unknown> };
               try {
                 ev = JSON.parse(line.slice(6));
               } catch {
@@ -455,11 +501,43 @@ export default function Assistant() {
   }, [token, base]);
 
   const handleEvent = useCallback(
-    (ev: { method?: string; params?: Record<string, unknown> }) => {
+    (ev: { id?: number | string; method?: string; params?: Record<string, unknown> }) => {
       const params = ev.params ?? {};
       const evThread =
         (params.threadId as string) ?? (params.thread as { id?: string } | undefined)?.id ?? null;
       if (evThread && threadIdRef.current && evThread !== threadIdRef.current) return;
+
+      // server-initiated approval 必须回传原 request id；否则 app-server 会一直
+      // 等待，前端表现为回合卡住。审批在对话区内完成，写入工具仍保持教师终审。
+      if (
+        ev.id != null &&
+        (ev.method === "item/commandExecution/requestApproval" ||
+          ev.method === "item/fileChange/requestApproval" ||
+          ev.method === "item/permissions/requestApproval" ||
+          ev.method?.endsWith("/requestApproval"))
+      ) {
+        setServerRequest({
+          id: ev.id,
+          method: ev.method ?? "requestApproval",
+          params,
+          kind: "approval",
+        });
+        return;
+      }
+      if (ev.id != null && ev.method === "mcpServer/elicitation/request") {
+        setServerRequest({ id: ev.id, method: ev.method, params, kind: "elicitation" });
+        return;
+      }
+      // 当前工作台暂不支持结构化追问；明确返回空答案，让回合收到可读失败而非
+      // 永久等待。后续增加表单时可复用同一 server-request 回传通道。
+      if (ev.id != null && ev.method === "item/tool/requestUserInput") {
+        void respondToServerRequest(
+          { id: ev.id, method: ev.method, params, kind: "elicitation" },
+          { answers: {} },
+        );
+        setItems((prev) => [...prev, { kind: "notice", text: "教研员请求补充信息，但当前界面暂不支持该表单，已跳过。" }]);
+        return;
+      }
 
       // 流式生命周期（key=codex item id）：started 建流式项 → delta 增量并入 →
       // completed 以权威文本收口。completed 兼容无 started 项（SSE 重连丢事件）：
@@ -571,14 +649,16 @@ export default function Assistant() {
       } else if (ev.method === "warning") {
         setItems((prev) => [...prev, { kind: "notice", text: String(params.message ?? "警告") }]);
       } else if (ev.method === "turn/completed") {
+        setServerRequest(null);
         setBusy(false);
         void reloadThreads();
       } else if (ev.method === "error") {
+        setServerRequest(null);
         setItems((prev) => [...prev, { kind: "notice", text: String(params.message ?? "错误") }]);
         setBusy(false);
       }
     },
-    [reloadThreads],
+    [reloadThreads, respondToServerRequest],
   );
 
   const send = async () => {
@@ -594,7 +674,7 @@ export default function Assistant() {
       if (!threadIdRef.current) {
         const started = (await rpc("thread/start", {
           cwd: "/tmp",
-          approvalPolicy: "never",
+          approvalPolicy: "on-request",
         })) as { thread?: { id?: string } } | null;
         const tid = started?.thread?.id ?? null;
         threadIdRef.current = tid;
@@ -615,6 +695,7 @@ export default function Assistant() {
       await rpc("turn/start", {
         threadId: threadIdRef.current,
         input: [{ type: "text", text }],
+        approvalPolicy: "on-request",
       }); // 阻塞至 turn 完成；正文经 SSE 流式到达
       const tid = threadIdRef.current;
       if (tid) {
@@ -976,6 +1057,43 @@ export default function Assistant() {
                       </span>
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+            {serverRequest && (
+              <div className="rounded-xl border border-warn/40 bg-warn/10 p-4" role="alert">
+                <div className="flex items-start gap-3">
+                  <Info size={18} className="mt-0.5 shrink-0 text-warn" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-ink">需要教师确认</p>
+                    <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                      {String(
+                        serverRequest.params.reason ??
+                          serverRequest.params.message ??
+                          (serverRequest.params.meta as { codex_tool_title?: string } | undefined)
+                            ?.codex_tool_title ??
+                          "教研员准备执行一项需要确认的操作",
+                      )}
+                    </p>
+                    {!!serverRequest.params.command && (
+                      <code className="mt-2 block max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-surface px-2.5 py-2 text-[11px] text-ink-soft">
+                        {String(serverRequest.params.command)}
+                      </code>
+                    )}
+                    {!!serverRequest.params.cwd && (
+                      <p className="mt-1 truncate text-[11px] text-ink-faint">
+                        目录：{String(serverRequest.params.cwd)}
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => void resolveServerRequest("accept")}>
+                        允许继续
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => void resolveServerRequest("decline")}>
+                        拒绝
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

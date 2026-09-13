@@ -37,7 +37,6 @@ from app.models import (
 from app.pipeline.attribution import (
     ATTR_CONFUSABLE,
     ATTR_FORGET,
-    ATTR_INSUFFICIENT,
     ATTR_PREREQ,
     resolve_attributions,
 )

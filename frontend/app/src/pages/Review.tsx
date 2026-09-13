@@ -2,7 +2,7 @@ import { Check, PencilLine, SealCheck } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "../components/ui";
-import { approveTags, examDetail, listKps, patchAnswer, patchTags, reviewQueue } from "../lib/api";
+import { approveTags, examDetail, listAllKps, patchAnswer, patchTags, reviewQueue } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { bandLabel } from "../lib/labels";
 
@@ -15,7 +15,10 @@ export default function Review() {
 
   const detail = useAsync(() => examDetail(eid), [eid]);
   const queue = useAsync(() => reviewQueue(eid), [eid]);
-  const kps = useAsync(() => listKps(), []);
+  const kps = useAsync(
+    () => listAllKps(undefined, cid).then((rows) => ({ kps: rows })),
+    [cid],
+  );
 
   const [editingQ, setEditingQ] = useState<number | null>(null);
   const [draft, setDraft] = useState("");

@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Page, StatusDot } from "./ui";
-import { listExams } from "../lib/api";
+import { findExamSummary } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 
@@ -23,11 +23,10 @@ export function ExamWorkspace({ stage, children }: { stage: number; children: Re
   const cid = Number(classId);
   const eid = Number(examId);
   const base = `/c/${cid}/exams/${eid}`;
-  const exams = useAsync(() => listExams(cid), [cid]);
-  const exam = exams.data?.exams.find((e) => e.exam_id === eid);
+  const exam = useAsync(() => findExamSummary(cid, eid), [cid, eid]);
 
-  const committed = (exam?.response_counts["已提交"] ?? 0) > 0;
-  const reviewed = (exam?.unreviewed_tags ?? 0) === 0;
+  const committed = (exam.data?.response_counts["已提交"] ?? 0) > 0;
+  const reviewed = (exam.data?.unreviewed_tags ?? 0) === 0;
 
   // 各阶完成条件
   const done: Record<number, boolean> = {
@@ -52,18 +51,18 @@ export function ExamWorkspace({ stage, children }: { stage: number; children: Re
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold tracking-tight text-ink">
-              {exam?.name ?? "考试"}
+              {exam.data?.name ?? "考试"}
             </h1>
-            {exam && (
-              <span className="text-xs text-ink-faint">
-                {exam.exam_date} · {exam.type} · {exam.question_count} 题
-              </span>
-            )}
+              {exam.data && (
+                <span className="text-xs text-ink-faint">
+                {exam.data.exam_date} · {exam.data.type} · {exam.data.question_count} 题
+                </span>
+              )}
           </div>
           <div className="flex items-center gap-2 text-xs">
-            {exam && exam.unreviewed_tags > 0 && (
+            {exam.data && exam.data.unreviewed_tags > 0 && (
               <span className="rounded-md bg-warn-soft px-2 py-0.5 font-medium text-warn">
-                {exam.unreviewed_tags} 标注待审核
+                {exam.data.unreviewed_tags} 标注待审核
               </span>
             )}
             {committed ? (

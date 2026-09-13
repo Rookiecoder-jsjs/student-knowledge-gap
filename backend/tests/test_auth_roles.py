@@ -160,8 +160,8 @@ def sec_client(tmp_path):
         s.add(KnowledgePoint(kb_version_id=kb.id, code=code, name=f"点{code}",
                              grade=7, semester=1, cog_levels_expected=["应用"],
                              difficulty_prior=0.5, mastery_floor=0.6))
-    jia = _teacher(s, "甲老师", "jia", "pass123")
-    root = _teacher(s, "管理员", "root", "pass123", admin=True)
+    _teacher(s, "甲老师", "jia", "pass123")
+    _teacher(s, "管理员", "root", "pass123", admin=True)
     stu = _student(s, c1.id, "学生丁", external_code="S004")
     auth.enable_student_login(s, stu.id, "studentpw", username="stu004")
     s.commit()
@@ -334,13 +334,23 @@ def test_list_teachers_admin_only_shape(sec_client):
     assert client.get("/auth/teachers", headers=_H(jia)).status_code == 403
     r = client.get("/auth/teachers", headers=_H(root))
     assert r.status_code == 200, r.text
-    rows = {t["name"]: t for t in r.json()["teachers"]}
+    body = r.json()
+    assert body["total"] == len(body["teachers"])
+    assert body["offset"] == 0 and body["has_more"] is False
+    rows = {t["name"]: t for t in body["teachers"]}
     assert "管理员" in rows and "甲老师" in rows
     t = rows["甲老师"]
     assert t["username"] == "jia" and t["admin"] is False
     assert t["kb_editor"] is False
     assert isinstance(t["classes"], list)
     assert t["teacher_id"] > 0
+
+    page = client.get("/auth/teachers?offset=1&limit=1", headers=_H(root))
+    assert page.status_code == 200, page.text
+    assert page.json()["offset"] == 1
+    assert len(page.json()["teachers"]) == 1
+    assert page.json()["total"] == body["total"]
+    assert page.json()["has_more"] is (body["total"] > 2)
 
 
 def test_list_students_exposes_account_state(sec_client):

@@ -13,8 +13,9 @@
 
 协议（浏览器侧）：
 - POST /auth/login {username, password} → {token, teacher_id, classes}
-- POST /rpc        Authorization: Bearer <token>；body {"method","params","id"?}
-                   → {"result"| "error"}（app-server 的 request/response 对）
+- POST /rpc        Authorization: Bearer <token>；普通调用 body {"method","params","id"?}；
+                   server-request 回应 body {"id","result"|"error"}，均透传 app-server
+                   的 request/response 对
 - GET  /threads/{tid}/events  同上鉴权；SSE 流：app-server 该线程的全部通知
 - GET  /health
 
@@ -534,6 +535,24 @@ class Bridge:
         self.proc.stdin.flush()
         return await asyncio.wait_for(fut, timeout)
 
+    def respond(
+        self,
+        request_id: int | str,
+        *,
+        result: object | None = None,
+        error: dict | None = None,
+    ) -> None:
+        """把浏览器对 app-server server-request 的响应原样写回 stdin。"""
+        if not self.is_alive() or self.proc.stdin is None:
+            raise RuntimeError("app-server 连接已关闭")
+        payload: dict[str, object] = {"jsonrpc": "2.0", "id": request_id}
+        if error is not None:
+            payload["error"] = error
+        else:
+            payload["result"] = result
+        self.proc.stdin.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self.proc.stdin.flush()
+
     def stop(self) -> None:
         if self._reader:
             self._reader.cancel()
@@ -599,9 +618,11 @@ async def get_bridge(username: str, teacher_id: int = 0) -> Bridge:
 
 
 class RpcReq(BaseModel):
-    method: str
+    method: str | None = None
     params: dict = {}
     id: int | str | None = None
+    result: object | None = None
+    error: dict | None = None
 
 
 @app.post("/rpc")
@@ -612,6 +633,18 @@ async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
     收尾说明（优雅降级：已完成调查照常呈现，不是报错）。
     """
     bridge = await get_bridge(sess.username, sess.teacher_id)
+    # app-server 的审批/输入请求是 server-initiated JSON-RPC；浏览器通过同一
+    # 端点回传 {id,result|error}，不能再走 Bridge.request（会生成新 id）。
+    if req.method is None:
+        fields = req.model_fields_set
+        if req.id is None:
+            raise HTTPException(400, "server-request 响应缺少 id")
+        has_result = "result" in fields
+        has_error = "error" in fields
+        if has_result == has_error:
+            raise HTTPException(400, "响应必须且只能包含 result 或 error")
+        bridge.respond(req.id, result=req.result, error=req.error)
+        return {"id": req.id, "result": {"accepted": True}}
     if req.method == "turn/start":
         thread_id = str((req.params or {}).get("threadId") or "")
         if thread_id:

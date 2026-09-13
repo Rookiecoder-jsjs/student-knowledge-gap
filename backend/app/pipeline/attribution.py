@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import (
@@ -33,7 +33,7 @@ from app.config import (
     PREREQ_ROOT_THRESHOLD,
 )
 from app.kb.graph import KpGraph
-from app.models import Attribution, EvidenceEvent, Student, TeachingProgress
+from app.models import Attribution, EvidenceEvent, Student
 from app.pipeline.mastery import evidence_summary, mastery_at, mastery_series
 from app.pipeline.weakness import (
     GATE_INSUFFICIENT,

@@ -516,6 +516,24 @@ def _scope_covers(
     return (subject, grade) in scopes
 
 
+def can_read_kb(
+    db: Session, ctx: AccessContext, subject: str | None, grade: int | None = None
+) -> bool:
+    """知识库读取范围裁决。
+
+    普通教师沿用既有语义（可读全校知识库）；学科范围教师按学科×年级
+    收窄。未标年级版本视为该学科的共享版本，与写权限的匹配规则一致。
+    """
+    scopes = subject_scopes(db, ctx)
+    if scopes is None or not scopes:
+        return True
+    if subject is None:
+        return False
+    if grade is None:
+        return any(s == subject for s, _g in scopes)
+    return any(s == subject and (g == grade or g is None) for s, g in scopes)
+
+
 def can_write_kb(
     db: Session, ctx: AccessContext, subject: str | None, grade: int | None = None
 ) -> bool:

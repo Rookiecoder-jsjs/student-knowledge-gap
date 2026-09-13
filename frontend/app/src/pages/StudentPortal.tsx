@@ -6,7 +6,7 @@ import {
   Student,
   Warning,
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AccountCluster, TopBar, TopBarNav } from "../components/TopBar";
 import { LoopStateChip } from "../components/ActionPlan";
@@ -78,6 +78,8 @@ const TABS: { key: Tab; label: string; icon: typeof Warning; seg: string }[] = [
   { key: "reports", label: "我的报告", icon: ClipboardText, seg: "/reports" },
   { key: "plan", label: "我的改进单", icon: Student, seg: "/plan" },
 ];
+
+const PORTAL_PAGE_SIZE = 50;
 
 function tabFromPath(path: string, base: string): Tab {
   const rest = path.startsWith(base) ? path.slice(base.length) : "";
@@ -273,11 +275,44 @@ function StudyTab({ source }: { source: PortalSource }) {
 }
 
 function StudyList({ source }: { source: PortalSource }) {
+  const [extraRecords, setExtraRecords] = useState<StudyRecordListItem[]>([]);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const { data, loading, error, reload } = useAsync(
-    () => portalCall(source, meStudyRecords, portalStudyRecords),
+    () =>
+      portalCall(
+        source,
+        () => meStudyRecords({ offset: 0, limit: PORTAL_PAGE_SIZE }),
+        (sid) => portalStudyRecords(sid, { offset: 0, limit: PORTAL_PAGE_SIZE }),
+      ),
     [source.kind, source.studentId]
   );
-  const records = data?.records ?? [];
+  useEffect(() => {
+    setExtraRecords([]);
+    setMoreError(null);
+  }, [source.kind, source.studentId]);
+
+  const records = [...(data?.records ?? []), ...extraRecords];
+  const hasMore = Boolean(data && records.length < data.total);
+  const loadMore = async () => {
+    if (!data || !hasMore || moreLoading) return;
+    setMoreLoading(true);
+    setMoreError(null);
+    try {
+      const next =
+        source.kind === "preview"
+          ? await portalStudyRecords(source.studentId ?? 0, {
+              offset: records.length,
+              limit: PORTAL_PAGE_SIZE,
+            })
+          : await meStudyRecords({ offset: records.length, limit: PORTAL_PAGE_SIZE });
+      setExtraRecords((current) => [...current, ...next.records]);
+    } catch (e) {
+      setMoreError(e instanceof Error ? e.message : "加载更多失败");
+    } finally {
+      setMoreLoading(false);
+    }
+  };
   const doing = records.filter((r: StudyRecordListItem) => !r.self_marked_at);
   const marked = records.filter((r: StudyRecordListItem) => r.self_marked_at);
 
@@ -332,6 +367,12 @@ function StudyList({ source }: { source: PortalSource }) {
           </p>
           {marked.map(row)}
         </>
+      )}
+      {moreError && <p className="text-xs text-danger">{moreError}</p>}
+      {hasMore && (
+        <Button variant="secondary" size="sm" className="w-full" onClick={loadMore} disabled={moreLoading}>
+          {moreLoading ? "加载中…" : "加载更多"}
+        </Button>
       )}
     </div>
   );
@@ -482,10 +523,22 @@ function ReportsTab({
   source: PortalSource;
   deepReportId?: number | null;
 }) {
+  const [extraRows, setExtraRows] = useState<ReportRow[]>([]);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const { data, loading, error, reload } = useAsync(
-    () => portalCall(source, meReports, portalReports),
+    () =>
+      portalCall(
+        source,
+        () => meReports({ offset: 0, limit: PORTAL_PAGE_SIZE }),
+        (sid) => portalReports(sid, { offset: 0, limit: PORTAL_PAGE_SIZE }),
+      ),
     [source.kind, source.studentId]
   );
+  useEffect(() => {
+    setExtraRows([]);
+    setMoreError(null);
+  }, [source.kind, source.studentId]);
   const [openId, setOpenId] = useState<number | null>(deepReportId);
   const detail = useAsync(
     () =>
@@ -498,7 +551,27 @@ function ReportsTab({
         : Promise.reject(new Error("无")),
     [source.kind, source.studentId, openId]
   );
-  const rows = (data?.reports ?? []) as ReportRow[];
+  const rows = [...((data?.reports ?? []) as ReportRow[]), ...extraRows];
+  const hasMore = Boolean(data && rows.length < data.total);
+  const loadMore = async () => {
+    if (!data || !hasMore || moreLoading) return;
+    setMoreLoading(true);
+    setMoreError(null);
+    try {
+      const next =
+        source.kind === "preview"
+          ? await portalReports(source.studentId ?? 0, {
+              offset: rows.length,
+              limit: PORTAL_PAGE_SIZE,
+            })
+          : await meReports({ offset: rows.length, limit: PORTAL_PAGE_SIZE });
+      setExtraRows((current) => [...current, ...(next.reports as ReportRow[])]);
+    } catch (e) {
+      setMoreError(e instanceof Error ? e.message : "加载更多失败");
+    } finally {
+      setMoreLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -532,6 +605,12 @@ function ReportsTab({
           )}
         </Card>
       ))}
+      {moreError && <p className="text-xs text-danger">{moreError}</p>}
+      {hasMore && (
+        <Button variant="secondary" size="sm" className="w-full" onClick={loadMore} disabled={moreLoading}>
+          {moreLoading ? "加载中…" : "加载更多"}
+        </Button>
+      )}
     </div>
   );
 }

@@ -25,7 +25,7 @@ import {
   createTeacher,
   grantTeacherClasses,
   listClasses,
-  listTeachers,
+  listAllTeachers,
   setHomeroom,
   setSubjectScopes,
   setTeacherKbEditor,
@@ -62,7 +62,7 @@ const EMPTY_FORM: CreateForm = { name: "", username: "", password: "", admin: fa
 const COMMON_SUBJECTS = ["数学", "语文", "英语", "物理", "化学", "生物", "历史", "地理", "道德与法治"];
 
 export default function Accounts() {
-  const teachers = useAsync(() => listTeachers(), []);
+  const teachers = useAsync(() => listAllTeachers(), []);
   const classes = useAsync(() => listClasses(), []);
   const classRows = classes.data?.classes ?? [];
 
@@ -183,7 +183,7 @@ export default function Accounts() {
     }
   };
 
-  const rows = teachers.data?.teachers ?? [];
+  const rows = teachers.data ?? [];
   const teacherOptions = rows.map((t) => ({ id: t.teacher_id, name: t.name }));
   const toggle = (id: number) =>
     setGrantSel((prev) => {

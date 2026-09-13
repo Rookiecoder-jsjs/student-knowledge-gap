@@ -14,7 +14,7 @@ task/日 聚合，管理端「本月消耗」页数据源。
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session

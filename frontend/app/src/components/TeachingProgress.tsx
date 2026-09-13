@@ -1,7 +1,7 @@
 import { Plus, Trash } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Button, Card, ErrorState, Modal, Skeleton } from "./ui";
-import { deleteProgress, getProgress, listKps, patchProgress, updateProgress } from "../lib/api";
+import { deleteProgress, getProgress, listAllKps, patchProgress, updateProgress } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 
 /**
@@ -10,17 +10,17 @@ import { useAsync } from "../lib/hooks";
  */
 export function TeachingProgressCard({ classId }: { classId: number }) {
   const progress = useAsync(() => getProgress(classId), [classId]);
-  const kps = useAsync(() => listKps(), []);
+  const kps = useAsync(() => listAllKps(undefined, classId), [classId]);
   const [manageOpen, setManageOpen] = useState(false);
 
   const taught = progress.data?.progress ?? [];
-  const total = (kps.data?.kps ?? []).filter((k) => !k.archived).length;
+  const total = (kps.data ?? []).filter((k) => !k.archived).length;
   const pct = total > 0 ? Math.round((taught.length / total) * 100) : 0;
 
   // 按章节聚合已教/总数，呈现进度分布（高密度、有界高度）
   const taughtSet = new Set(taught.map((p) => p.code));
   const chapterMap = new Map<string, { taught: number; total: number }>();
-  for (const k of kps.data?.kps ?? []) {
+  for (const k of kps.data ?? []) {
     if (k.archived || k.code.startsWith("C")) continue;
     const ch = k.chapter || "未分组";
     const e = chapterMap.get(ch) ?? { taught: 0, total: 0 };
@@ -115,7 +115,7 @@ function ManageTeachingProgress({
   onClose: () => void;
 }) {
   const progress = useAsync(() => getProgress(classId), [classId]);
-  const kps = useAsync(() => listKps(), []);
+  const kps = useAsync(() => listAllKps(undefined, classId), [classId]);
   const [adding, setAdding] = useState(false);
   const [selCode, setSelCode] = useState("");
   const [taughtAt, setTaughtAt] = useState(() => new Date().toISOString().slice(0, 10));
@@ -123,7 +123,7 @@ function ManageTeachingProgress({
   const [err, setErr] = useState<string | null>(null);
 
   const taughtCodes = new Set(progress.data?.progress.map((p) => p.code) ?? []);
-  const available = (kps.data?.kps ?? []).filter(
+  const available = (kps.data ?? []).filter(
     (k) => !k.archived && !k.code.startsWith("C") && !taughtCodes.has(k.code)
   );
 

@@ -121,7 +121,8 @@ def test_class_advice_llm_upgrade_replaces_template(session, env, monkeypatch):
     import app.llm.plan_writer as plan_writer_module
     from app.llm.client import MockLLMClient, set_client
 
-    monkeypatch.setattr(plan_writer_module.config, "LLM_PLAN_ENABLE", True)
+    # 先用模板完成建卷提交，避免测试初始化阶段意外触达真实 provider。
+    monkeypatch.setattr(plan_writer_module.config, "LLM_PLAN_ENABLE", False)
     tpl, ids, _ = _commit(session, env)
 
     advice_md = (
@@ -135,6 +136,7 @@ def test_class_advice_llm_upgrade_replaces_template(session, env, monkeypatch):
     )
     # 队列顺序：T01 诊断 → 班级改进意见（auto_generate 先生成班级两份再逐生诊断，
     # 但 MockLLMClient 按调用次序出栈——按实际次序排）
+    monkeypatch.setattr(plan_writer_module.config, "LLM_PLAN_ENABLE", True)
     set_client(MockLLMClient([advice_md, diag_md] + [diag_md] * (len(ids) - 1)))
     try:
         reports = generate_exam_reports(session, tpl.id)
@@ -388,9 +390,36 @@ def test_diagnosis_sheet_endpoint_shape(client):
 
     # 存档网格：至少本场考试在列
     assert any(e["exam_id"] == advice["exam_id"] for e in r["past_exams"])
-
     # 不存在的班级 404
     assert c.get("/classes/9999/diagnosis-sheet").status_code == 404
+
+
+def test_diagnosis_sheet_weak_total_excludes_strong_points(client, monkeypatch):
+    """弱项总数只统计 is_weak=True 的知识点。"""
+    c, _ = client
+    class_id, student_ids = _bootstrap_api(c)
+    _commit_via_api(c, class_id, student_ids)
+
+    from types import SimpleNamespace
+
+    from app.queries import diagnosis_sheet
+
+    monkeypatch.setattr(
+        diagnosis_sheet,
+        "assess_student_kps",
+        lambda *_args, **_kwargs: [
+            SimpleNamespace(
+                kp_id=1,
+                kp_name="稳定点",
+                gate=None,
+                mastery=0.95,
+                is_weak=False,
+            )
+        ],
+    )
+
+    payload = c.get(f"/classes/{class_id}/diagnosis-sheet").json()
+    assert payload["status"]["weak_kp_total"] == 0
 
 
 def test_diagnosis_sheet_rolling_takes_latest_advice(client):

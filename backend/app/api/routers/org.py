@@ -130,14 +130,25 @@ def classes_overview(ctx=Depends(require_teacher), db: Session = Depends(get_db)
     from app.api.deps import _auth as auth_mod
 
     allowed = auth_mod.allowed_class_ids(db, ctx)
-    # 领域层信号（kb.resolver，问题6）：active_kb 无版本返回 None、strict 无 active 抛
-    # KbNotActiveError，均按「无知识库」兜底，不把 HTTP 异常当控制流。
-    try:
-        kb = active_kb(db)
-    except KbNotActiveError:
-        kb = None
-    grade7_set = set(_graph(db, kb.id).grade7_kp_ids()) if kb is not None else set()
-    data = query_classes_overview(db, grade7_set)
+    # 按班级学科/年级解析分母，不能用全局 active KB 覆盖多学科班级。
+    classes = list(db.scalars(select(Class).order_by(Class.id)))
+    kp_ids_by_class: dict[int, set[int]] = {}
+    graph_cache: dict[tuple[str | None, int], set[int]] = {}
+    for clazz in classes:
+        subject = _auth.class_subject(db, ctx, clazz)
+        key = (subject, clazz.grade)
+        if key not in graph_cache:
+            try:
+                kb = active_kb(db, subject)
+            except KbNotActiveError:
+                kb = None
+            graph_cache[key] = (
+                set(_graph(db, kb.id).grade_kp_ids(clazz.grade))
+                if kb is not None
+                else set()
+            )
+        kp_ids_by_class[clazz.id] = graph_cache[key]
+    data = query_classes_overview(db, set(), kp_ids_by_class)
     if allowed is not None:
         want = set(allowed)
         data["classes"] = [c for c in data.get("classes", []) if c.get("class_id") in want]
@@ -270,6 +281,25 @@ def list_exams(
             raise HTTPException(400, "limit 必须在 1 到 200 之间")
     page_offset = offset or 0
     page_limit = limit or 50
+    if allowed is not None and class_id is not None and class_id not in set(allowed):
+        raise HTTPException(403, "无权查看该班级考试")
+
+    # 分页路径在查询层完成授权过滤、offset/limit 和聚合，避免先加载全部考试再切片。
+    if paged:
+        rows, total = query_exams.exams_page(
+            db,
+            class_id=class_id,
+            class_ids=list(allowed) if allowed is not None else None,
+            offset=page_offset,
+            limit=page_limit,
+        )
+        return {
+            "exams": rows,
+            "total": total,
+            "offset": page_offset,
+            "limit": page_limit,
+            "has_more": page_offset + len(rows) < total,
+        }
 
     if allowed is not None:
         want = set(allowed)
@@ -279,16 +309,7 @@ def list_exams(
         rows = [e for e in rows if e.get("class_id") in want]
     else:
         rows = query_exams.exams_list(db, class_id)
-    if not paged:
-        return {"exams": rows}
-    page = rows[page_offset : page_offset + page_limit]
-    return {
-        "exams": page,
-        "total": len(rows),
-        "offset": page_offset,
-        "limit": page_limit,
-        "has_more": page_offset + len(page) < len(rows),
-    }
+    return {"exams": rows}
 
 
 @router.get("/exams/{exam_id}")

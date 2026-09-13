@@ -37,6 +37,7 @@ from app.models import (
     Class,
     ExamResponse,
     ExamTemplate,
+    KbVersion,
     KnowledgePoint,
     ParseBatchItem,
     ParseJob,
@@ -65,6 +66,7 @@ def _guard_exam(db: Session, ctx, exam_id: int) -> None:
     guard_class(tpl.class_id, db, ctx)
 
 _BATCH_TERMINAL = {"matched", "unmatched", "failed", "duplicate", "discarded"}
+MAX_BATCH_PAGE = 200
 
 
 def _upload_error(e: batch_up.BatchUploadError) -> HTTPException:
@@ -89,6 +91,16 @@ def _batch_item_error(e: ValueError) -> HTTPException:
 @router.post("/exams")
 def create_exam(req: ExamCreate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     guard_class(req.class_id, db, ctx)
+    clazz = db.get(Class, req.class_id)
+    kb = db.get(KbVersion, req.kb_version_id)
+    if kb is None:
+        raise HTTPException(400, "知识库版本不存在")
+    if clazz is not None:
+        expected_subject = _auth.class_subject(db, ctx, clazz)
+        if kb.subject != expected_subject:
+            raise HTTPException(400, "知识库版本与班级学科不匹配")
+        if kb.grade is not None and clazz.grade != kb.grade:
+            raise HTTPException(400, "知识库版本与班级年级不匹配")
     try:
         tpl = create_template(
             db,
@@ -303,38 +315,66 @@ async def photo_batch(
 
 
 @router.get("/exams/{exam_id}/batch-jobs")
-def list_batch_jobs(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+def list_batch_jobs(
+    exam_id: int,
+    offset: int = 0,
+    limit: int = 50,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     _guard_exam(db, ctx, exam_id)
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= MAX_BATCH_PAGE:
+        raise HTTPException(400, f"limit 必须在 1 到 {MAX_BATCH_PAGE} 之间")
     # G6：惰性触发运行期看门狗（parsing 卡死改判 failed），教师轮询即自愈
     batch_mod.reconcile_stale_runtime()
     db.expire_all()  # 看门狗可能改了 item 状态，让后续查询重读
-    jobs = db.scalars(
-        select(ParseJob)
-        .where(ParseJob.target == f"batch:{exam_id}")
-        .order_by(ParseJob.id.desc())
+    job_filter = ParseJob.target == f"batch:{exam_id}"
+    total = db.scalar(select(func.count(ParseJob.id)).where(job_filter)) or 0
+    jobs = list(
+        db.scalars(
+            select(ParseJob)
+            .where(job_filter)
+            .order_by(ParseJob.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
     )
+    job_ids = [job.id for job in jobs]
+    item_counts: dict[int, dict[str, int]] = {job_id: {} for job_id in job_ids}
+    if job_ids:
+        for job_id, status, count in db.execute(
+            select(
+                ParseBatchItem.parse_job_id,
+                ParseBatchItem.status,
+                func.count(ParseBatchItem.id),
+            )
+            .where(ParseBatchItem.parse_job_id.in_(job_ids))
+            .group_by(ParseBatchItem.parse_job_id, ParseBatchItem.status)
+        ):
+            item_counts[job_id][status] = count
     out = []
     for job in jobs:
-        items = list(
-            db.scalars(
-                select(ParseBatchItem).where(ParseBatchItem.parse_job_id == job.id)
-            )
-        )
-        counts: dict[str, int] = {}
-        for it in items:
-            counts[it.status] = counts.get(it.status, 0) + 1
-        total = len(items)
+        counts = item_counts[job.id]
+        job_total = sum(counts.values())
         done = sum(c for s, c in counts.items() if s in _BATCH_TERMINAL)
         out.append(
             {
                 "job_id": job.id,
                 "status": job.status,
                 "counts": counts,
-                "total": total,  # G12：进度（已完成/总数）
+                "total": job_total,  # G12：进度（已完成/总数）
                 "done": done,
             }
         )
-    return {"jobs": out}
+    return {
+        "jobs": out,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
+    }
 
 
 @router.get("/batch-jobs/{job_id}")
@@ -371,19 +411,20 @@ def get_batch_job(job_id: int, ctx=Depends(require_teacher), db: Session = Depen
         db.flush()
     total = len(items)
     done = sum(1 for it in items if it.status in _BATCH_TERMINAL)
+    matched_ids = {it.matched_student_id for it in items if it.matched_student_id}
+    student_names = {
+        student.id: student.name_or_alias
+        for student in db.scalars(select(Student).where(Student.id.in_(matched_ids)))
+    } if matched_ids else {}
     out_items = []
     for it in items:
-        stu_name = None
-        if it.matched_student_id:
-            stu = db.get(Student, it.matched_student_id)
-            stu_name = stu.name_or_alias if stu else None
         out_items.append(
             {
                 "id": it.id,
                 "file_name": it.file_name,
                 "detected_name": it.detected_name,
                 "matched_student_id": it.matched_student_id,
-                "matched_student_name": stu_name,
+                "matched_student_name": student_names.get(it.matched_student_id),
                 "status": it.status,
                 "match_confidence": it.match_confidence,
                 "warnings": it.warnings or [],

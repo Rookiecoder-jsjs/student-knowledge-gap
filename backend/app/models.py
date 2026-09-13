@@ -341,6 +341,9 @@ class BankQuestion(Base):
 
 class EvidenceEvent(Base):
     __tablename__ = "evidence_event"
+    __table_args__ = (
+        Index("ix_evidence_event_student_kp_occurred", "student_id", "kp_id", "occurred_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))

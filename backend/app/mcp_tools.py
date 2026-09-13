@@ -26,9 +26,7 @@ from app.kb.resolver import KbNotActiveError
 from app.models import Class, ExamTemplate, KnowledgePoint, Student
 from app.pipeline.attribution import resolve_attributions
 from app.pipeline.mastery import mastery_at
-from app.pipeline.weakness import assess_student_kps
 from app.queries.classes import progress_list
-from app.queries.exams import exam_detail
 
 # 上下文硬预算：单次工具返回的行数上限（§5.1 大结果集强制分页）
 MAX_PAGE = 50
@@ -346,7 +344,12 @@ def get_kp_detail(session: Session, graph: KpGraph, code_or_id: str | int) -> di
             kp = session.get(KnowledgePoint, kid)
         except KeyError:
             kp = session.scalar(
-                select(KnowledgePoint).where(KnowledgePoint.code == raw).limit(1)
+                select(KnowledgePoint)
+                .where(
+                    KnowledgePoint.kb_version_id == graph.kb_version_id,
+                    KnowledgePoint.code == raw,
+                )
+                .limit(1)
             )
     if kp is None:
         raise LookupError(f"知识点 {code_or_id} 不存在")

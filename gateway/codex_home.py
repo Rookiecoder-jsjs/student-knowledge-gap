@@ -27,6 +27,7 @@ agent 物理不可达 sc.db。
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 import shutil
@@ -70,6 +71,34 @@ def render_config_toml(
     return template
 
 
+def _sync_models_asset(models_src: Path, models_dst: Path) -> bool:
+    """同步本项目生成的 models.json，不覆盖明显的管理员自定义文件。
+
+    历史版本只在首次播种时拷贝 models.json，导致已有 driver home 永久停留在
+    旧 persona/工具说明。仅当目标仍呈现 Codex catalog 结构（含 models 数组）
+    时自动同步；测试/管理员自定义的其他 JSON 形状保持不动。
+    """
+    if not models_src.exists():
+        return False
+    if not models_dst.exists():
+        shutil.copyfile(models_src, models_dst)
+        return True
+    try:
+        current = json.loads(models_dst.read_text(encoding="utf-8"))
+        source = json.loads(models_src.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(current, dict) or not isinstance(current.get("models"), list):
+        return False
+    if not isinstance(source, dict) or not isinstance(source.get("models"), list):
+        return False
+    if current == source:
+        return False
+    shutil.copyfile(models_src, models_dst)
+    logger.info("[codex-home] 同步 models.json（persona/工具目录更新）: %s", models_dst)
+    return True
+
+
 def seed_codex_home(
     codex_home: Path,
     assets_dir: Path,
@@ -98,6 +127,7 @@ def seed_codex_home(
                 "%s,将按第 5 批 url 形重渲染", bak.name
             )
         else:
+            _sync_models_asset(assets_dir / "models.json", codex_home / "models.json")
             return False
 
     template_path = assets_dir / "config.toml.template"
@@ -120,8 +150,7 @@ def seed_codex_home(
     config_path.write_text(rendered, encoding="utf-8")
     models_src = assets_dir / "models.json"
     models_dst = codex_home / "models.json"
-    if models_src.exists() and not models_dst.exists():
-        shutil.copyfile(models_src, models_dst)
+    _sync_models_asset(models_src, models_dst)
     if not api_key:
         logger.warning(
             "[codex-home] SC_DEEPSEEK_API_KEY/SC_LLM_API_KEY 均未配置,config.toml "

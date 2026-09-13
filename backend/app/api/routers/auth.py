@@ -17,13 +17,13 @@ import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth
 from app.api.deps import access_ctx, get_db, require_admin, require_teacher
 from app.models import Class as ClassModel
-from app.models import Student, Teacher
+from app.models import Student, Teacher, TeacherClass, TeacherSubjectScope
 
 router = APIRouter()
 
@@ -176,6 +176,8 @@ def create_teacher(
 
 @router.get("/auth/teachers")
 def list_teachers(
+    offset: int = 0,
+    limit: int = 100,
     admin_ctx=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -184,11 +186,49 @@ def list_teachers(
     返回 name/username/admin/已授班级/学科×年级授权/班主任班级——账号管理
     行内编辑的数据源（rbac-scopes-design §7）。
     """
-    rows = db.scalars(select(Teacher).order_by(Teacher.id))
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= 200:
+        raise HTTPException(400, "limit 必须在 1 到 200 之间")
+    total = db.scalar(select(func.count(Teacher.id))) or 0
+    rows = list(
+        db.scalars(
+            select(Teacher)
+            .order_by(Teacher.id)
+            .offset(offset)
+            .limit(limit)
+        )
+    )
+    teacher_ids = [t.id for t in rows]
+    classes_by_teacher: dict[int, list[dict]] = {tid: [] for tid in teacher_ids}
+    scopes_by_teacher: dict[int, list[dict]] = {tid: [] for tid in teacher_ids}
+    homerooms_by_teacher: dict[int, list[int]] = {tid: [] for tid in teacher_ids}
+    if teacher_ids:
+        for tid, cid, name in db.execute(
+            select(TeacherClass.teacher_id, ClassModel.id, ClassModel.name)
+            .join(ClassModel, ClassModel.id == TeacherClass.class_id)
+            .where(TeacherClass.teacher_id.in_(teacher_ids))
+            .order_by(TeacherClass.teacher_id, ClassModel.id)
+        ):
+            classes_by_teacher[tid].append({"class_id": cid, "name": name})
+        for tid, subject, grade in db.execute(
+            select(
+                TeacherSubjectScope.teacher_id,
+                TeacherSubjectScope.subject,
+                TeacherSubjectScope.grade,
+            )
+            .where(TeacherSubjectScope.teacher_id.in_(teacher_ids))
+            .order_by(TeacherSubjectScope.teacher_id, TeacherSubjectScope.subject, TeacherSubjectScope.grade)
+        ):
+            scopes_by_teacher[tid].append({"subject": subject, "grade": grade})
+        for tid, cid in db.execute(
+            select(ClassModel.homeroom_teacher_id, ClassModel.id)
+            .where(ClassModel.homeroom_teacher_id.in_(teacher_ids))
+            .order_by(ClassModel.homeroom_teacher_id, ClassModel.id)
+        ):
+            homerooms_by_teacher[tid].append(cid)
     out = []
     for t in rows:
-        _tctx = auth.AccessContext(teacher=t)
-        scopes = auth.subject_scopes(db, _tctx) or []
         out.append(
             {
                 "teacher_id": t.id,
@@ -196,15 +236,18 @@ def list_teachers(
                 "username": t.username,
                 "admin": bool(t.admin),
                 "kb_editor": bool(t.kb_editor),
-                "classes": [
-                    {"class_id": c.id, "name": c.name}
-                    for c in sorted(t.classes, key=lambda c: c.id)
-                ],
-                "subject_scopes": [{"subject": s, "grade": g} for s, g in scopes],
-                "homeroom_class_ids": auth.homeroom_class_ids(db, t.id),
+                "classes": classes_by_teacher[t.id],
+                "subject_scopes": scopes_by_teacher[t.id],
+                "homeroom_class_ids": homerooms_by_teacher[t.id],
             }
         )
-    return {"teachers": out}
+    return {
+        "teachers": out,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(out) < total,
+    }
 
 
 @router.post("/auth/students/{student_id}/enable")

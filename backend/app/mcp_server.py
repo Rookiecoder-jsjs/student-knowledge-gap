@@ -34,7 +34,6 @@ if str(_BACKEND_DIR) not in sys.path:
 
 os.environ.setdefault("SC_DATABASE_URL", f"sqlite:///{_BACKEND_DIR / 'sc.db'}")
 
-import mcp.server.fastmcp as _fastmcp  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 from pydantic import Field  # noqa: E402
 
@@ -62,7 +61,7 @@ _WRITES = {"readOnlyHint": False, "destructiveHint": False}
 # DNS-rebinding 保护默认开但 /mcp 仅 compose 内网可达（无浏览器 origin）——
 # 禁用免去对 backend/localhost/127.0.0.1 各 host 的放行维护。同一实例兼顾
 # stdio（本地 dev/测试，__main__ 入口）与 HTTP（mcp_http.py 挂载）。
-from mcp.server.transport_security import TransportSecuritySettings
+from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 
 mcp = FastMCP(
     "sc",
@@ -141,6 +140,21 @@ def _guard_class(session, class_id: int) -> None:
         raise ToolInputError(f"无权访问该班级：{e}") from e
 
 
+def _guard_kb_read(session, kb_id: int) -> None:
+    """MCP 知识库读取裁决（无班级参数的 KP 查询也必须过范围校验）。"""
+    from app import auth as _auth
+    from app.models import KbVersion
+
+    kb = session.get(KbVersion, kb_id)
+    if kb is None:
+        raise ToolInputError(f"知识库版本 {kb_id} 不存在")
+    if not _auth.can_read_kb(session, _auth.mcp_context(session), kb.subject, kb.grade):
+        grade_txt = f"年级{kb.grade}" if kb.grade is not None else "全年级"
+        raise ToolInputError(
+            f"无权读取该知识库：{kb.subject}（{grade_txt}）v{kb.version}"
+        )
+
+
 def _filter_classes_to_allowed(session, classes: list[dict]) -> list[dict]:
     """get_class_overview 的授权过滤：教师身份在场且非 admin 时收敛列表。"""
     from app import auth as _auth
@@ -153,7 +167,7 @@ def _filter_classes_to_allowed(session, classes: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 工具注册（§5.1 一期清单七个只读工具）
+# 工具注册（8 个只读工具 + 2 个写入工具；写入工具只产出 draft/suggested）
 # ---------------------------------------------------------------------------
 
 
@@ -166,19 +180,34 @@ def get_class_overview() -> dict:
     学生个人信息。适用于「现在各个班的情况怎么样」「哪个班有待办」类问题。
     """
     from app.db import get_session
+    from app import auth as _auth
     from app.kb.graph import KpGraph
     from app.kb.resolver import KbNotActiveError, active_kb
+    from app.models import Class
     from app.queries.classes_overview import classes_overview
+    from sqlalchemy import select
 
     with get_session() as db:
-        try:
-            kb = active_kb(db)
-        except KbNotActiveError:
-            kb = None
-        grade7_set = set(KpGraph(db, kb.id).grade7_kp_ids()) if kb is not None else set()
-        data = classes_overview(db, grade7_set)
-
-    data["classes"] = _filter_classes_to_allowed(db, data.get("classes", []))
+        ctx = _auth.mcp_context(db)
+        classes = list(db.scalars(select(Class).order_by(Class.id)))
+        kp_ids_by_class: dict[int, set[int]] = {}
+        graph_cache: dict[tuple[str | None, int], set[int]] = {}
+        for clazz in classes:
+            subject = _auth.class_subject(db, ctx, clazz)
+            key = (subject, clazz.grade)
+            if key not in graph_cache:
+                try:
+                    kb = active_kb(db, subject)
+                except KbNotActiveError:
+                    kb = None
+                graph_cache[key] = (
+                    set(KpGraph(db, kb.id).grade_kp_ids(clazz.grade))
+                    if kb is not None
+                    else set()
+                )
+            kp_ids_by_class[clazz.id] = graph_cache[key]
+        data = classes_overview(db, set(), kp_ids_by_class)
+        data["classes"] = _filter_classes_to_allowed(db, data.get("classes", []))
     data["_provenance"] = _provenance("GET /classes/overview")
     return data
 
@@ -282,7 +311,7 @@ def run_attribution(
         if stu is None:
             raise ToolInputError(f"学生 {student_id} 不存在")
         _guard_class(session, stu.class_id)
-        _, graph = resolve_graph(session)
+        _, graph = resolve_graph(session, stu.class_id)
         return _run_attribution(session, graph, student_id, _opt_date(as_of))
 
     return _run(op, "POST /students/{id}/attributions", {"student_id": student_id, "as_of": as_of})
@@ -293,6 +322,9 @@ def get_kp_detail(
     code_or_id: Annotated[
         str, Field(description="知识点编码（如 P3）或数字 id")
     ],
+    class_id: Annotated[
+        int | None, Field(ge=1, description="班级 id；提供后按该班学科解析")
+    ] = None,
 ) -> dict:
     """查询单个知识点的结构事实：属性（章节/难度先验/掌握度底线）+ 前置链（深度5）+ 直接前置 + 后继 + 包含关系。
 
@@ -306,10 +338,27 @@ def get_kp_detail(
         target = raw
 
     def op(session):
-        _, graph = resolve_graph(session)
+        if class_id is not None:
+            _guard_class(session, class_id)
+            _, graph = resolve_graph(session, class_id)
+        elif isinstance(target, int):
+            from app.models import KnowledgePoint
+            from app.kb.graph import KpGraph
+
+            kp = session.get(KnowledgePoint, target)
+            if kp is None:
+                raise ToolInputError(f"知识点 {target} 不存在")
+            graph = KpGraph(session, kp.kb_version_id)
+        else:
+            _, graph = resolve_graph(session)
+        _guard_kb_read(session, graph.kb_version_id)
         return _get_kp_detail(session, graph, target)
 
-    return _run(op, "GET /kb/kps/{id}", {"code_or_id": code_or_id})
+    return _run(
+        op,
+        "GET /kb/kps/{id}",
+        {"code_or_id": code_or_id, "class_id": class_id},
+    )
 
 
 @mcp.tool(annotations=_READONLY)
@@ -341,7 +390,11 @@ def list_students(
         _guard_class(session, class_id)
         return _list_students(session, class_id, offset, limit)
 
-    return _run(op, "GET /classes/{id}/students", {"class_id": class_id, "offset": offset})
+    return _run(
+        op,
+        "GET /classes/{id}/students",
+        {"class_id": class_id, "offset": offset, "limit": limit},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -366,16 +419,20 @@ def create_report_draft_tool(
     由教师在收件箱中签发或打回——你没有签发权限，也无需等待签发结果。
     """
     def op(session):
-        _, graph = resolve_graph(session)
-        if student_id is not None:
-            from app.models import Student
+        from app.models import Student
 
+        if student_id is not None:
             stu = session.get(Student, student_id)
             if stu is None:
                 raise ToolInputError(f"学生 {student_id} 不存在")
             _guard_class(session, stu.class_id)
+            target_class_id = stu.class_id
         elif class_id is not None:
             _guard_class(session, class_id)
+            target_class_id = class_id
+        else:
+            raise ToolInputError("必须提供 class_id 或 student_id 之一")
+        _, graph = resolve_graph(session, target_class_id)
         return _create_report_draft(
             session, graph,
             report_type=report_type,
@@ -420,7 +477,7 @@ def record_intervention_tool(
         if stu is None:
             raise ToolInputError(f"学生 {student_id} 不存在")
         _guard_class(session, stu.class_id)
-        _, graph = resolve_graph(session)
+        _, graph = resolve_graph(session, stu.class_id)
         return _record_intervention(
             session, graph,
             student_id=student_id, kp_code=kp_code, kind=kind,
@@ -429,7 +486,13 @@ def record_intervention_tool(
 
     return _run(
         op, "POST /interventions (suggested)",
-        {"student_id": student_id, "kp_code": kp_code, "kind": kind, "exam_id": exam_id},
+        {
+            "student_id": student_id,
+            "kp_code": kp_code,
+            "kind": kind,
+            "exam_id": exam_id,
+            "note": note,
+        },
     )
 
 

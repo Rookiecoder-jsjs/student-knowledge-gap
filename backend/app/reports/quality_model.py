@@ -8,7 +8,6 @@ compute / render / persist 三层，接口即测试面：
 
 from __future__ import annotations
 
-import statistics
 from dataclasses import dataclass
 from datetime import datetime, time
 

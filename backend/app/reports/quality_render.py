@@ -25,7 +25,7 @@ def render_quality_markdown(model: QualityReportModel) -> str:
         f"（待审核 {model.pending} 人）"
     )
     lines.append(
-        f"- 说明：本报告由系统基于已提交成绩自动生成，数字均可追溯至逐题得分；"
+        "- 说明：本报告由系统基于已提交成绩自动生成，数字均可追溯至逐题得分；"
         "不含任何排名信息。"
     )
     lines.append("")

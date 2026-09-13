@@ -24,7 +24,7 @@ from app.api.deps import (
 from app.models import Class as ClassModel
 from app.models import ExamTemplate
 from app.kb.edit import log_correction
-from app.models import Attribution, Class, Student
+from app.models import Attribution, Student
 from app.pipeline.attribution import (
     attribution_closure,
     materialize_attribution_verdicts,

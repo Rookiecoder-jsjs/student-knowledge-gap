@@ -6,7 +6,7 @@ P1 接入拍照解析后，此处将接收 LLM 草稿并进入审核台（不变
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

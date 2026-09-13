@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -41,6 +41,7 @@ from app.pipeline.weakness import assess_student_kps
 from app.study import get_or_generate_study_record, self_mark_learned, self_report_map
 
 router = APIRouter()
+MAX_PORTAL_PAGE = 200
 
 
 # ---------------------------------------------------------------------------
@@ -106,13 +107,27 @@ def _weaknesses_payload(db: Session, s: Student, when: datetime) -> dict:
     }
 
 
-def _reports_payload(db: Session, s: Student) -> dict:
+def _validate_page(offset: int, limit: int) -> None:
+    if offset < 0:
+        raise ValueError("offset 不能小于 0")
+    if not 1 <= limit <= MAX_PORTAL_PAGE:
+        raise ValueError(f"limit 必须在 1 到 {MAX_PORTAL_PAGE} 之间")
+
+
+def _reports_payload(
+    db: Session, s: Student, *, offset: int = 0, limit: int = 50
+) -> dict:
     """已签发报告列表（draft/archived 不可见）。"""
+    _validate_page(offset, limit)
+    filters = [Report.student_id == s.id, Report.status == "issued"]
+    total = db.scalar(select(func.count(Report.id)).where(*filters)) or 0
     rows = list(
         db.scalars(
             select(Report)
-            .where(Report.student_id == s.id, Report.status == "issued")
+            .where(*filters)
             .order_by(Report.generated_at.desc(), Report.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
     )
     return {
@@ -128,7 +143,11 @@ def _reports_payload(db: Session, s: Student) -> dict:
                 else None,
             }
             for r in rows
-        ]
+        ],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
     }
 
 
@@ -187,15 +206,28 @@ def _action_plan_payload(db: Session, s: Student) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _study_list_payload(db: Session, s: Student, when: datetime) -> dict:
+def _study_list_payload(
+    db: Session,
+    s: Student,
+    when: datetime,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> dict:
     """学习记录列表（不含方案正文；行级带折叠态，弱项卡片/学习页共用）。"""
+    _validate_page(offset, limit)
     kb = _active_kb(db, s.clazz.subject if s.clazz else None)
     graph = _graph(db, kb.id)
+    total = db.scalar(
+        select(func.count(StudyRecord.id)).where(StudyRecord.student_id == s.id)
+    ) or 0
     recs = list(
         db.scalars(
             select(StudyRecord)
             .where(StudyRecord.student_id == s.id)
             .order_by(StudyRecord.id.desc())
+            .offset(offset)
+            .limit(limit)
         )
     )
     loop = loop_states_for_student(
@@ -217,6 +249,10 @@ def _study_list_payload(db: Session, s: Student, when: datetime) -> dict:
             }
             for r in recs
         ],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
     }
 
 
@@ -293,8 +329,16 @@ def me_weaknesses(
 
 
 @router.get("/me/reports")
-def me_reports(ctx=Depends(require_student), db: Session = Depends(get_db)):
-    return _reports_payload(db, _self(ctx))
+def me_reports(
+    offset: int = 0,
+    limit: int = 50,
+    ctx=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    try:
+        return _reports_payload(db, _self(ctx), offset=offset, limit=limit)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/me/reports/{report_id}/full")
@@ -312,8 +356,18 @@ def me_action_plan(ctx=Depends(require_student), db: Session = Depends(get_db)):
 
 
 @router.get("/me/study-records")
-def me_study_records(ctx=Depends(require_student), db: Session = Depends(get_db)):
-    return _study_list_payload(db, _self(ctx), datetime.now())
+def me_study_records(
+    offset: int = 0,
+    limit: int = 50,
+    ctx=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    try:
+        return _study_list_payload(
+            db, _self(ctx), datetime.now(), offset=offset, limit=limit
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/me/study-plan")
@@ -392,8 +446,16 @@ def preview_weaknesses(
 
 
 @router.get("/admin/students/{student_id}/portal/reports")
-def preview_reports(s: Student = Depends(_preview_student), db: Session = Depends(get_db)):
-    return _reports_payload(db, s)
+def preview_reports(
+    offset: int = 0,
+    limit: int = 50,
+    s: Student = Depends(_preview_student),
+    db: Session = Depends(get_db),
+):
+    try:
+        return _reports_payload(db, s, offset=offset, limit=limit)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/admin/students/{student_id}/portal/reports/{report_id}/full")
@@ -415,10 +477,17 @@ def preview_action_plan(
 
 @router.get("/admin/students/{student_id}/portal/study-records")
 def preview_study_records(
+    offset: int = 0,
+    limit: int = 50,
     s: Student = Depends(_preview_student),
     db: Session = Depends(get_db),
 ):
-    return _study_list_payload(db, s, datetime.now())
+    try:
+        return _study_list_payload(
+            db, s, datetime.now(), offset=offset, limit=limit
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.get("/admin/students/{student_id}/portal/study-plan")

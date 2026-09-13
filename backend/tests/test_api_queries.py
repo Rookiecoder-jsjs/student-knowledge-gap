@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
-
-KB_YAML = Path(__file__).resolve().parents[1] / "kb" / "math" / "grade7" / "kb.yaml"
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+KB_YAML = Path(__file__).resolve().parents[1] / "kb" / "math" / "grade7" / "kb.yaml"
 
 
 @pytest.fixture()
@@ -142,6 +141,23 @@ def test_exam_list_detail_responses_matrix(client):
 
     c.post(f"/exams/{exam_id}/commit")
     assert c.get(f"/exams/{exam_id}/responses").json()["summary"]["已提交"] == 1
+
+
+def test_exam_list_paginates_in_query_layer(client):
+    c, _ = client
+    class_id, _ = _bootstrap(c)
+    _create_exam(c, class_id, "第一卷")
+    _create_exam(c, class_id, "第二卷")
+    third = _create_exam(c, class_id, "第三卷")
+
+    page = c.get(
+        "/exams", params={"class_id": class_id, "offset": 2, "limit": 1}
+    )
+    assert page.status_code == 200
+    assert page.json()["total"] == 3
+    assert len(page.json()["exams"]) == 1
+    assert page.json()["exams"][0]["exam_id"] == third
+    assert page.json()["has_more"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -304,3 +320,28 @@ def test_reports_list_and_detail(client):
     assert detail["snapshot"] == {"k": 1}
     assert c.get("/reports?class_id=999").json()["reports"] == []
     assert c.get("/reports/999").status_code == 404
+
+
+def test_reports_list_pagination(client):
+    c, session_factory = client
+    class_id, _ = _bootstrap(c)
+
+    from app.models import Report
+
+    with session_factory() as s:
+        s.add_all(
+            [
+                Report(type="quality_analysis", class_id=class_id, content_markdown="a"),
+                Report(type="student_diagnosis", class_id=class_id, content_markdown="b"),
+                Report(type="class_improvement_advice", class_id=class_id, content_markdown="c"),
+            ]
+        )
+        s.commit()
+
+    page = c.get(
+        "/reports", params={"class_id": class_id, "offset": 1, "limit": 1}
+    )
+    assert page.status_code == 200
+    assert page.json()["total"] == 3
+    assert len(page.json()["reports"]) == 1
+    assert page.json()["has_more"] is True

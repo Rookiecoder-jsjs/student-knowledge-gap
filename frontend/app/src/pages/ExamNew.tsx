@@ -123,7 +123,7 @@ export default function ExamNew() {
     setBusy(true);
     setError(null);
     try {
-      const kb = await listKps();
+      const kb = await listKps(undefined, cid);
       const r = await createExam({
         kb_version_id: kb.kb_version_id,
         class_id: cid,

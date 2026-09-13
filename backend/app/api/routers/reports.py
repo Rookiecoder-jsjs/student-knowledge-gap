@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import _auth as auth_mod
@@ -20,36 +20,59 @@ class ReportActionRequest(BaseModel):
     note: str | None = None
 
 
+MAX_REPORT_PAGE = 200
+
+
 @router.get("/reports")
 def list_reports(
     class_id: int | None = None,
     student_id: int | None = None,
     exam_id: int | None = None,
+    offset: int = 0,
+    limit: int = 50,
     ctx=Depends(require_teacher),
     db: Session = Depends(get_db),
 ):
-    """报告列表。显式 class_id 做归属校验；未传时安全模式收敛到授权班级。"""
+    """报告列表（默认分页）。显式 class_id 做归属校验；未传时安全模式收敛到授权班级。"""
+    if offset < 0:
+        raise HTTPException(400, "offset 不能小于 0")
+    if not 1 <= limit <= MAX_REPORT_PAGE:
+        raise HTTPException(400, f"limit 必须在 1 到 {MAX_REPORT_PAGE} 之间")
     if class_id is not None:
         if db.get(ClassModel, class_id) is None:
             # 不存在的班级过滤=空集（不泄露存在性；与既有行为一致）
-            return {"reports": []}
+            return {
+                "reports": [],
+                "total": 0,
+                "offset": offset,
+                "limit": limit,
+                "has_more": False,
+            }
         guard_class(class_id, db, ctx)
     if student_id is not None:
         stu = db.get(Student, student_id)
         if stu is None:
             raise HTTPException(404, "学生不存在")
         guard_class(stu.class_id, db, ctx)
-    stmt = select(Report).order_by(Report.generated_at.desc(), Report.id.desc())
+    filters = []
     if class_id is not None:
-        stmt = stmt.where(Report.class_id == class_id)
+        filters.append(Report.class_id == class_id)
     else:
         allowed = auth_mod.allowed_class_ids(db, ctx)
         if allowed is not None:
-            stmt = stmt.where(Report.class_id.in_(allowed or [-1]))
+            filters.append(Report.class_id.in_(allowed or [-1]))
     if student_id is not None:
-        stmt = stmt.where(Report.student_id == student_id)
+        filters.append(Report.student_id == student_id)
     if exam_id is not None:
-        stmt = stmt.where(Report.exam_id == exam_id)
+        filters.append(Report.exam_id == exam_id)
+    total = db.scalar(select(func.count(Report.id)).where(*filters)) or 0
+    stmt = (
+        select(Report)
+        .where(*filters)
+        .order_by(Report.generated_at.desc(), Report.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     return {
         "reports": [
             {
@@ -61,7 +84,11 @@ def list_reports(
                 "generated_at": r.generated_at.isoformat() if r.generated_at else None,
             }
             for r in db.scalars(stmt)
-        ]
+        ],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
     }
 
 
@@ -121,9 +148,13 @@ def inbox_list(
 
 
 @router.get("/inbox/summary")
-def inbox_counts(db: Session = Depends(get_db)):
+def inbox_counts(
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
     """角标计数：各状态报告数（导航「待签发」徽标）。"""
-    return inbox.inbox_summary(db)
+    allowed = auth_mod.allowed_class_ids(db, ctx)
+    return inbox.inbox_summary(db, class_ids=allowed)
 
 
 @router.get("/reports/{report_id}/full")

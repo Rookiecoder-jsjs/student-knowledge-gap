@@ -32,8 +32,6 @@ def admin_usage(
     db: Session = Depends(get_db),
 ):
     """按 task/日 聚合的 token 与调用数（管理端「本月消耗」页数据源）。"""
-    from app.api.deps import access_ctx
-
     from app import auth as _auth
 
     ctx = require_teacher(authorization=authorization, db=db)
@@ -53,8 +51,6 @@ def admin_usage_summary(
     db: Session = Depends(get_db),
 ):
     """整月合计摘要（角标/卡片用）。"""
-    from app.api.deps import access_ctx
-
     from app import auth as _auth
 
     ctx = require_teacher(authorization=authorization, db=db)

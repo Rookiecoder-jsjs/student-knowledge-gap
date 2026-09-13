@@ -14,7 +14,7 @@ from datetime import datetime, time
 from statistics import mean
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import (
     ALGO_VERSION,
@@ -61,11 +61,24 @@ def derive_events_for_response(session: Session, response_id: int) -> int:
     anomaly_factor = _anomaly_factor(session, response, template)
     class_rates = _class_question_rates(session, template)
 
+    answers = list(
+        session.scalars(
+            select(ResponseAnswer).where(ResponseAnswer.exam_response_id == response.id)
+        )
+    )
+    question_ids = {answer.template_question_id for answer in answers}
+    questions = {
+        question.id: question
+        for question in session.scalars(
+            select(TemplateQuestion)
+            .options(selectinload(TemplateQuestion.kps))
+            .where(TemplateQuestion.id.in_(question_ids))
+        )
+    } if question_ids else {}
+
     n_new = 0
-    for answer in session.scalars(
-        select(ResponseAnswer).where(ResponseAnswer.exam_response_id == response.id)
-    ):
-        question = session.get(TemplateQuestion, answer.template_question_id)
+    for answer in answers:
+        question = questions.get(answer.template_question_id)
         if question is None or question.full_score <= 0 or not question.kps:
             continue  # 无标注的题目不进分析（标注闸门前置）
 

@@ -47,10 +47,13 @@ Docker 部署时由 `deploy/docker-compose.yml` 构建 nginx 镜像并暴露在
 - 快捷教学问题、流式回答、工具调用状态、回答复制；
 - 当前班级范围、只读边界、待签发/知识库/班级工作台的上下文入口。
 
-页面刻意将 MCP 工具名转换为教师可读的业务动作，后续可沿现有会话边界扩展：
+页面刻意将 MCP 工具名转换为教师可读的业务动作，当前由 backend `/mcp` 注册
+10 个工具（8 个只读、2 个写入）；写入工具的实际注册名带 `_tool` 后缀，后续可沿
+现有会话边界扩展：
 
 1. 考后自动分析任务卡片，点击后进入对应持久班级线程；
 2. 回答中的 `_provenance` 依据链接，展开原始考试/掌握度数据；
-3. `create_report_draft`、`record_intervention` 草稿预览与待签发确认；
+3. `create_report_draft_tool`、`record_intervention_tool` 草稿预览与待签发确认
+   （实现函数分别为 `create_report_draft`、`record_intervention`）；
 4. 班级长期记忆、按考试/知识点筛选历史，以及会话摘要与用量提示；
 5. 在不改变 SSE/RPC 协议的前提下增加附件、模板化提问和教研结果导出。

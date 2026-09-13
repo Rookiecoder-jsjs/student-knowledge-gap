@@ -23,7 +23,7 @@ export default function Overview() {
 
   const classes = useAsync(() => listClasses(), []);
   const overview = useAsync(() => listClassesOverview(), []);
-  const exams = useAsync(() => listExams(cid), [cid]);
+  const exams = useAsync(() => listExams(cid, { limit: 6 }), [cid]);
   // 行动方向待确认数（intervention-loop-design §6：工作台只有链接卡 + 计数）
   const actions = useAsync(
     () => classActionPlan(cid),
@@ -92,7 +92,7 @@ export default function Overview() {
           )}
           {exams.data && exams.data.exams.length > 0 && (
             <Card className="divide-y divide-line">
-              {exams.data.exams.slice(0, 6).map((e) => {
+              {exams.data.exams.map((e) => {
                 const next = nextAction(e);
                 return (
                   <Link

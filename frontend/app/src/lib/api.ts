@@ -1,4 +1,4 @@
-/** 后端 API 客户端：30 端点全覆盖，统一错误语义。 */
+/** 后端 API 客户端：统一请求、错误与鉴权语义。 */
 
 import type {
   ActionPlanView,
@@ -129,10 +129,41 @@ export interface KpDetail extends KpNode {
   contained: (KpRelationEndpoint & { relation_id: number; type: string; weight: number })[];
 }
 
-export const listKps = (kbVersionId?: number) =>
-  request<{ kb_version_id: number; kps: KpNode[] }>(
-    `/kb/kps${kbVersionId ? `?kb_version_id=${kbVersionId}` : ""}`
+export const listKps = (
+  kbVersionId?: number,
+  classId?: number,
+  options?: { offset?: number; limit?: number },
+) => {
+  const q = new URLSearchParams();
+  if (kbVersionId != null) q.set("kb_version_id", String(kbVersionId));
+  if (classId != null) q.set("class_id", String(classId));
+  if (options?.offset != null) q.set("offset", String(options.offset));
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  return request<{
+    kb_version_id: number;
+    kps: KpNode[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+  }>(
+    `/kb/kps${qs ? `?${qs}` : ""}`
   );
+};
+
+/** 分页拉取知识库全部知识点，供编辑器/进度管理等完整选择器使用。 */
+export async function listAllKps(kbVersionId?: number, classId?: number): Promise<KpNode[]> {
+  const pageSize = 200;
+  const kps: KpNode[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listKps(kbVersionId, classId, { offset, limit: pageSize });
+    kps.push(...page.kps);
+    if (!page.has_more || page.kps.length === 0) return kps;
+    offset += page.kps.length;
+  }
+}
 
 export const listKbVersions = () =>
   request<{ versions: KpVersion[] }>("/kb/versions");
@@ -381,6 +412,32 @@ export const listExams = (
   }>(`/exams${qs ? `?${qs}` : ""}`);
 };
 
+/** 分页拉取班级考试摘要，供需要完整选择器的页面使用。 */
+export async function listAllExams(classId?: number): Promise<ExamSummary[]> {
+  const pageSize = 200;
+  const exams: ExamSummary[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listExams(classId, { offset, limit: pageSize });
+    exams.push(...page.exams);
+    if (!page.has_more || page.exams.length === 0) return exams;
+    offset += page.exams.length;
+  }
+}
+
+/** 按 id 查找考试摘要，只读取有限大小的分页，避免为 stepper 拉全量历史。 */
+export async function findExamSummary(classId: number, examId: number): Promise<ExamSummary | null> {
+  const pageSize = 200;
+  let offset = 0;
+  for (;;) {
+    const page = await listExams(classId, { offset, limit: pageSize });
+    const found = page.exams.find((exam) => exam.exam_id === examId);
+    if (found) return found;
+    if (!page.has_more || page.exams.length === 0) return null;
+    offset += page.exams.length;
+  }
+}
+
 export const examDetail = (examId: number) => request<ExamDetail>(`/exams/${examId}`);
 
 export const examResponses = (examId: number) =>
@@ -599,8 +656,30 @@ export const meMastery = (asOf?: string) =>
 export const meWeaknesses = (asOf?: string) =>
   request<Weaknesses>(`/me/weaknesses${asOf ? `?as_of=${asOf}` : ""}`);
 
-export const meReports = () =>
-  request<{ reports: (ReportSummary & { type_label?: string })[] }>("/me/reports");
+export interface PageOptions {
+  offset?: number;
+  limit?: number;
+}
+
+export interface PageInfo {
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+function withPage(path: string, options?: PageOptions): string {
+  if (!options || (options.offset == null && options.limit == null)) return path;
+  const q = new URLSearchParams();
+  if (options.offset != null) q.set("offset", String(options.offset));
+  if (options.limit != null) q.set("limit", String(options.limit));
+  return `${path}?${q.toString()}`;
+}
+
+export const meReports = (options?: PageOptions) =>
+  request<{ reports: (ReportSummary & { type_label?: string })[] } & PageInfo>(
+    withPage("/me/reports", options)
+  );
 
 export const meReportFull = (reportId: number) =>
   request<ReportFull>(`/me/reports/${reportId}/full`);
@@ -632,8 +711,10 @@ export interface StudyPlanView {
   loop_state?: string | null;
 }
 
-export const meStudyRecords = () =>
-  request<{ student_id: number; records: StudyRecordListItem[] }>("/me/study-records");
+export const meStudyRecords = (options?: PageOptions) =>
+  request<{ student_id: number; records: StudyRecordListItem[] } & PageInfo>(
+    withPage("/me/study-records", options)
+  );
 
 /** get-or-generate：首次查看生成并缓存；幂等复用不重调 LLM。 */
 export const meStudyPlan = (kpCode: string) =>
@@ -661,9 +742,9 @@ export const portalWeaknesses = (studentId: number, asOf?: string) =>
     `/admin/students/${studentId}/portal/weaknesses${asOf ? `?as_of=${asOf}` : ""}`
   );
 
-export const portalReports = (studentId: number) =>
-  request<{ reports: (ReportSummary & { type_label?: string })[] }>(
-    `/admin/students/${studentId}/portal/reports`
+export const portalReports = (studentId: number, options?: PageOptions) =>
+  request<{ reports: (ReportSummary & { type_label?: string })[] } & PageInfo>(
+    withPage(`/admin/students/${studentId}/portal/reports`, options)
   );
 
 export const portalReportFull = (studentId: number, reportId: number) =>
@@ -675,9 +756,9 @@ export const portalActionPlan = (studentId: number) =>
   );
 
 // 预览镜像（study-loop-design）：只读——无记录 404，绝不触发生成
-export const portalStudyRecords = (studentId: number) =>
-  request<{ student_id: number; records: StudyRecordListItem[] }>(
-    `/admin/students/${studentId}/portal/study-records`
+export const portalStudyRecords = (studentId: number, options?: PageOptions) =>
+  request<{ student_id: number; records: StudyRecordListItem[] } & PageInfo>(
+    withPage(`/admin/students/${studentId}/portal/study-records`, options)
   );
 
 export const portalStudyPlan = (studentId: number, kpCode: string) =>
@@ -700,8 +781,32 @@ export interface TeacherAccountRow {
   homeroom_class_ids: number[];
 }
 
-export const listTeachers = () =>
-  request<{ teachers: TeacherAccountRow[] }>("/auth/teachers");
+export const listTeachers = (options?: { offset?: number; limit?: number }) => {
+  const q = new URLSearchParams();
+  if (options?.offset != null) q.set("offset", String(options.offset));
+  if (options?.limit != null) q.set("limit", String(options.limit));
+  const qs = q.toString();
+  return request<{
+    teachers: TeacherAccountRow[];
+    total?: number;
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+  }>(`/auth/teachers${qs ? `?${qs}` : ""}`);
+};
+
+/** 分页拉取全部教师，供账号管理的完整授权编辑器使用。 */
+export async function listAllTeachers(): Promise<TeacherAccountRow[]> {
+  const pageSize = 200;
+  const teachers: TeacherAccountRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listTeachers({ offset, limit: pageSize });
+    teachers.push(...page.teachers);
+    if (!page.has_more || page.teachers.length === 0) return teachers;
+    offset += page.teachers.length;
+  }
+}
 
 export const createTeacher = (body: {
   name: string;
@@ -800,6 +905,19 @@ export const listInterventions = (params: {
     `/interventions${qs ? `?${qs}` : ""}`
   );
 };
+
+/** 拉取班级全部干预行（分页请求，避免摘要被单页上限截断）。 */
+export async function listAllInterventions(classId: number): Promise<InterventionRow[]> {
+  const pageSize = 200;
+  const items: InterventionRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await listInterventions({ class_id: classId, offset, limit: pageSize });
+    items.push(...page.items);
+    if (!page.has_more || page.items.length === 0) return items;
+    offset += page.items.length;
+  }
+}
 
 /** withGroup：小组代表行批量落事实（同 group_ref 各行各自确认，操作层一次）。
  * note：确认注记——班级行「派发AI学习方案」用它落系统语义。 */

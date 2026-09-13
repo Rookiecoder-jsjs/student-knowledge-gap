@@ -33,8 +33,8 @@ import {
   kbCompatibility,
   kbUpload,
   kpDetail,
+  listAllKps,
   listKbVersions,
-  listKps,
   patchKbVersion,
   type KbCompatibility,
   type KpDetail,
@@ -96,7 +96,7 @@ export default function Kb() {
   const kps = useAsync(
     () =>
       currentVersionId
-        ? listKps(currentVersionId)
+        ? listAllKps(currentVersionId).then((kps) => ({ kb_version_id: currentVersionId, kps }))
         : Promise.resolve({ kb_version_id: 0, kps: [] as KpNode[] }),
     [currentVersionId]
   );

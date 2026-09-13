@@ -80,7 +80,7 @@ sc/
 │   │   ├── queries/          #   只读聚合查询（classes_overview / diagnosis_sheet 等）
 │   │   ├── intervention.py   #   干预闭环纯计算层：策略映射 / 幂等再生成 / 效果推导（derive-on-read）
 │   │   ├── auth.py           #   G11 鉴权：PBKDF2 + HMAC token + 教师↔班级归属断言（HTTP/MCP 共用）
-│   │   ├── mcp_server.py     #   MCP Server 入口：9 工具薄包装（7 只读 + 2 写过审批门）
+│   │   ├── mcp_server.py     #   MCP Server 入口：10 工具薄包装（8 只读 + 2 写过审批门）
 │   │   ├── mcp_tools.py      #   Agent 工具纯函数层：与 HTTP 路由共用聚合；写工具实现层身份裁决
 │   │   ├── triggers.py       #   触发器/通知出口：考后分析任务 + 钉钉卡片（fire-and-forget）
 │   │   ├── inbox.py          #   收件箱状态机：draft → issued/archived（审批门 §5.3）
@@ -123,7 +123,7 @@ sc/
 
 ```bash
 cd backend
-python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（305 项）
+python -m pytest tests simulator                  # 🧪 单元 + 金标 + 压力断言（406 项）
 python scripts/run_demo.py                        # 🎬 合成班级全流程 -> output/*.md
 python scripts/effectiveness_largescale.py        # 🌊 大规模随机有效性测试（150 人 × 12 场 × 6 种子）
 python scripts/run_agent_evalset.py               # 🧪 Agent 评测集对账报告 -> output/agent-evalset-report.md
@@ -244,8 +244,15 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - Agent 身份传播：网关按教师为 app-server 进程注入签名 token（`SC_SCHOOL_AUTH_TOKEN`），codex 经 `[mcp_servers.sc]`（远程 url → backend `/mcp`）逐请求 `Authorization: Bearer` 携带，backend 验签后 MCP 工具层按教师同一裁决（装车批第 5 批：sc MCP 迁 backend 进程，gateway 不挂 sc-data，agent 物理不可达 sc.db）
 
 **✍️ Agent 写工具（Phase 3，过审批门 §5.3）**
-- `create_report_draft`：Agent 起草学生诊断单/班级改进意见 → **draft 入收件箱**，教师在「待签发」签发或打回；类型封闭枚举、归属校验、20K 字上限
-- `record_intervention`：登记干预建议 → **suggested 行**，教师在行动明细一键确认后才算执行事实；kind 封闭枚举、必填关联考试、未教点拒绝
+
+当前 MCP 注册清单（由 `backend/app/mcp_server.py` 提供）：只读工具为
+`get_class_overview`、`get_exam_summary`、`get_kp_mastery`、`get_student_progress`、
+`run_attribution`、`get_kp_detail`、`get_teaching_progress`、`list_students`；写入工具为
+`create_report_draft_tool`、`record_intervention_tool`。工具实现统一位于
+`backend/app/mcp_tools.py`，通过 `/mcp` 暴露，gateway 只负责 RPC/SSE 转发。
+
+- `create_report_draft_tool`：Agent 起草学生诊断单/班级改进意见 → **draft 入收件箱**，教师在「待签发」签发或打回；类型封闭枚举、归属校验、20K 字上限（实现函数：`create_report_draft`）
+- `record_intervention_tool`：登记干预建议 → **suggested 行**，教师在行动明细一键确认后才算执行事实；kind 封闭枚举、必填关联考试、未教点拒绝（实现函数：`record_intervention`）
 - 审批门语义：Agent 永不直接落终态——签发/确认由教师完成且不消耗 Agent 循环
 
 **🛡️ 预算护栏与钉钉触达（Phase 3，§5.7/D4）**
@@ -253,7 +260,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 - 钉钉卡片：新草稿待签发、干预建议待确认、月度用量提醒——出站 WebSocket/webhook 适配校内无公网；未配置静默跳过
 
 **🧪 Agent 评测集（Phase 4，批次A）**
-- 已知真值场景（前置缺陷链/孤立点共性弱项）+ 8 个教师标准问答对覆盖全部只读工具，24 条对账断言——Agent 的每句结论必须与确定性管线一致，不一致即缺陷
+- 已知真值场景（前置缺陷链/孤立点共性弱项）+ 8 个教师标准问答对覆盖核心只读查询路径，24 条对账断言；班级概览、学生进度等补充工具由专门查询测试覆盖——Agent 的每句结论必须与确定性管线一致，不一致即缺陷
 - 回归门禁随 `tests/test_evalset.py` 每次提交跑；装机验收演示 `python scripts/run_agent_evalset.py` 出对账报告
 
 **📡 运维三件套（Phase 4，批次B/C/D）**
@@ -267,7 +274,7 @@ SC_FORGET_PEAK_THRESHOLD=0.7  # 遗忘检测：历史峰值需 ≥ 此值才算"
 
 ## ✅ 验证体系
 
-**测试**：305 项后端 + 28 项网关（`backend/tests|simulator` + `gateway/test_*.py`）🧪。
+**测试**：406 项后端 + 70 项网关（`backend/tests|simulator` + `gateway/test_*.py`）🧪。
 
 ```bash
 cd backend && python -m pytest tests simulator

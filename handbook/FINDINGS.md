@@ -153,7 +153,7 @@ token 用量在 `usage.input_tokens/output_tokens` 正常返回。
 
 | 组件 | 落点 | 要点 |
 |---|---|---|
-| 七个只读工具 | `backend/app/mcp_tools.py`（纯函数层）+ `mcp_server.py`（FastMCP 注册） | 与 HTTP 路由共用聚合实现（kb kp_detail 下沉）；name_or_alias + MAX_PAGE=50 分页；_provenance 统一包装 |
+| 八个只读工具 | `backend/app/mcp_tools.py`（纯函数层）+ `mcp_server.py`（FastMCP 注册） | 与 HTTP 路由共用聚合实现（kb kp_detail 下沉）；name_or_alias + MAX_PAGE=50 分页；_provenance 统一包装；另有两个写工具只产出 draft/suggested |
 | 收件箱 draft 流 | `app/inbox.py` + Report.status 三列 + `/inbox` 端点族 | 存量报告默认 issued——「待签发」语义只属 Agent draft；打回必附理由；终态锁定 |
 | 触发器 v1 | `app/triggers.py` → gateway `POST /internal/trigger` | fire-and-forget（网关不可达不阻塞 commit）；共享密钥鉴权；班级持久线程映射 threads.json；幂等 TTL 600s |
 | 用量台账 v1 | llm_call_log token 两列 + `/admin/usage` | 仅 status=success 计入；OpenAI/Anthropic 键名兼容提取；壳侧 agent_turn 后续接入 |

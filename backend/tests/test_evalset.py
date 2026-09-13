@@ -7,8 +7,6 @@ app/evalset.py 的 8 个标准问答对在内存库上全跑：任一断言失�
 
 from __future__ import annotations
 
-import pytest
-
 from app.evalset import CASES, READ_TOOLS, run_all
 
 
@@ -22,16 +20,14 @@ def test_all_cases_pass():
 
 
 def test_covers_all_read_tools():
-    """标准问答对必须覆盖全部七个只读工具（写工具走审批门另有测试）。"""
-    import app.mcp_server as srv
+    """标准问答对覆盖核心只读路径；写工具和补充工具由专门测试覆盖。"""
+    import asyncio
 
-    registered = {
-        name for name in dir(srv)
-        if not name.startswith("_")
-        and callable(getattr(srv, name))
-        and getattr(getattr(srv, name), "annotations", None) == {"readOnlyHint": True, "destructiveHint": False}
-    }
-    # 直接以 mcp_tools 的七个只读纯函数为基准（server 层一一包装）
+    from app.mcp_server import mcp
+
+    registered = {tool.name for tool in asyncio.run(mcp.list_tools())}
+    # 评测集以确定性管线的核心纯函数为基准；latest_exam_id 是辅助查询函数，
+    # 不作为 MCP 工具注册，但必须保留回归覆盖。
     from app import mcp_tools
 
     read_fns = {
@@ -39,6 +35,8 @@ def test_covers_all_read_tools():
         "get_teaching_progress", "list_students", "latest_exam_id",
     }
     assert READ_TOOLS == read_fns
+    # latest_exam_id 是纯函数辅助查询，其余评测工具必须有对应 MCP 包装。
+    assert (read_fns - {"latest_exam_id"}) <= registered
     assert all(hasattr(mcp_tools, n) for n in read_fns)
 
 

@@ -33,30 +33,70 @@ class _FakeProc:
         return 0
 
 
+class _LiveReader:
+    """Minimal live reader marker matching the production Bridge contract."""
+
+    def done(self):
+        return False
+
+
+class _CaptureStdin:
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def write(self, value: str):
+        self.lines.append(value)
+
+    def flush(self):
+        pass
+
+
+def _live_bridge() -> gm.Bridge:
+    bridge = gm.Bridge(proc=_FakeProc())
+    bridge._reader = _LiveReader()
+    return bridge
+
+
+def test_server_request_response_keeps_original_id():
+    stdin = _CaptureStdin()
+    proc = _FakeProc()
+    proc.stdin = stdin
+    bridge = gm.Bridge(proc=proc)
+    bridge._reader = _LiveReader()
+
+    bridge.respond(61, result={"decision": "accept"})
+
+    assert stdin.lines == [
+        '{"jsonrpc": "2.0", "id": 61, "result": {"decision": "accept"}}\n'
+    ]
+
+
 def test_concurrent_first_build_spawns_once(monkeypatch):
     calls: list[int] = []
 
     async def _slow_spawn(teacher_id: int = 0) -> gm.Bridge:
         calls.append(teacher_id)
         await asyncio.sleep(0.05)  # 拉宽窗口：并发第二个调用必须合并到同一次 spawn
-        return gm.Bridge(proc=_FakeProc())
+        return _live_bridge()
 
     monkeypatch.setattr(gm.Bridge, "spawn", staticmethod(_slow_spawn))
     gm._BRIDGES.pop("t77", None)
 
     async def _scenario():
-        return await asyncio.gather(
+        a, b = await asyncio.gather(
             gm.get_bridge("t77", 77),
             gm.get_bridge("t77", 77),
         )
+        # Keep reuse on the same event-loop turn used by the bridge owner.
+        again = await gm.get_bridge("t77", 77)
+        return a, b, again
 
     try:
-        a, b = asyncio.run(_scenario())
+        a, b, again = asyncio.run(_scenario())
         assert a is b, "并发首建必须返回同一桥实例"
         assert calls == [77], f"同键并发只允许一次 spawn，实际 {len(calls)} 次"
         assert gm._BRIDGES["t77"] is a
         # 复用路径：存活桥直接返回，不再 spawn
-        again = asyncio.run(gm.get_bridge("t77", 77))
         assert again is a
         assert calls == [77]
     finally:

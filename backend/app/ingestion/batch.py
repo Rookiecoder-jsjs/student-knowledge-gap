@@ -32,7 +32,7 @@ from app.db import utcnow
 from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
 from app.llm.audit import audit_context, record_circuit_open
 from app.llm.circuit import CircuitOpenError, get_vision_breaker
-from app.llm.client import LLMError, MockLLMClient, get_client
+from app.llm.client import LLMError, get_client
 from app.llm.prompts import (
     RESPONSE_BATCH_PROMPT_VERSION,
     RESPONSE_BATCH_SYSTEM,

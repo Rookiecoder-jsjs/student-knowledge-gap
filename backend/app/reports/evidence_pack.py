@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.kb.graph import KpGraph
-from app.pipeline.weakness import TRAJ_RISING, KpAssessment
+from app.pipeline.weakness import TRAJ_RISING
 from app.reports.diagnosis_model import DiagnosisReportModel
 from app.reports.labels import attr_label, traj_label
 from app.reports.quality_model import QualityReportModel
