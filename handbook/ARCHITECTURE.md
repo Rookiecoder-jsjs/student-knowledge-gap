@@ -19,7 +19,7 @@
 
 ## 1. Workspace 总览
 
-workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`，Phase 1 裁剪后为 **118** 个成员（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate；裁剪账本见 [CRATES.md](CRATES.md)）。`school-authz` 源码目录已退出 workspace，仅作历史参考。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
+workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`，Phase 1 裁剪后为 **118** 个成员（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate；裁剪账本见 [CRATES.md](CRATES.md)）。已退役的 `school-authz` shim 源码也已从 runtime 树移除；身份校验当前由 backend 请求链承担。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
 
 下面**按职能分组**（分组是我们为导航方便追加的，非上游定义；清单本身来自 members）：
 
@@ -80,11 +80,11 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 | `app-server-protocol-noop-macros` | noop 宏。 |
 | `app-server-transport` 的 `remote_control/` | 远端控制（配对、客户端列表）。 |
 
-### 1.4.1 §6.3 历史参考（已退出 workspace）
+### 1.4.1 §6.3 历史记录（已退出 workspace 且已移除源码）
 
 | crate（目录） | 一句话职责 |
 | --- | --- |
-| `school-authz` | 教师↔班级鉴权原语与 `school-authz-mcp` stdio shim 的历史参考实现。**部署形态已退役（装车批第 5 批 / D-035）**，源码目录保留但不再属于 workspace 或 release 构建；当前身份校验由 backend 逐请求完成（`backend/app/mcp_http.py`） |
+| `school-authz` | 教师↔班级鉴权原语与 `school-authz-mcp` stdio shim 的历史实现。**部署形态已退役（装车批第 5 批 / D-035）**，源码已按 D-041 移除；当前身份校验由 backend 逐请求完成（`backend/app/mcp_http.py`） |
 
 ### 1.5 持久化 / 状态
 
@@ -145,7 +145,8 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 | `plugin` | 插件核心类型。 |
 | `model-provider-info` / `models-manager` | 模型信息与模型管理。 |
 
-> 注：`codex-cli`（仓库根目录的一个独立目录，非 Cargo member）是 JS/TS 侧的 CLI，不在本 workspace 的 Rust crate 清单里，本文不展开。
+> 注：上游 JS/TS `codex-cli` 已按 D-041 从本项目 runtime 移除；本项目的运行时入口是
+> `app-server` 与 `exec-server`，不再维护上游 CLI 发布面。
 
 ---
 

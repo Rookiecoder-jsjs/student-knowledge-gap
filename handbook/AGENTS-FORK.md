@@ -8,8 +8,10 @@
 
 ## 一、fork 铁律（§2.1，违反即缺陷）
 
-1. **runtime/ 内部零重排**：收编后目录结构一字不动；我们的代码只以
-   新增 workspace 成员进入（§6.3 edu-tools / school-authz）；
+1. **runtime/ 源码面零重排**：`codex-rs/` 的生产源码和构建依赖保持上游布局；
+   上游入口、SDK、CI、发布配套等非生产面若裁掉，必须先登记到
+   [RUNTIME-PRUNE.md](RUNTIME-PRUNE.md)，并保留锚点版本与恢复路径。新增项目代码仍按
+   workspace 成员进入；
 2. **锚定 tag 军规**：基底一次性捐赠；上游只 cherry-pick 安全修复，
    永不整体合并；
 3. **每一处源码分歧必须登记 DELTA.md**（位置/内容/原因）；账外分歧 = 缺陷；

@@ -57,7 +57,9 @@ export CODEX_HOME=/tmp/sc-p1/codex-home
 # backend（uvicorn app.main:app，已挂 /mcp）；身份：SC_AUTH_SECRET 配置时给子进程
 # SC_SCHOOL_AUTH_TOKEN（backend issue_token 同格式签发），否则开放模式匿名。
 
-cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级概览"
+# 当前产品面没有上游 `codex` CLI；本地交互入口是 `gateway` + `frontend`。
+# 需要单独验证 runtime 时，构建并启动 app-server/exec-server：
+just build-for-release
 ```
 
 ## 发布产物形态（一校一盒 §8；装车批第 3 步：gateway 换装 runtime 魔改壳；第 5 步：自包含 + 容器级隔离）
@@ -96,13 +98,13 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
   修复需 defs.bzl rust_binary `rustc_env` 补 `CARGO_PKG_VERSION`（fork 分歧账），
   待真正需要展示壳版本时再做。
 
-### §6.3 历史参考：school-authz（身份校验 + 注入）
+### §6.3 历史记录：school-authz（身份校验 + 注入）
 
 `school-authz-mcp` 是已退出构建的 stdio MCP shim 历史实现。**部署已退役（装车批第 5 批）**：sc MCP 迁入 backend
 进程后 `[mcp_servers.sc]` 为远程 url，url 与 command 互斥、shim 不再被 spawn，也不再
 stage 进 gateway 镜像。其校验职责**迁往 backend 逐请求**（`auth.verify_token` 同格式同
-密钥，`app/mcp_http.py` 中间件）；crate + 测试**保留在树内作参考实现**（token 格式与
-裁决表的唯一 Rust 侧记录），上方命令作能力文档。生产教师身份链路（第 5 批）：gateway 按
+密钥，`app/mcp_http.py` 中间件）；历史 crate 已按 D-041 从 runtime 源码树移除，恢复锚点与
+路径见 [RUNTIME-PRUNE.md](RUNTIME-PRUNE.md)。生产教师身份链路（第 5 批）：gateway 按
 教师签 token → codex MCP client 逐请求 `Authorization: Bearer` → backend /mcp 验签 →
 `auth.mcp_context` 按教师/班级过滤。逐调用教师↔班级断言由 sc 后端执行（不变）。
 
