@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="学生知识薄弱点分析归因系统",
+    title="知行教研 · 教学质量分析平台",
     version="0.1.0",
     description="DESIGN.md v0.3 MVP：知识库 -> 采集 -> 追踪 -> 归因 -> 报告",
     lifespan=lifespan,

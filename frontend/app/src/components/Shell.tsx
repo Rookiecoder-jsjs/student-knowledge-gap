@@ -17,6 +17,7 @@ import { LAST_CLASS_KEY } from "../lib/auth";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
 import { roleFlags } from "../lib/portal";
+import { PRODUCT_NAME } from "../lib/site";
 import { ACCENTS } from "../lib/theme";
 import { Select } from "./ui";
 import { AccountCluster } from "./TopBar";
@@ -260,7 +261,7 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-[100dvh]">
       <Sidebar
-        title="薄弱点分析"
+        title={PRODUCT_NAME}
         subtitle="教师工作台"
         context={classContext}
         navLabel="主导航"
@@ -284,7 +285,7 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             <List size={18} />
           </button>
-          <span className="text-sm font-semibold tracking-tight">薄弱点分析</span>
+          <span className="text-sm font-semibold tracking-tight">{PRODUCT_NAME}</span>
         </header>
         <main className="min-w-0 flex-1">
           {/* 全幅工作台（saas-redesign §6）：撤 max-w 居中，数据视图自然铺满；

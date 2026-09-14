@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   SignIn,
   Student,
-  TreeStructure,
 } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
@@ -16,7 +15,8 @@ import { EXPIRED_KEY } from "../lib/auth";
 import { landingFor } from "../lib/portal";
 import { EASE } from "../lib/motion-tokens";
 import { ACCENTS } from "../lib/theme";
-import { WEBSITE_URL } from "../lib/site";
+import { PRODUCT_NAME, WEBSITE_URL } from "../lib/site";
+import { BrandMark } from "../components/BrandMark";
 
 /** 统一登录页（auth-roles-design §7）：教师/管理员/学生同一入口。
 
@@ -218,12 +218,10 @@ export default function Login() {
         {/* 品牌行 */}
         <Reveal className="relative flex items-center gap-3">
           <a href={WEBSITE_URL} aria-label="返回官网" className="flex items-center gap-3 rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-white/80">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
-            <TreeStructure size={22} weight="bold" className="text-white" />
-          </span>
+          <BrandMark size={44} />
           <div>
             <p className="font-display text-lg font-bold tracking-tight text-white">
-              薄弱点分析
+              {PRODUCT_NAME}
             </p>
             <p className="text-[11px] text-white/55">教学质量分析平台</p>
           </div>
@@ -276,11 +274,9 @@ export default function Login() {
         {/* 移动端品牌锁定行：小尺寸复刻左栏品牌段，替代旧渐变横幅 */}
         <Reveal className="mb-10 flex items-center gap-2.5 lg:hidden">
           <a href={WEBSITE_URL} aria-label="返回官网" className="flex items-center gap-2.5 rounded-xl outline-offset-4 focus-visible:outline-2 focus-visible:outline-accent">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-white">
-            <TreeStructure size={18} weight="bold" />
-          </span>
+          <BrandMark size={36} />
           <p className="font-display text-base font-bold tracking-tight text-ink">
-            薄弱点分析
+            {PRODUCT_NAME}
           </p>
           </a>
         </Reveal>

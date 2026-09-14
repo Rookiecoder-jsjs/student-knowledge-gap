@@ -34,6 +34,7 @@ import {
 import type { StudyRecordListItem } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
+import { PRODUCT_NAME } from "../lib/site";
 import type { MasteryItem, WeakItem } from "../lib/types";
 import { ACCENTS } from "../lib/theme";
 
@@ -124,10 +125,9 @@ export default function StudentPortal({ source }: { source: PortalSource }) {
       {/* 统一顶栏骨架（UI 位置统一）：原第二行吸顶 tab 收进顶栏中段，tab 由 URL 派生 */}
       <TopBar
         brandTo={backTo ?? "/"}
-        brandAccent={ACCENTS.student}
         title={
           <>
-            {isPreview ? "学生门户预览" : "我的薄弱点分析"}
+            {isPreview ? "学生门户预览" : `我的${PRODUCT_NAME}`}
             {isPreview && <Badge tone="neutral">管理员只读</Badge>}
           </>
         }

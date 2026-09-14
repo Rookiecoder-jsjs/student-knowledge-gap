@@ -103,8 +103,8 @@ export function AboutSection() {
 
 export default function About() {
   usePageMeta(
-    "关于 — 薄弱点分析 · 教学质量分析平台",
-    "薄弱点分析的产品理念：考试为了改进、改进融入教学、每个学生都被看见。"
+    "关于 — 知行教研 · 教学质量分析平台",
+    "知行教研的产品理念：考试为了改进、改进融入教学、每个学生都被看见。"
   );
 
   return (

@@ -104,7 +104,7 @@ export function SecuritySection() {
 
 export default function Security() {
   usePageMeta(
-    "安心使用 — 薄弱点分析",
+    "安心使用 — 知行教研",
     "学校掌握成长记录，师生各得其所，让教学改进在真实校园场景里持续发生。"
   );
 

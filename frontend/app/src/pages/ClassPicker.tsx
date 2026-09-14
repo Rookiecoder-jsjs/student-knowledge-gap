@@ -3,7 +3,6 @@ import {
   BookOpen,
   ClipboardText,
   PlusCircle,
-  TreeStructure,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
 import { AccountCluster, TOOL_LINK, TopBar } from "../components/TopBar";
@@ -12,7 +11,9 @@ import { StaggerItem, StaggerList } from "../components/motion";
 import { listClassesOverview } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
+import { PRODUCT_NAME } from "../lib/site";
 import type { ClassOverview } from "../lib/types";
+import { BrandMark } from "../components/BrandMark";
 
 /** 一级页面·班级概览：横向对比所有班级的待办 / 最近考试 / 教学进度，点击进入单班工作台。
  * 顶栏为统一骨架（UI 位置统一 2026-09-10）：知识库/校务台/账号自页底上移进顶栏右侧。
@@ -25,7 +26,7 @@ export default function ClassPicker() {
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <TopBar
-        title="薄弱点分析"
+        title={PRODUCT_NAME}
         subtitle="教师工作台"
         right={
           <>
@@ -43,9 +44,7 @@ export default function ClassPicker() {
         {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
         <header className="brand-band mb-10 rounded-[18px] px-7 py-8 text-white sm:px-9 sm:py-10">
           <div className="flex items-center gap-4">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white backdrop-blur">
-              <TreeStructure size={24} weight="bold" />
-            </span>
+            <BrandMark size={48} />
             <div>
               <h1 className="font-display text-3xl font-bold tracking-tight">班级概览</h1>
               <p className="mt-1 text-sm text-white/80">

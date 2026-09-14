@@ -1,4 +1,4 @@
-import { SignOut, TreeStructure } from "@phosphor-icons/react";
+import { SignOut } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import type { ComponentType, ReactNode } from "react";
@@ -6,6 +6,7 @@ import { useAuth } from "../lib/AuthContext";
 import type { Session } from "../lib/auth";
 import { EASE } from "../lib/motion-tokens";
 import { ThemeToggle } from "./ThemeToggle";
+import { BrandMark } from "./BrandMark";
 
 /**
  * 学生门户/班级选择页统一顶栏骨架（UI 位置统一 2026-09-10）：品牌左 · 导航中 ·
@@ -41,7 +42,6 @@ export function TopBar({
   title,
   subtitle,
   brandTo = "/",
-  brandAccent,
   nav,
   right,
 }: {
@@ -51,8 +51,6 @@ export function TopBar({
   subtitle?: ReactNode;
   /** 品牌点击落点；学生门户预览指向返回教师端。 */
   brandTo?: string;
-  /** 品牌图标块底色；缺省用主题 accent（教师/校务端），学生端传 ACCENTS.student。 */
-  brandAccent?: string;
   /** 中段导航（<TopBarNav/> 或自定义节点）；缺省无导航。 */
   nav?: ReactNode;
   /** 右侧工具/账号簇。 */
@@ -65,14 +63,7 @@ export function TopBar({
           to={brandTo}
           className="flex shrink-0 items-center gap-2.5 rounded-xl transition-opacity hover:opacity-80"
         >
-          <span
-            className={`flex h-9 w-9 items-center justify-center rounded-xl text-white ${
-              brandAccent ? "" : "bg-[#0d2a27] shadow-[0_8px_20px_-10px_rgba(13,42,39,.75)]"
-            }`}
-            style={brandAccent ? { background: brandAccent } : undefined}
-          >
-            <TreeStructure size={18} weight="bold" aria-hidden />
-          </span>
+          <BrandMark size={36} />
           <div className="leading-tight">
             <p className="flex items-center gap-2 font-display text-sm font-bold tracking-tight">{title}</p>
             {subtitle && <p className="text-[11px] text-ink-faint">{subtitle}</p>}

@@ -59,17 +59,17 @@ const CAPABILITIES = [
 
 function ProductPreview() {
   return (
-    <div className="relative rounded-[22px] border border-line bg-surface p-3 shadow-[0_32px_80px_-38px_rgba(13,42,39,.55)] sm:p-4">
-      <div className="flex items-center justify-between border-b border-line px-2 pb-3">
+    <div className="relative overflow-hidden rounded-[28px] border border-white/15 bg-white/[0.08] p-3 shadow-[0_34px_90px_-34px_rgba(0,0,0,.65)] backdrop-blur-xl sm:p-4">
+      <div className="flex items-center justify-between border-b border-white/10 px-2 pb-3">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-[#b33b31]/70" />
           <span className="h-2.5 w-2.5 rounded-full bg-annot/70" />
           <span className="h-2.5 w-2.5 rounded-full bg-primary/70" />
         </div>
-        <span className="text-[10px] font-semibold tracking-[0.15em] text-ink-faint uppercase">一次教学复盘 · 示例</span>
+        <span className="text-[10px] font-semibold tracking-[0.15em] text-white/45 uppercase">一次教学复盘 · 示例</span>
       </div>
       <div className="grid gap-3 pt-3 sm:grid-cols-[1.1fr_.9fr]">
-        <div className="rounded-2xl bg-night p-5 text-white">
+        <div className="rounded-2xl bg-[#0d2a27] p-5 text-white ring-1 ring-white/10">
           <p className="text-xs text-white/45">本周先关注</p>
           <p className="mt-2 font-display text-xl font-bold">函数的单调性与最值</p>
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
@@ -88,7 +88,7 @@ function ProductPreview() {
             ["小组辅导", "针对练习", "bg-[#356a8a]"],
             ["个别跟进", "持续支持", "bg-annot"],
           ].map(([label, value, color]) => (
-            <div key={label} className="rounded-xl border border-line bg-paper px-4 py-3">
+            <div key={label} className="rounded-xl border border-line bg-surface/95 px-4 py-3">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="flex items-center gap-2 text-ink-soft"><i className={`h-2 w-2 rounded-full ${color}`} />{label}</span>
                 <b className="font-display text-ink">{value}</b>
@@ -106,35 +106,48 @@ function ProductPreview() {
 
 export default function Home() {
   usePageMeta(
-    "薄弱点分析 — 从一张试卷，到每个学生的提升路径",
+    "知行教研 — 从一张试卷，到每个学生的提升路径",
     "把考试结果变成教学行动：看见问题、找准重点、安排跟进，再用后续表现验证改变。"
   );
 
   return (
     <>
-      <section className="relative overflow-hidden border-b border-line py-16 sm:py-20 lg:py-24">
-        <div className="paper-grid pointer-events-none absolute inset-0 opacity-65" aria-hidden />
-        <Container className="relative grid items-center gap-12 lg:grid-cols-[.92fr_1.08fr] lg:gap-16">
-          <Reveal>
-            <p className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/8 px-3 py-1.5 text-xs font-semibold text-primary-deep">
+      <section className="relative flex min-h-[calc(100svh-68px)] overflow-hidden border-b border-line bg-paper text-ink">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_38%,rgba(15,118,110,.12),transparent_34%),radial-gradient(circle_at_18%_92%,rgba(183,121,31,.1),transparent_32%)]" aria-hidden />
+        <div className="paper-grid pointer-events-none absolute inset-0 opacity-45" aria-hidden />
+        <div className="pointer-events-none absolute -right-40 top-1/4 h-[34rem] w-[34rem] rounded-full bg-primary/10 blur-[120px]" aria-hidden />
+        <Container className="relative flex w-full items-center py-14 sm:py-16 lg:py-20">
+          <div className="grid w-full items-center gap-12 lg:grid-cols-[.86fr_1.14fr] lg:gap-16">
+          <Reveal className="max-w-2xl">
+            <p className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-surface/75 px-3.5 py-2 text-xs font-semibold tracking-wide text-primary">
               <SealCheck size={14} aria-hidden /> 看见问题 · 立即行动 · 持续改善
             </p>
-            <h1 className="mt-6 max-w-[12ch] font-display text-[2.8rem] leading-[1.08] font-bold tracking-[-0.04em] text-ink text-balance sm:text-6xl">
-              看清薄弱点，走完改进路
+            <h1 className="mt-7 max-w-[9ch] font-display text-[clamp(3.25rem,6.8vw,6rem)] leading-[0.96] font-bold tracking-[-0.065em] text-ink text-balance">
+              看清薄弱点，<span className="text-primary">走完改进路</span>
             </h1>
-            <p className="mt-6 max-w-[54ch] text-base leading-8 text-ink-soft sm:text-lg">
+            <p className="mt-7 max-w-[48ch] text-[clamp(1rem,1.4vw,1.2rem)] leading-8 text-ink-soft">
               从一次考试出发，把结果变成清晰的教学重点，把重点变成每个人的下一步，再用后续表现确认改变。
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-9 flex flex-wrap gap-3">
               <Link to="/#cta" className={btnPrimary}>预约演示 <ArrowRight size={16} aria-hidden /></Link>
               <Link to="/#product" className={btnGhost}>查看产品路径 <ArrowRight size={15} aria-hidden /></Link>
             </div>
-            <p className="mt-7 flex items-center gap-2 text-xs text-ink-faint">
-              <LockKey size={14} className="text-primary" aria-hidden /> 为学校日常教学而生 · 可从一个班级开始
-            </p>
+            <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 border-t border-line pt-5 text-xs text-ink-faint">
+              <span className="flex items-center gap-2"><LockKey size={14} className="text-primary" aria-hidden />校内数据，边界清晰</span>
+              <span className="flex items-center gap-2"><Path size={14} className="text-annot" aria-hidden />从一个班级开始</span>
+            </div>
           </Reveal>
-          <Reveal delay={0.08}><ProductPreview /></Reveal>
+
+          <Reveal delay={0.08} className="relative lg:pl-4">
+            <div className="pointer-events-none absolute -inset-8 rounded-[42px] border border-primary/10 bg-primary/[0.04] blur-[1px]" aria-hidden />
+            <ProductPreview />
+            <p className="mt-4 text-center text-xs tracking-wide text-ink-faint lg:text-left">把每次考试，变成下一步更有把握的教学行动</p>
+          </Reveal>
+          </div>
         </Container>
+        <div className="absolute bottom-5 left-1/2 hidden -translate-x-1/2 items-center gap-2 text-[10px] font-semibold tracking-[0.2em] text-ink-faint uppercase lg:flex">
+          <span className="h-5 w-px bg-line-strong" />向下浏览产品路径
+        </div>
       </section>
 
       <section className="border-b border-line bg-surface/70">

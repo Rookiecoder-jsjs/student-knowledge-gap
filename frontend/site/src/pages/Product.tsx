@@ -179,7 +179,7 @@ export function ProductSection() {
 
 export default function Product() {
   usePageMeta(
-    "产品 — 薄弱点分析 · 教学质量分析平台",
+    "产品 — 知行教研 · 教学质量分析平台",
     "从发现教学重点到验证学习改变，帮助学校把每一次考试都变成更有把握的下一步。"
   );
 

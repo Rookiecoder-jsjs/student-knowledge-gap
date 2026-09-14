@@ -17,6 +17,7 @@ import type {
   ThHTMLAttributes,
 } from "react";
 import { EASE } from "../lib/motion-tokens";
+import { PRODUCT_NAME } from "../lib/site";
 
 /* ---------------- 页面模块色包裹器 ---------------- */
 
@@ -452,7 +453,7 @@ export function PageHeader({
     // 缺省 0）；负外边距出血到主区内容边，底衬毛玻璃避免内容穿透。
     <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-line/70 bg-canvas/92 px-4 py-4 shadow-[0_12px_24px_-28px_rgba(33,42,36,.7)] backdrop-blur-xl md:-mx-8 md:px-8">
       <div>
-        <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-accent">薄弱点分析</p>
+        <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-accent">{PRODUCT_NAME}</p>
         <h1 className="font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-ink">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>

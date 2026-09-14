@@ -1,8 +1,8 @@
-import { TreeStructure } from "@phosphor-icons/react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import type { ComponentType, ReactNode } from "react";
 import { EASE } from "../lib/motion-tokens";
+import { BrandMark } from "./BrandMark";
 
 /**
  * 教师/管理端侧栏骨架（side-nav-redesign 2026-09-11；P2 响应式修订 saas-redesign §6）：
@@ -48,7 +48,6 @@ export function Sidebar({
   title,
   subtitle,
   brandTo = "/",
-  brandAccent,
   context,
   groups,
   navLabel,
@@ -61,8 +60,6 @@ export function Sidebar({
   /** 副标题（端名），缺省不显示。 */
   subtitle?: ReactNode;
   brandTo?: string;
-  /** 品牌图标块底色；缺省用主题 accent。 */
-  brandAccent?: string;
   /** 语境块（班级切换器等）。 */
   context?: ReactNode;
   groups: SideNavGroup[];
@@ -89,14 +86,7 @@ export function Sidebar({
         onClick={onMobileClose}
         className="relative flex shrink-0 items-center gap-3 border-b border-line/70 px-5 py-5 transition-colors hover:bg-surface-2/60"
       >
-        <span
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white ${
-            brandAccent ? "" : "bg-[#0d2a27] shadow-[0_8px_20px_-10px_rgba(13,42,39,.75)]"
-          }`}
-          style={brandAccent ? { background: brandAccent } : undefined}
-        >
-          <TreeStructure size={18} weight="bold" aria-hidden />
-        </span>
+        <BrandMark size={36} />
         <span className="min-w-0 leading-tight">
           <span className="block truncate font-display text-[15px] font-bold tracking-tight">{title}</span>
           {subtitle && (

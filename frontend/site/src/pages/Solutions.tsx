@@ -96,7 +96,7 @@ export function SolutionsSection() {
 
 export default function Solutions() {
   usePageMeta(
-    "方案 — 按角色看薄弱点分析",
+    "方案 — 按角色使用知行教研",
     "为校长、教务、教研员和班主任提供清晰的决策重点，让教学改进从全校目标落到每个学生。"
   );
 
