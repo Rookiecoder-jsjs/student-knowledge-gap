@@ -229,7 +229,7 @@ pub(crate) async fn run_turn(
     );
     let mut world_state = world_state?;
 
-    let Some((injection_items, explicitly_enabled_connectors)) = build_skills_and_plugins(
+    let Some(injection_items) = build_skills_and_plugins(
         &sess,
         first_step_context.as_ref(),
         &user_input,
@@ -249,8 +249,6 @@ pub(crate) async fn run_turn(
         return Ok(None);
     }
 
-    sess.merge_connector_selection(explicitly_enabled_connectors.clone())
-        .await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: turn_context.model_info.slug.clone(),
         comp_hash: turn_context.model_info.comp_hash.clone(),
@@ -655,7 +653,6 @@ async fn required_mcp_servers_for_input(
         .plugins_manager
         .plugins_for_config(&turn_context.config.plugins_config_input())
         .await;
-    let _current_config = sess.services.mcp_runtime.current_config();
     let mentioned_plugins =
         collect_explicit_plugin_mentions(user_input, loaded_plugins.capability_summaries());
     let mut required_servers = mentioned_plugins
@@ -684,12 +681,9 @@ async fn required_mcp_servers_for_input(
             .map(str::to_string)
     }));
 
-    // connectors（ChatGPT Apps）已随产品裁剪移除：slug 计数恒为空。
-    let connector_slug_counts = HashMap::new();
     let skills_snapshot = turn_context.skills_snapshot();
     let skills_outcome = skills_snapshot.outcome();
-    let mentioned_skills =
-        collect_explicit_skill_mentions(user_input, skills_outcome, &connector_slug_counts);
+    let mentioned_skills = collect_explicit_skill_mentions(user_input, skills_outcome);
     for skill in mentioned_skills {
         if let Some(dependencies) = skill.dependencies {
             required_servers.extend(
@@ -720,12 +714,12 @@ async fn build_skills_and_plugins(
     user_input: &[UserInput],
     mentioned_plugins: &[crate::plugins::PluginCapabilitySummary],
     cancellation_token: &CancellationToken,
-) -> Option<(Vec<ResponseItem>, HashSet<String>)> {
+) -> Option<Vec<ResponseItem>> {
     let turn_context = step_context.turn.as_ref();
     // Guardian input embeds the parent transcript as untrusted evidence. Do not interpret skill or
     // plugin mentions from that generated prompt as requests to inject additional instructions.
     if crate::guardian::is_guardian_reviewer_source(&turn_context.session_source) {
-        return Some((Vec::new(), HashSet::new()));
+        return Some(Vec::new());
     }
 
     let tracking = build_track_events_context(
@@ -739,8 +733,7 @@ async fn build_skills_and_plugins(
     let extension_injection_items =
         build_extension_turn_input_items(sess, step_context, user_input, cancellation_token)
             .await?;
-    let mentioned_skills =
-        collect_explicit_skill_mentions(user_input, skills_outcome, &HashMap::new());
+    let mentioned_skills = collect_explicit_skill_mentions(user_input, skills_outcome);
     maybe_prompt_and_install_mcp_dependencies(
         sess,
         turn_context,
@@ -778,7 +771,6 @@ async fn build_skills_and_plugins(
     } else {
         crate::plugins::build_plugin_injections(mentioned_plugins, step_context.mcp.tools())
     };
-    let explicitly_enabled_connectors = HashSet::new();
     for summary in mentioned_plugins {
         if let Some(plugin) = sess
             .services
@@ -805,7 +797,7 @@ async fn build_skills_and_plugins(
     };
     injection_items.extend(plugin_items);
     injection_items.extend(extension_injection_items);
-    Some((injection_items, explicitly_enabled_connectors))
+    Some(injection_items)
 }
 
 #[tracing::instrument(
@@ -1299,17 +1291,6 @@ async fn run_sampling_request(
     }
 }
 
-pub(crate) struct PreparedToolRecommendations {}
-
-#[instrument(level = "trace", skip_all)]
-pub(crate) async fn prepare_tool_recommendations(
-    _sess: &Session,
-    _turn_context: &TurnContext,
-) -> PreparedToolRecommendations {
-    // tool_suggest/request_plugin_install 链路随 connectors 裁剪移除。
-    PreparedToolRecommendations {}
-}
-
 #[instrument(level = "trace",
     skip_all,
     fields(
@@ -1318,15 +1299,13 @@ pub(crate) async fn prepare_tool_recommendations(
         apps_enabled = turn_context.apps_enabled()
     )
 )]
-pub(crate) async fn built_tools(
+pub(crate) fn built_tools(
     sess: &Session,
     turn_context: &TurnContext,
     environments: &TurnEnvironmentSnapshot,
     mcp: &Arc<codex_mcp::McpBinding>,
     step_store: &ExtensionData,
-    prepared_recommendations: PreparedToolRecommendations,
 ) -> CodexResult<Arc<ToolRouter>> {
-    let _ = prepared_recommendations;
     Ok(Arc::new(build_tool_router(
         sess,
         turn_context,

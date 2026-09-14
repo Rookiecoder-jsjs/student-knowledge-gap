@@ -1284,32 +1284,6 @@ impl Session {
         }
     }
 
-    // Merges connector IDs into the session-level explicit connector selection.
-    #[tracing::instrument(
-        level = "trace",
-        skip_all,
-        fields(connector_count = connector_ids.len())
-    )]
-    pub(crate) async fn merge_connector_selection(
-        &self,
-        connector_ids: HashSet<String>,
-    ) -> HashSet<String> {
-        let mut state = self.state.lock().await;
-        state.merge_connector_selection(connector_ids)
-    }
-
-    // Returns the connector IDs currently selected for this session.
-    pub(crate) async fn get_connector_selection(&self) -> HashSet<String> {
-        let state = self.state.lock().await;
-        state.get_connector_selection()
-    }
-
-    // Clears connector IDs that were accumulated for explicit selection.
-    pub(crate) async fn clear_connector_selection(&self) {
-        let mut state = self.state.lock().await;
-        state.clear_connector_selection();
-    }
-
     async fn record_initial_history(&self, conversation_history: InitialHistory) {
         let (is_subagent, is_paginated_subagent) = {
             let state = self.state.lock().await;
@@ -3184,18 +3158,14 @@ impl Session {
                 .collect::<HashMap<_, _>>();
             extension_data.insert(sandbox_contexts);
         }
-        let (mcp, prepared_recommendations) = async {
-            tokio::join!(
-                self.mcp_runtime_for_step(
-                    turn_context.as_ref(),
-                    &selected_capability_roots,
-                    required_servers,
-                ),
-                turn::prepare_tool_recommendations(self.as_ref(), turn_context.as_ref()),
+        let mcp = self
+            .mcp_runtime_for_step(
+                turn_context.as_ref(),
+                &selected_capability_roots,
+                required_servers,
             )
-        }
-        .or_cancel(cancellation_token)
-        .await?;
+            .or_cancel(cancellation_token)
+            .await?;
         let mut selected_plugins = self
             .services
             .thread_extension_data
@@ -3215,10 +3185,7 @@ impl Session {
             &environments,
             &mcp,
             &extension_data,
-            prepared_recommendations,
-        )
-        .or_cancel(cancellation_token)
-        .await??;
+        )?;
         Ok(Arc::new(StepContext {
             model_info: Arc::clone(&turn_context.model_info),
             reasoning_effort: turn_context.reasoning_effort.clone(),

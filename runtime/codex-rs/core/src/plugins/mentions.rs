@@ -12,8 +12,6 @@ use crate::mention_syntax::TOOL_MENTION_SIGIL;
 use super::PluginCapabilitySummary;
 
 pub(crate) struct CollectedToolMentions {
-    #[allow(dead_code)] // plain_names 仅 connectors 提及链路使用,已裁剪
-    pub(crate) plain_names: HashSet<String>,
     pub(crate) paths: HashSet<String>,
 }
 
@@ -25,16 +23,13 @@ fn collect_tool_mentions_from_messages_with_sigil(
     messages: &[String],
     sigil: char,
 ) -> CollectedToolMentions {
-    let mut plain_names = HashSet::new();
     let mut paths = HashSet::new();
     for message in messages {
         let mentions = extract_tool_mentions_with_sigil(message, sigil);
-        plain_names.extend(mentions.plain_names().map(str::to_string));
         paths.extend(mentions.paths().map(str::to_string));
     }
-    CollectedToolMentions { plain_names, paths }
+    CollectedToolMentions { paths }
 }
-
 
 /// Collect explicit structured or linked `plugin://...` mentions.
 pub(crate) fn collect_explicit_plugin_mentions(

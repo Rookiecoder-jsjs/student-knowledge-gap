@@ -270,11 +270,12 @@ async fn start_only_accepts_user_input_in_plan_mode() {
     let (session, _turn_context, _rx) = make_session_and_context_with_rx().await;
     let mut collaboration_mode = session.collaboration_mode().await;
     collaboration_mode.mode = ModeKind::Plan;
-    {
-        let mut state = session.state.lock().await;
-        state.session_configuration.collaboration_mode = collaboration_mode;
-        state.merge_connector_selection(["calendar".to_string()]);
-    }
+    session
+        .state
+        .lock()
+        .await
+        .session_configuration
+        .collaboration_mode = collaboration_mode;
 
     let submission = submit_start_only(
         &session,
@@ -288,15 +289,6 @@ async fn start_only_accepts_user_input_in_plan_mode() {
     )
     .await;
     assert!(matches!(submission, TurnInputSubmission::Started { .. }));
-    assert!(
-        session
-            .state
-            .lock()
-            .await
-            .get_connector_selection()
-            .is_empty()
-    );
-
     session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 

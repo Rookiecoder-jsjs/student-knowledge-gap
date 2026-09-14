@@ -74,9 +74,7 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
   # 2) 构建（自包含，无顺序）
   docker compose -f deploy/docker-compose.yml build gateway
   ```
-- `just build-for-release` 产物 = `codex-app-server` + `exec-server` +
-  `school-authz-mcp`（school-authz-mcp 第 5 批起**不再 stage 进镜像**——crate 保留
-  作参考实现，见 §6.3）；
+- `just build-for-release` 产物 = `codex-app-server` + `exec-server`；
 - **CODEX_HOME 按驱动分 + 惰性播种**（装车批第 6 批）：`$SC_GATEWAY_CODEX_HOME` 是**根**，
   每教师驱动用其下 `t<teacher_id>/`；`Bridge.spawn` 前 `main.py _seed_driver_home` 对驱动
   home 渲染（`[mcp_servers.sc]` = 远程 `url=http://backend:8000/mcp` + 条件
@@ -98,23 +96,9 @@ cargo run -p codex-cli --bin codex -- exec --skip-git-repo-check "查询班级�
   修复需 defs.bzl rust_binary `rustc_env` 补 `CARGO_PKG_VERSION`（fork 分歧账），
   待真正需要展示壳版本时再做。
 
-### §6.3 新增：school-authz（身份校验 + 注入）
+### §6.3 历史参考：school-authz（身份校验 + 注入）
 
-```bash
-# Cargo 轨
-cargo check -p codex-school-authz
-cargo test -p codex-school-authz        # RUST_MIN_STACK=8388608
-
-# Bazel 轨（发布用；新增 crate 必须配 BUILD.bazel——D8 义务）
-bazel build //codex-rs/school-authz:school-authz-mcp
-bazel test //codex-rs/school-authz:all
-
-# 依赖变更后同步 lockfile（义务②）
-just bazel-lock-update
-```
-
-产物 `school-authz-mcp` = stdio MCP shim（Rust HMAC 验签，决策表 Passthrough/
-Anonymous/SetTeacher/FailClosed）。**部署已退役（装车批第 5 批）**：sc MCP 迁入 backend
+`school-authz-mcp` 是已退出构建的 stdio MCP shim 历史实现。**部署已退役（装车批第 5 批）**：sc MCP 迁入 backend
 进程后 `[mcp_servers.sc]` 为远程 url，url 与 command 互斥、shim 不再被 spawn，也不再
 stage 进 gateway 镜像。其校验职责**迁往 backend 逐请求**（`auth.verify_token` 同格式同
 密钥，`app/mcp_http.py` 中间件）；crate + 测试**保留在树内作参考实现**（token 格式与

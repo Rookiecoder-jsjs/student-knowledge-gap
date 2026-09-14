@@ -369,22 +369,18 @@ fn apply_requirements_apps_constraints(
     }
 }
 
-
 /// Resolves whether one app tool is enabled against one immutable config snapshot.
-pub(crate) struct AppToolPolicyEvaluator<'a> {
+pub(crate) struct AppToolPolicyEvaluator {
     apps_config: Option<AppsConfigToml>,
-    #[expect(dead_code, reason = "kept alongside apps_config for parity with config merge")]
-    requirements_apps_config: Option<&'a AppsRequirementsToml>,
 }
 
-impl<'a> AppToolPolicyEvaluator<'a> {
-    pub(crate) fn new(config_layer_stack: &'a ConfigLayerStack) -> Self {
+impl AppToolPolicyEvaluator {
+    pub(crate) fn new(config_layer_stack: &ConfigLayerStack) -> Self {
         Self {
             apps_config: effective_apps_config(
                 apps_config_from_layer_stack(config_layer_stack),
                 config_layer_stack.requirements_toml().apps.as_ref(),
             ),
-            requirements_apps_config: config_layer_stack.requirements_toml().apps.as_ref(),
         }
     }
 

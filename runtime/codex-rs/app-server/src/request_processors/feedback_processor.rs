@@ -206,15 +206,6 @@ impl FeedbackRequestProcessor {
                     )),
                 });
             }
-            for cache_attachment in tool_cache_feedback_attachments(
-                self.config.codex_home.as_path(),
-                &self.config.chatgpt_base_url,
-                auth.as_ref(),
-            ) {
-                if seen_attachment_paths.insert(cache_attachment.path.clone()) {
-                    attachment_paths.push(cache_attachment);
-                }
-            }
         }
         if let Some(extra_log_files) = extra_log_files {
             for extra_log_file in extra_log_files {
@@ -397,16 +388,6 @@ fn normalized_prompt_hash(prompt: &str) -> String {
     format!("{:x}", Sha256::digest(normalized_prompt.as_bytes()))
 }
 
-fn tool_cache_feedback_attachments(
-    _codex_home: &Path,
-    _chatgpt_base_url: &str,
-    _auth: Option<&CodexAuth>,
-) -> Vec<FeedbackAttachmentPath> {
-    // connectors 缓存附件随 code-mode/connectors 拆除退役。
-    Vec::new()
-}
-
-
 fn auto_review_rollout_filename(thread_id: ThreadId) -> String {
     format!("auto-review-rollout-{thread_id}.jsonl")
 }
@@ -418,7 +399,7 @@ mod tests {
     use codex_rollout::RolloutLine;
     use core_test_support::responses::start_mock_server;
     use core_test_support::test_codex::test_codex;
-    
+
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
@@ -672,11 +653,6 @@ mod tests {
             .expect("serialize feedback rollout")
             .join("\n");
         std::fs::write(&rollout_path, format!("{contents}\n")).expect("write feedback rollout");
-
         (tempdir, rollout_path)
     }
-
-    
-    
-
 }

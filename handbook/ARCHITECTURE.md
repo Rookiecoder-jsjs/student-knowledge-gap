@@ -19,7 +19,7 @@
 
 ## 1. Workspace 总览
 
-workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`，锚点 133 个成员，Phase 1 裁剪后为 **118** 个，加上 §6.3 首笔新增 `school-authz` 现为 **119** 个（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate；裁剪账本见 [CRATES.md](CRATES.md)，新增见本文件 §1.4.1 与 [CRATES.md](CRATES.md) 预定新增）。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
+workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs/Cargo.toml` 的 `[workspace.members]`，Phase 1 裁剪后为 **118** 个成员（含 `core`、`protocol`、`app-server` 等主力 crate，以及大量 `utils/*` 工具 crate；裁剪账本见 [CRATES.md](CRATES.md)）。`school-authz` 源码目录已退出 workspace，仅作历史参考。`resolver = "2"`，统一 `edition = "2024"`，`version = "0.149.1"`。
 
 下面**按职能分组**（分组是我们为导航方便追加的，非上游定义；清单本身来自 members）：
 
@@ -80,11 +80,11 @@ workspace 根：`codex-rs/`。成员清单的**唯一权威来源**是 `codex-rs
 | `app-server-protocol-noop-macros` | noop 宏。 |
 | `app-server-transport` 的 `remote_control/` | 远端控制（配对、客户端列表）。 |
 
-### 1.4.1 §6.3 新增（fork 自有，非上游成员）
+### 1.4.1 §6.3 历史参考（已退出 workspace）
 
 | crate（目录） | 一句话职责 |
 | --- | --- |
-| `school-authz` | 教师↔班级鉴权原语：签名 token 校验（HMAC-SHA256，与 sc 后端 `backend/app/auth.py` 同格式同密钥）+ `assert_class_access` 权限断言 + `school-authz-mcp` stdio shim。首个官方壳做不到的能力（§6.3 / DELTA D-034）。**部署形态已退役（装车批第 5 批 / D-035）**：sc MCP 迁 backend 进程后身份改逐请求 token 校验（`backend/app/mcp_http.py`），crate 保留作参考实现；差异能力以「backend 逐请求教师授权」形态延续 |
+| `school-authz` | 教师↔班级鉴权原语与 `school-authz-mcp` stdio shim 的历史参考实现。**部署形态已退役（装车批第 5 批 / D-035）**，源码目录保留但不再属于 workspace 或 release 构建；当前身份校验由 backend 逐请求完成（`backend/app/mcp_http.py`） |
 
 ### 1.5 持久化 / 状态
 

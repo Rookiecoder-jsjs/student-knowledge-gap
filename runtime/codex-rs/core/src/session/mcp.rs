@@ -52,8 +52,6 @@ struct GuardianMcpElicitationReviewer {
 
 pub(crate) struct McpServerElicitationOutcome {
     pub(crate) response: Option<ElicitationResponse>,
-    #[allow(dead_code)] // 仅测试断言;生产路径只读 response
-    pub(crate) sent: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -450,7 +448,6 @@ impl Session {
                     content: Some(serde_json::json!({})),
                     meta: None,
                 }),
-                sent: false,
             };
         }
 
@@ -505,7 +502,6 @@ impl Session {
         }
         McpServerElicitationOutcome {
             response: rx_response.await.ok(),
-            sent: true,
         }
     }
 

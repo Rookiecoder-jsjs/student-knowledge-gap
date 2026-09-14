@@ -79,10 +79,10 @@ cloud-tasks 全家 · realtime 全家 · code-mode/v8 全家 · connectors ·
 TUI（唯一前门是 app-server）· exec 人类输出面 · apply_patch 默认工具 ·
 编码类 prompt 文件 · network-proxy（独立评估）
 
-### 预定新增（§6.3，均须配 BUILD.bazel——D8 双轨义务）
+### 历史参考（§6.3，已退出 workspace）
 
 `edu-tools`（领域工具参数校验/白名单/`_provenance` 注入）·
-`school-authz`（教师↔班级权限断言/token 校验/身份注入 MCP 连接）
+`school-authz`（教师↔班级权限断言/token 校验/身份注入 MCP 连接；源码保留但不再参与 workspace/release 构建）
 
 | 批次 | crate | 动作 | 理由 | 日期 |
 |---|---|---|---|---|
@@ -92,4 +92,4 @@ TUI（唯一前门是 app-server）· exec 人类输出面 · apply_patch 默认
 > `school-authz-mcp` **自第 5 批起不再 stage 进 gateway 镜像、不再被 `[mcp_servers.sc]`
 > 引用**——sc MCP 迁入 backend 进程后身份改逐请求 token 校验（`app/mcp_http.py`）。
 > 本行不是「仍随镜像分发」的误读；token 格式与决策表仍以本 crate 为 Rust 侧参考实现。
-> `justfile build-for-release` 仍建三枚（school-authz 保编译验证，无害超集）。
+> `school-authz` 已从 workspace 与 release 构建入口移除；源码目录保留作历史参考。

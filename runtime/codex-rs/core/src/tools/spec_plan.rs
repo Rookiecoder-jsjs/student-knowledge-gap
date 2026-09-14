@@ -194,8 +194,6 @@ fn apply_mcp_tool_exposure_policy(
         let Some(omitted_exposures) = omitted_exposures_by_tool.get(&tool_name) else {
             continue;
         };
-        let _ = tool_name.with_default_namespace();
-
         let mut exposures = ToolExposures::ALL.difference(*omitted_exposures);
 
         exposures = if search_tool_enabled(turn_context) && exposures.contains(ToolExposures::DEFERRED)

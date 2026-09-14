@@ -194,7 +194,7 @@ impl ToolRouter {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))] // 仅测试直接调用；生产走 with_terminal_outcome
+    #[cfg(test)]
     #[instrument(level = "trace", skip_all, err)]
     pub async fn dispatch_tool_call(
         &self,

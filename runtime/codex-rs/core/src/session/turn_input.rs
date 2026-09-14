@@ -342,7 +342,6 @@ async fn start_if_idle(
 
     let mut task_input = merge_additional_context_input(session, additional_context).await;
     if has_user_input {
-        session.clear_connector_selection().await;
         if let SubmittedTurnInput::UserInput { content, .. } = &input {
             turn_context.session_telemetry.user_prompt(content);
         }
