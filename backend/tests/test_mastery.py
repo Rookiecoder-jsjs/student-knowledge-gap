@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from app.models import EvidenceEvent
+from app.models import ExamResponse, ExamTemplate, EvidenceEvent, ResponseAnswer, TemplateQuestion
 from app.pipeline.mastery import mastery_of_events, mastery_at
 
 
@@ -48,13 +48,35 @@ def test_empty_returns_none():
 def test_mastery_at_filters_cog_level(session, env):
     kp = env["kp"]["U"]
     now = datetime(2026, 1, 20, 12, 0)
-    session.add(EvidenceEvent(student_id=1, kp_id=kp, response_answer_id=1,
+    exam = ExamTemplate(
+        class_id=env["class"].id,
+        name="掌握度测试",
+        exam_date=now.date(),
+        type="期中",
+    )
+    session.add(exam)
+    session.flush()
+    question = TemplateQuestion(
+        exam_template_id=exam.id, idx=1, q_type="解答", full_score=1.0
+    )
+    session.add(question)
+    session.flush()
+    response = ExamResponse(exam_template_id=exam.id, student_id=env["students"]["T01"])
+    session.add(response)
+    session.flush()
+    answer = ResponseAnswer(
+        exam_response_id=response.id, template_question_id=question.id, score=1.0
+    )
+    session.add(answer)
+    session.flush()
+    session.add(EvidenceEvent(student_id=env["students"]["T01"], kp_id=kp, response_answer_id=answer.id,
                               source_type="期中", value=1.0, weight=1.0,
                               cog_level="识记", occurred_at=now, algo_version="t"))
-    session.add(EvidenceEvent(student_id=1, kp_id=kp, response_answer_id=2,
+    session.add(EvidenceEvent(student_id=env["students"]["T01"], kp_id=kp, response_answer_id=answer.id,
                               source_type="期中", value=0.2, weight=1.0,
                               cog_level="应用", occurred_at=now, algo_version="t"))
     session.flush()
-    assert mastery_at(session, 1, kp, now, cog_level="识记") == 1.0
-    assert mastery_at(session, 1, kp, now, cog_level="应用") == 0.2
-    assert abs(mastery_at(session, 1, kp, now) - 0.6) < 1e-9
+    student_id = env["students"]["T01"]
+    assert mastery_at(session, student_id, kp, now, cog_level="识记") == 1.0
+    assert mastery_at(session, student_id, kp, now, cog_level="应用") == 0.2
+    assert abs(mastery_at(session, student_id, kp, now) - 0.6) < 1e-9

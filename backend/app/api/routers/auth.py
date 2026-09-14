@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth
+from app import auth_throttle
 from app.api.deps import access_ctx, get_db, require_admin, require_teacher
 from app.models import Class as ClassModel
 from app.models import Student, Teacher, TeacherClass, TeacherSubjectScope
@@ -29,8 +30,12 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    model_config = ConfigDict(extra="forbid")
+
+    # 登录会在校验通过后进入密码哈希流程；先限制输入规模，避免异常大的
+    # 凭据占用过多解析与认证资源。这里不设置最小长度，保持错误凭据仍返回 401。
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=128)
 
 
 class TeacherCreate(BaseModel):
@@ -115,12 +120,22 @@ def _student_payload(ctx: auth.AccessContext) -> dict:
 
 
 @router.post("/auth/login")
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """口令登录 → Bearer token（教师/admin 或学生；开放模式同样可用）。"""
+    client_ip = request.client.host if request.client is not None else "unknown"
+    retry_after = auth_throttle.check(req.username, client_ip)
+    if retry_after is not None:
+        raise HTTPException(
+            429,
+            "登录尝试过多，请稍后再试",
+            headers={"Retry-After": str(retry_after)},
+        )
     try:
         principal, token, kind = auth.authenticate_any(db, req.username, req.password)
     except auth.AuthError as e:
+        auth_throttle.record_failure(req.username, client_ip)
         raise HTTPException(401, str(e)) from e
+    auth_throttle.record_success(req.username, client_ip)
     ctx = (
         auth.AccessContext(teacher=principal)
         if kind == "t"
@@ -165,7 +180,7 @@ def create_teacher(
         name=req.name,
         username=req.username,
         salt=salt,
-        password_hash=auth.hash_password(req.password, salt),
+        password_hash=auth.hash_password_for_storage(req.password, salt),
         admin=req.admin,
         kb_editor=req.kb_editor,
     )

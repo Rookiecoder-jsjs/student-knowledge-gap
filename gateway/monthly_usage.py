@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Callable
@@ -17,6 +18,7 @@ import httpx
 
 NotifyHook = Callable[[dict], None]
 _hooks: list[NotifyHook] = []
+_log = logging.getLogger("sc.gateway.monthly_usage")
 
 CHECK_INTERVAL_S = float(os.environ.get("SC_BUDGET_MONTHLY_CHECK_S", "3600"))
 
@@ -32,7 +34,14 @@ def _dispatch(payload: dict) -> None:
         try:
             h(payload)
         except Exception as e:  # noqa: BLE001 —— 通知失败不影响巡查循环
-            print(f"[monthly-usage] notify hook failed: {e}")
+            _log.warning(
+                "monthly usage notification hook failed",
+                extra={
+                    "event": "monthly_usage.notification_failed",
+                    "error_code": "notification_hook_failed",
+                },
+                exc_info=True,
+            )
 
 
 def fetch_usage_summary(base_url: str, timeout: float = 8.0) -> dict | None:

@@ -2,10 +2,10 @@
 
 设计要点：
 
-- **凭据**：PBKDF2-SHA256（60k 迭代，与 gateway 账号文件同算法同参数）；
-  token 为 HMAC 无状态签名（``teacher_id.expiry.sig``），密钥取
-  ``SC_AUTH_SECRET``（安全模式下未配置则每次启动随机生成——重启全员下线，
-  试点期可接受；生产部署必须显式配）。
+- **凭据**：PBKDF2-SHA256；旧的 60k 原始摘要继续兼容，新建或成功登录的
+  账号渐进升级为带迭代次数标记的更强摘要。token 为 HMAC 无状态签名
+  （``teacher_id.expiry.sig``），密钥取 ``SC_AUTH_SECRET``。安全/HA 模式启动
+  时必须显式配置稳定密钥，开放模式的本地库仍保留进程内随机回退。
 - **双模式**：库中不存在任何带凭据的教师 = **开放模式**（bootstrap 兼容，
   存量测试/演示零改动）；存在任一带凭据教师或 ``SC_AUTH_REQUIRED=1`` =
   **安全模式**，全部业务端点要求 Bearer token。模式按请求惰性探测并缓存。
@@ -42,7 +42,9 @@ from sqlalchemy.orm import Session
 
 from app.models import Class, Student, Teacher, TeacherClass, TeacherSubjectScope
 
-PBKDF2_ITERS = 60_000
+PBKDF2_ITERS = 60_000  # legacy raw gateway-compatible hashes
+CURRENT_PBKDF2_ITERS = 120_000
+PASSWORD_HASH_PREFIX = b"pbkdf2-sha256"
 TOKEN_TTL_S = 7 * 24 * 3600  # 一周（教师口令登录，长会话合理）
 
 # HTTP /mcp 通道的逐请求教师身份（backend/app/mcp_http.py 中间件验签后写入）。
@@ -71,8 +73,53 @@ class PermissionError_(Exception):
 # ---------------------------------------------------------------------------
 
 
-def hash_password(password: str, salt: bytes) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERS)
+def hash_password(password: str, salt: bytes, iterations: int = PBKDF2_ITERS) -> bytes:
+    """计算原始 PBKDF2 摘要，保留旧调用方与 gateway 文件兼容。"""
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+
+
+def hash_password_for_storage(
+    password: str, salt: bytes, iterations: int = CURRENT_PBKDF2_ITERS
+) -> bytes:
+    """生成带算法和迭代次数标记的摘要，便于未来再次升级参数。"""
+    digest = hash_password(password, salt, iterations).hex().encode("ascii")
+    return PASSWORD_HASH_PREFIX + b"$" + str(iterations).encode("ascii") + b"$" + digest
+
+
+def verify_password(password: str, salt: bytes, stored: bytes) -> tuple[bool, bool]:
+    """校验密码并返回 ``(valid, needs_upgrade)``。
+
+    历史 raw 60k 摘要没有元数据，按旧参数校验且成功后升级；标记格式
+    自带迭代次数，坏格式直接拒绝而不降级为另一种解释。
+    """
+    iterations = PBKDF2_ITERS
+    expected = stored
+    needs_upgrade = True
+    if stored.startswith(PASSWORD_HASH_PREFIX + b"$"):
+        parts = stored.split(b"$", 2)
+        if len(parts) != 3 or parts[0] != PASSWORD_HASH_PREFIX:
+            return False, False
+        try:
+            iterations = int(parts[1])
+            expected = bytes.fromhex(parts[2].decode("ascii"))
+        except (ValueError, UnicodeDecodeError):
+            return False, False
+        if iterations <= 0 or len(expected) != 32:
+            return False, False
+        needs_upgrade = iterations < CURRENT_PBKDF2_ITERS
+    candidate = hash_password(password, salt, iterations)
+    valid = hmac.compare_digest(candidate, expected)
+    return valid, bool(valid and needs_upgrade)
+
+
+def _verify_row_password(row, password: str) -> bool:  # noqa: ANN001
+    stored = row.password_hash or b""
+    salt = row.salt or b""
+    valid, needs_upgrade = verify_password(password, salt, stored)
+    if valid and needs_upgrade:
+        row.salt = secrets.token_bytes(16)
+        row.password_hash = hash_password_for_storage(password, row.salt)
+    return valid
 
 
 def _secret() -> str:
@@ -80,6 +127,21 @@ def _secret() -> str:
     if _secret_cache is None:
         _secret_cache = os.environ.get("SC_AUTH_SECRET", "") or secrets.token_hex(32)
     return _secret_cache
+
+
+def validate_runtime_secret(db: Session) -> None:
+    """拒绝在安全或 HA 模式下用随机 token 密钥启动。
+
+    ``_secret`` 的随机回退只服务于开放模式和底层单元调用；服务进程一旦
+    进入安全模式，重启后随机密钥会让所有会话失效，HA 多副本还会互相
+    无法验签。因此在 lifespan 启动阶段提前失败，而不是等到第一条请求。
+    """
+    forced = os.environ.get("SC_AUTH_REQUIRED", "").lower() in ("1", "true", "yes")
+    ha = os.environ.get("SC_HA_ENABLED", "").lower() in ("1", "true", "yes")
+    if (forced or ha or security_mode_on(db)) and not os.environ.get(
+        "SC_AUTH_SECRET", ""
+    ).strip():
+        raise RuntimeError("安全/HA 模式必须配置 SC_AUTH_SECRET")
 
 
 def _sign(kind: str, uid: int, ttl_s: int) -> str:
@@ -148,9 +210,7 @@ def authenticate(db: Session, username: str, password: str) -> tuple[Teacher, st
     if row is None:
         hash_password(password, b"timing-equalizer")
         raise AuthError("用户名或密码错误")
-    stored = row.password_hash or b""
-    salt = row.salt or b""
-    if not stored or not hmac.compare_digest(hash_password(password, salt), stored):
+    if not _verify_row_password(row, password):
         raise AuthError("用户名或密码错误")
     return row, issue_token(row.id)
 
@@ -161,9 +221,7 @@ def authenticate_student(db: Session, username: str, password: str) -> tuple[Stu
     if row is None:
         hash_password(password, b"timing-equalizer")
         raise AuthError("用户名或密码错误")
-    stored = row.password_hash or b""
-    salt = row.salt or b""
-    if not stored or not hmac.compare_digest(hash_password(password, salt), stored):
+    if not _verify_row_password(row, password):
         raise AuthError("用户名或密码错误")
     return row, issue_student_token(row.id)
 
@@ -190,7 +248,7 @@ def enable_student_login(
     salt = secrets.token_bytes(16)
     stu.username = uname
     stu.salt = salt
-    stu.password_hash = hash_password(password, salt)
+    stu.password_hash = hash_password_for_storage(password, salt)
     return stu, uname
 
 
@@ -204,16 +262,12 @@ def authenticate_any(
     """
     trow = db.scalar(select(Teacher).where(Teacher.username == username))
     if trow is not None:
-        stored = trow.password_hash or b""
-        salt = trow.salt or b""
-        if stored and hmac.compare_digest(hash_password(password, salt), stored):
+        if _verify_row_password(trow, password):
             return trow, issue_token(trow.id), "t"
         raise AuthError("用户名或密码错误")
     srow = db.scalar(select(Student).where(Student.username == username))
     if srow is not None:
-        stored = srow.password_hash or b""
-        salt = srow.salt or b""
-        if stored and hmac.compare_digest(hash_password(password, salt), stored):
+        if _verify_row_password(srow, password):
             return srow, issue_student_token(srow.id), "s"
         raise AuthError("用户名或密码错误")
     hash_password(password, b"timing-equalizer")

@@ -124,6 +124,9 @@ curl -s localhost:8080/ready
 
 ## 6. 健康与可观测
 
+完整的错误事件、指标、告警阈值和故障演练方案见
+[docs/ops-observability-design.md](docs/ops-observability-design.md)。本节保留部署时最常用的探针和日志入口。
+
 | 探针 | 路径 | 语义 |
 |---|---|---|
 | liveness | `GET /health`（backend）、`GET /healthz`（nginx） | 进程 + HTTP 存活 |
@@ -131,7 +134,8 @@ curl -s localhost:8080/ready
 | metrics | `GET /metrics`（backend/router） | Prometheus 兼容计数：任务成功/失败、路由拒绝、请求失败 |
 
 - compose 的 `backend` healthcheck 打 `/ready`，DB 不可达 → 不健康 → 触发重启自愈。
-- 日志为 **JSON 行 → stderr**（`docker compose logs -f` 直接可读），聚合器可直接摄取。
+- 日志为 **JSON 行 → stderr**（`docker compose logs -f` 直接可读），backend/gateway 的错误响应会带
+  `request_id`，Compose 默认按 20MB × 5 做本地日志轮转，聚合器可直接摄取。
 - LLM 断供时：Excel 导入、推导、报告模板等确定性路径照常工作；仅拍照解析/报告 AI 解读段受影响。
 
 ## 7. 常见运维（均在 `deploy/` 目录内执行）

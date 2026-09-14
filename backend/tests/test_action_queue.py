@@ -37,9 +37,10 @@ from tests.test_intervention_model import (
 def _fact(session, env, *, scope, kp_id, student_id=None, kind="spaced_review",
           group_ref=None, exam_id=None, status="suggested", note=None):
     """直造一条干预事实（绕开生成器，测读视图折叠用）。"""
+    effective_exam_id = exam_id if exam_id is not None else _latest_exam(session).id
     row = Intervention(
         class_id=env["class"].id, student_id=student_id, kp_id=kp_id,
-        exam_id=exam_id or 0, kind=kind, scope=scope, group_ref=group_ref,
+        exam_id=effective_exam_id, kind=kind, scope=scope, group_ref=group_ref,
         baseline_as_of=datetime(2025, 10, 1, 12, 0), status=status, note=note,
     )
     session.add(row)

@@ -40,6 +40,8 @@ def adb():
     Base.metadata.create_all(engine)
     S = sessionmaker(bind=engine, expire_on_commit=False)
     s = S()
+    s.add(School(id=1, name="测试学校"))
+    s.flush()
     yield s
     s.close()
     engine.dispose()
@@ -53,6 +55,9 @@ def _fresh_auth():
 
 
 def _teacher(adb, name, username, admin=False):
+    if adb.get(School, 1) is None:
+        adb.add(School(name="测试学校"))
+        adb.flush()
     salt = secrets.token_bytes(16)
     t = Teacher(
         school_id=1, name=name, username=username, salt=salt,

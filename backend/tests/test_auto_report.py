@@ -188,14 +188,17 @@ def test_commit_regenerates_replacing_old(session, env):
 
 def test_commit_no_kb_skips_reports(session, env):
     """库中完全没有知识库版本 → 报告生成跳过（best-effort），不影响提交。"""
-    from app.models import KbVersion
+    from app.models import KbVersion, KpRelation, KnowledgePoint, QuestionKp, TeachingProgress
 
+    session.query(QuestionKp).delete()
+    session.query(TeachingProgress).delete()
+    session.query(KpRelation).delete()
+    session.query(KnowledgePoint).delete()
     session.query(KbVersion).delete()
     session.flush()
-    kp = env["kp"]["P1"]
     tpl = make_exam(
         session, env["class"].id, "无知识库月考", date(2025, 10, 10), "单元",
-        [(1, 10.0, "解答", "应用", [(kp, 1.0)])],
+        [(1, 10.0, "解答", "应用", [])],
     )
     add_manual_response(session, tpl.id, env["students"]["T01"], {1: 8.0})
     result = commit_exam(session, tpl.id)

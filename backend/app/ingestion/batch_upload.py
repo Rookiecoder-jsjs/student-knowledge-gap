@@ -21,10 +21,9 @@ from PIL import Image
 from app.config import settings
 from app.llm.audit import unwrap
 from app.llm.client import LLMError, MockLLMClient, get_client
+from app.upload_limits import MAX_FILE_BYTES, MAX_TOTAL_BYTES
 
 MAX_FILES = 50
-MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_TOTAL_BYTES = 100 * 1024 * 1024
 
 
 class BatchUploadError(ValueError):

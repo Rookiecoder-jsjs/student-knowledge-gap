@@ -9,6 +9,12 @@
 # 卷：
 #   sc-data    唯一不可丢失状态：sc.db(+WAL/SHM) + 批量上传临时文件（TMPDIR）
 #   sc-backups 备份产物（保留 N 份，与 DB 卷物理隔离，便于恢复演练）
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   # Shared model gateway: provider keys stay here, while backend/gateway use the
   # internal router token. The scheduler is bounded even when a teacher opens
@@ -26,6 +32,7 @@ services:
       LLM_ROUTER_TEXT_CONCURRENCY: ${LLM_ROUTER_TEXT_CONCURRENCY:-4}
     ports:
       - "127.0.0.1:8090:8090"
+    logging: *default-logging
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3)"]
@@ -42,6 +49,7 @@ services:
     image: sc-site:latest
     ports:
       - "127.0.0.1:5174:80"
+    logging: *default-logging
     restart: unless-stopped
     stop_grace_period: 30s
 
@@ -58,6 +66,7 @@ services:
       - sc-data:/data
     ports:
       - "127.0.0.1:8000:8000"                    # 仅本机调试/验证，不对外
+    logging: *default-logging
     restart: unless-stopped
     stop_grace_period: 180s                      # > LLM 120s 超时，容在途请求跑完
     healthcheck:
@@ -79,6 +88,7 @@ services:
     image: sc-frontend:latest
     ports:
       - "8080:80"
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy               # backend 就绪后才接流量
@@ -100,6 +110,7 @@ services:
     volumes:
       - sc-data:/data
       - sc-backups:/backups
+    logging: *default-logging
     healthcheck:
       disable: true   # 复用镜像内置 HEALTHCHECK（指向 uvicorn :8000），本容器只跑备份循环
     restart: unless-stopped
@@ -144,6 +155,7 @@ services:
       - gw-codex-home:/data/codex-home            # CODEX_HOME 持久化（rollout/线程记忆）
     ports:
       - "127.0.0.1:8100:8100"                    # 同 backend：仅本机调试，生产走 nginx 反代
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy

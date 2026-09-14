@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import time
 import urllib.parse
@@ -33,6 +34,7 @@ WEBHOOK = os.environ.get("SC_DINGTALK_WEBHOOK", "")
 SECRET = os.environ.get("SC_DINGTALK_SECRET", "")
 
 _TIMEOUT_S = float(os.environ.get("SC_DINGTALK_TIMEOUT", "6"))
+_log = logging.getLogger("sc.gateway.dingtalk")
 
 
 def _signed_url() -> str:
@@ -79,10 +81,24 @@ def send_text(title: str, text: str, *, link: str | None = None,
                 r = hc.post(url, json=payload)
         ok = r.status_code == 200 and r.json().get("errcode") == 0
         if not ok:
-            print(f"[dingtalk] rejected: {r.status_code} {r.text[:200]}")
+            _log.warning(
+                "DingTalk notification rejected",
+                extra={
+                    "event": "dingtalk.notification_rejected",
+                    "status_code": r.status_code,
+                    "error_code": "dingtalk_rejected",
+                },
+            )
         return ok
     except Exception as e:  # noqa: BLE001 —— 通知失败不上抛（§5.8 纪律）
-        print(f"[dingtalk] send failed: {e}")
+        _log.warning(
+            "DingTalk notification failed",
+            extra={
+                "event": "dingtalk.notification_failed",
+                "error_code": "dingtalk_request_failed",
+            },
+            exc_info=True,
+        )
         return False
 
 

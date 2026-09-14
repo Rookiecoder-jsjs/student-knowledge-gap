@@ -36,7 +36,7 @@ def main() -> None:
             name=args.name,
             username=args.username,
             salt=salt,
-            password_hash=auth.hash_password(args.password, salt),
+              password_hash=auth.hash_password_for_storage(args.password, salt),
             admin=args.admin,
         )
         db.add(t)

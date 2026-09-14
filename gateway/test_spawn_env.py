@@ -180,11 +180,11 @@ def test_spawn_argv_bare_when_not_root(monkeypatch):
     assert gm._spawn_argv(7) == [gm.APP_SERVER_CMD, *gm.APP_SERVER_ARGS]
 
 
-def test_spawn_argv_bare_when_setpriv_missing_warns(monkeypatch, capsys):
-    """root 但镜像缺 setpriv = 部署缺陷：裸启降级 + 大声告警（不得静默）。"""
+def test_spawn_argv_bare_when_setpriv_missing_warns(monkeypatch, caplog):
+    """root 但镜像缺 setpriv = 部署缺陷：裸启降级 + 结构化告警。"""
     _force_root(monkeypatch, setpriv=None)
     assert gm._spawn_argv(7) == [gm.APP_SERVER_CMD, *gm.APP_SERVER_ARGS]
-    assert "setpriv" in capsys.readouterr().out
+    assert any("setpriv" in record.getMessage() for record in caplog.records)
 
 
 def test_child_env_home_tmpdir_in_driver_home(monkeypatch):

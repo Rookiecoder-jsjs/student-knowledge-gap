@@ -49,7 +49,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # 包体 + 账号示例；示例兜底为 accounts.json 防启动崩（真实账号由装机渲染覆盖）
-COPY main.py __init__.py budget.py dingtalk.py heartbeat.py monthly_usage.py retention.py \
+COPY main.py __init__.py budget.py dingtalk.py heartbeat.py monthly_usage.py retention.py observability.py \
      accounts.example.json codex_home.py /app/gateway/
 RUN cp /app/gateway/accounts.example.json /app/gateway/accounts.json
 # DeepSeek 接入资产 + 人格 prompt：CODEX_HOME 首启播种（gateway/codex_home.py）消费

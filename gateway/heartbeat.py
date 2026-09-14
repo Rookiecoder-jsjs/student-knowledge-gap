@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import shutil
 import time
 
@@ -28,6 +29,7 @@ TIMEOUT_S = float(os.environ.get("SC_HEARTBEAT_TIMEOUT", "8"))
 
 # 磁盘水位关注路径：CODEX_HOME 卷（rollout/线程记忆）与备份卷是唯二会涨的
 _WATCH_PATHS = ("SC_GATEWAY_CODEX_HOME", "SC_BACKUP_DIR")
+_log = logging.getLogger("sc.gateway.heartbeat")
 
 
 def _disk_usage() -> list[dict]:
@@ -45,7 +47,14 @@ def _disk_usage() -> list[dict]:
                 "free_gb": round(u.free / 2**30, 2),
             })
         except OSError as e:
-            print(f"[heartbeat] disk probe failed for {path}: {e}")
+            _log.warning(
+                "heartbeat disk probe failed",
+                extra={
+                    "event": "heartbeat.disk_probe_failed",
+                    "error_code": "disk_probe_failed",
+                },
+                exc_info=True,
+            )
     return out
 
 
@@ -87,10 +96,24 @@ def deliver(payload: dict, url: str, *, client: httpx.Client | None = None) -> b
                 r = hc.post(url, json=payload)
         ok = r.status_code < 300
         if not ok:
-            print(f"[heartbeat] rejected: {r.status_code} {r.text[:200]}")
+            _log.warning(
+                "heartbeat rejected",
+                extra={
+                    "event": "heartbeat.rejected",
+                    "status_code": r.status_code,
+                    "error_code": "heartbeat_rejected",
+                },
+            )
         return ok
     except Exception as e:  # noqa: BLE001 —— 触达失败不上抛（§5.8）
-        print(f"[heartbeat] delivery failed: {e}")
+        _log.warning(
+            "heartbeat delivery failed",
+            extra={
+                "event": "heartbeat.delivery_failed",
+                "error_code": "heartbeat_delivery_failed",
+            },
+            exc_info=True,
+        )
         return False
 
 

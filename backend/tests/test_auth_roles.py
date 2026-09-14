@@ -45,6 +45,9 @@ def _pw(user_type: str, who: int) -> tuple[str, str, bytes]:
 
 
 def _teacher(adb, name, username, password, admin=False):
+    if adb.get(School, 1) is None:
+        adb.add(School(name="测试学校"))
+        adb.flush()
     salt = secrets.token_bytes(16)
     t = Teacher(
         school_id=1, name=name, username=username, salt=salt,
@@ -56,6 +59,12 @@ def _teacher(adb, name, username, password, admin=False):
 
 
 def _student(adb, class_id, alias, *, external_code=""):
+    if adb.get(School, 1) is None:
+        adb.add(School(name="测试学校"))
+        adb.flush()
+    if adb.get(Class, class_id) is None:
+        adb.add(Class(school_id=1, name=f"测试班{class_id}", grade=7))
+        adb.flush()
     s = Student(school_id=1, class_id=class_id, name_or_alias=alias,
                 external_code=external_code)
     adb.add(s)

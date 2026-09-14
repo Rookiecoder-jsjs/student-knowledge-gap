@@ -15,6 +15,18 @@ from datetime import datetime, timezone
 
 _CONFIGURED = False
 
+_SENSITIVE_KEY_PARTS = (
+    "password",
+    "token",
+    "secret",
+    "cookie",
+    "authorization",
+    "api_key",
+    "prompt",
+    "request_body",
+    "response_body",
+)
+
 # LogRecord 标准属性白名单：其余属性视为调用方经 extra= 传入的结构化字段。
 _STDLIB_ATTRS = frozenset(
     {
@@ -27,17 +39,27 @@ _STDLIB_ATTRS = frozenset(
 
 
 class JsonFormatter(logging.Formatter):
-    """单行 JSON：ts / level / logger / msg + 调用方 extra 字段。"""
+    """单行 JSON：基础服务字段 + 调用方 extra 字段。"""
+
+    def __init__(self, service: str = "backend", version: str = "unknown"):
+        super().__init__()
+        self.service = service
+        self.version = version
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict = {
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
+            "service": self.service,
+            "version": self.version,
             "logger": record.name,
             "msg": record.getMessage(),
         }
         for key, val in record.__dict__.items():
             if key in _STDLIB_ATTRS or key.startswith("_"):
+                continue
+            normalized_key = key.lower()
+            if any(part in normalized_key for part in _SENSITIVE_KEY_PARTS):
                 continue
             try:
                 json.dumps(val)
@@ -58,7 +80,16 @@ def setup_logging(level: str | None = None) -> None:
     logger = logging.getLogger("sc")
     logger.setLevel(lvl)
     handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(JsonFormatter())
+    handler.setFormatter(
+        JsonFormatter(
+            service=os.environ.get("SC_SERVICE_NAME", "backend"),
+            version=(
+                os.environ.get("SC_APP_VERSION")
+                or os.environ.get("SC_BOX_VERSION")
+                or "unknown"
+            ),
+        )
+    )
     logger.addHandler(handler)
     # 保留向 root 传播：测试用 pytest caplog（挂 root）可捕获 sc 日志；生产 root 无
     # handler 不重复输出。

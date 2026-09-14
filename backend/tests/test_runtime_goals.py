@@ -406,10 +406,14 @@ def test_g4_assess_constant_queries_at_scale(tmp_path):
     from app.models import (
         Class,
         EvidenceEvent,
+        ExamResponse,
+        ExamTemplate,
         KbVersion,
         KnowledgePoint,
+        ResponseAnswer,
         School,
         Student,
+        TemplateQuestion,
         TeachingProgress,
     )
     from app.pipeline.weakness import assess_student_kps
@@ -447,13 +451,42 @@ def test_g4_assess_constant_queries_at_scale(tmp_path):
             s.add(stu)
             s.flush()
             stu_ids.append(stu.id)
+        exam = ExamTemplate(
+            class_id=clazz.id,
+            name="scale",
+            exam_date=date(2025, 10, 1),
+            type="单元",
+        )
+        s.add(exam)
+        s.flush()
+        question = TemplateQuestion(
+            exam_template_id=exam.id,
+            idx=1,
+            q_type="解答",
+            full_score=1.0,
+        )
+        s.add(question)
+        s.flush()
+        answer_ids = {}
+        for sid in stu_ids:
+            response = ExamResponse(exam_template_id=exam.id, student_id=sid)
+            s.add(response)
+            s.flush()
+            answer = ResponseAnswer(
+                exam_response_id=response.id,
+                template_question_id=question.id,
+                score=1.0,
+            )
+            s.add(answer)
+            s.flush()
+            answer_ids[sid] = answer.id
         occurred = datetime(2025, 10, 1, 12, 0)
         for sid in stu_ids:
             for kpid in kp_ids:
                 for v in (0.9, 0.7, 0.5):  # 3 条 -> 过 MIN_EVIDENCE_COUNT 门槛
                     s.add(
                         EvidenceEvent(
-                            student_id=sid, kp_id=kpid, response_answer_id=1,
+                            student_id=sid, kp_id=kpid, response_answer_id=answer_ids[sid],
                             source_type="单元", value=v, weight=1.0, cog_level="应用",
                             occurred_at=occurred, algo_version="t",
                         )
@@ -603,6 +636,30 @@ def test_g10_alembic_upgrade_downgrade(tmp_path):
     ).fetchone()[0]
     assert n_after == 0
     c2.close()
+
+
+def test_sqlite_connections_enable_foreign_keys():
+    """SQLite connections enforce ORM foreign-key relationships."""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine("sqlite:///:memory:")
+    with engine.connect() as conn:
+        assert conn.scalar(text("PRAGMA foreign_keys")) == 1
+    engine.dispose()
+
+
+def test_init_db_does_not_mask_alembic_failure(monkeypatch):
+    """An Alembic failure must prevent startup instead of falling back to create_all."""
+    from app import db
+
+    monkeypatch.setenv("SC_USE_ALEMBIC", "1")
+
+    def fail_upgrade():
+        raise RuntimeError("migration failed")
+
+    monkeypatch.setattr(db, "_alembic_upgrade_head", fail_upgrade)
+    with pytest.raises(RuntimeError, match="migration failed"):
+        db.init_db()
 
 
 def test_g10_backup_db(tmp_path):

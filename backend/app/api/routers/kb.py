@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
@@ -34,6 +35,7 @@ from app.schemas import (
     RelationUpdateRequest,
     SuggestQuestionRequest,
 )
+from app.upload_limits import MAX_FILE_BYTES, UploadTooLargeError, read_upload
 
 router = APIRouter()
 
@@ -148,13 +150,24 @@ async def kb_upload(
     ctx=Depends(require_kb_editor),
 ):
     """浏览器直接上传知识库 YAML（无需服务器文件系统访问）。"""
-    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
     try:
+        raw = await read_upload(file, max_bytes=MAX_FILE_BYTES, label="知识库文件")
+    except UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
         kb = import_kb(db, tmp_path)
     except Exception as e:
         raise HTTPException(400, f"知识库导入失败: {e}")
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
     _kb_write_guard(db, ctx, kb)  # 越权导入 → 403（get_db 回滚已建版本）
     return {"kb_version_id": kb.id, "status": kb.status, "version": kb.version}
 

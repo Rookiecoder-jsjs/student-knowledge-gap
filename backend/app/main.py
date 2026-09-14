@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
+import os
+import time
+from uuid import UUID, uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, jobs, kb, me, org, reports
 from app import mcp_http  # /mcp 挂载 + 逐请求教师鉴权（装车批第 5 批）
@@ -21,6 +24,12 @@ async def lifespan(app: FastAPI):
     setup_logging()  # G7：结构化日志先于一切
     # 单一 schema 入口（问题8：存量库增量列 ALTER 已并入 init_db 的 create_all 分支）
     init_db()
+    # 安全/HA 模式不能依赖进程随机密钥，否则重启会让会话全部失效，
+    # 多副本之间也无法互相验签。这里在服务开始接收请求前 fail-fast。
+    from app import auth as auth_mod, db as dbmod
+
+    with dbmod.SessionLocal() as auth_db:
+        auth_mod.validate_runtime_secret(auth_db)
     # 批量录入：回收崩溃遗留的 parsing 僵尸 item / running job（见 §7）
     from app.ingestion.batch import gc_orphan_tempfiles, reconcile_stale
 
@@ -44,16 +53,20 @@ async def lifespan(app: FastAPI):
     # （backend 测试每轮 with TestClient(app) 都进出 lifespan）。
     from app import mcp_http
 
-    async with mcp_http.mcp_lifespan():
-        yield
-    # ---- shutdown ----
-    from app.ingestion.batch import shutdown as batch_shutdown
+    try:
+        async with mcp_http.mcp_lifespan():
+            yield
+    finally:
+        # ---- shutdown ----
+        from app.ingestion.batch import shutdown as batch_shutdown
+        from app.llm.audit import stop_audit_workers
 
-    if job_stop is not None:
-        job_stop.set()
-        if job_task is not None:
-            await job_task
-    batch_shutdown()
+        if job_stop is not None:
+            job_stop.set()
+            if job_task is not None:
+                await job_task
+        batch_shutdown()
+        stop_audit_workers()
 
 
 app = FastAPI(
@@ -62,6 +75,81 @@ app = FastAPI(
     description="DESIGN.md v0.3 MVP：知识库 -> 采集 -> 追踪 -> 归因 -> 报告",
     lifespan=lifespan,
 )
+
+
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "") or str(uuid4())
+
+
+def _route_template(request: Request) -> str:
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or request.url.path
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(request: Request, exc: RequestValidationError):
+    """Return a safe validation response without echoing submitted values."""
+    from app.metrics import inc
+    from app.observability import get_logger
+
+    request_id = _request_id(request)
+    request.state.http_error_recorded = True
+    get_logger("http").info(
+        "request validation failed",
+        extra={
+            "event": "http.request_rejected",
+            "request_id": request_id,
+            "method": request.method,
+            "route": _route_template(request),
+            "status_code": 422,
+            "error_code": "validation_error",
+            "field_count": len(exc.errors()),
+        },
+    )
+    inc("http_errors_total", labels={"status_class": "4xx", "error_code": "validation_error"})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "请求参数无效",
+            "error_code": "validation_error",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """Log the traceback internally and expose only a correlation-safe error."""
+    from app.metrics import inc
+    from app.observability import get_logger
+
+    request_id = _request_id(request)
+    request.state.http_error_recorded = True
+    get_logger("http").exception(
+        "unhandled request exception",
+        exc_info=(type(exc), exc, exc.__traceback__),
+        extra={
+            "event": "http.request_failed",
+            "request_id": request_id,
+            "method": request.method,
+            "route": _route_template(request),
+            "status_code": 500,
+            "error_type": type(exc).__name__,
+            "error_code": "internal_error",
+            "retryable": False,
+        },
+    )
+    inc("http_errors_total", labels={"status_class": "5xx", "error_code": "internal_error"})
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "服务内部错误",
+            "error_code": "internal_error",
+            "request_id": request_id,
+        },
+        headers={"X-Request-ID": request_id},
+    )
 
 # CORS：教师端本地联调 + 部署环境化（SC_CORS_ORIGINS 逗号分隔）。
 # 生产同源经 nginx 反代（/api 前缀剥离）不需要跨域，未配置时回落本地开发默认，
@@ -86,6 +174,33 @@ _EXEMPT_PREFIXES = ("/health", "/ready", "/metrics", "/auth/login", "/mcp")
 # 学生主体可触达的前缀（自服务只读面 + 会话探测）；其余一切路径教师/admin 专属。
 # 教师端点假定 kind=t，学生 token 在此层即被 403，端点无需各自防御。
 _STUDENT_ALLOWED_PREFIXES = ("/me", "/auth/me")
+_MAX_LOGIN_BODY_BYTES = 64 * 1024
+
+
+@app.middleware("http")
+async def _request_size_guard(request, call_next):  # noqa: ANN001
+    """Reject oversized login payloads before JSON parsing and password work."""
+    if request.url.path == "/auth/login":
+        raw_length = request.headers.get("content-length")
+        try:
+            content_length = int(raw_length) if raw_length is not None else None
+        except (TypeError, ValueError):
+            content_length = None
+        if content_length is not None and content_length > _MAX_LOGIN_BODY_BYTES:
+            from fastapi.responses import JSONResponse
+
+            request_id = _request_id(request)
+            request.state.request_id = request_id
+            return JSONResponse(
+                {
+                    "detail": "登录请求体过大",
+                    "error_code": "request_body_too_large",
+                    "request_id": request_id,
+                },
+                status_code=413,
+                headers={"X-Request-ID": request_id},
+            )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -135,15 +250,53 @@ async def _auth_gate(request, call_next):  # noqa: ANN001
 @app.middleware("http")
 async def _request_metrics(request, call_next):  # noqa: ANN001
     from app.metrics import inc
+    from app.observability import get_logger
 
-    inc("http_requests_total")
+    raw_request_id = (request.headers.get("X-Request-ID") or "").strip()
+    try:
+        request_id = str(UUID(raw_request_id))
+    except (ValueError, TypeError, AttributeError):
+        request_id = str(uuid4())
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    logger = get_logger("http")
+    response = None
+    status_code = 500
     try:
         response = await call_next(request)
     except Exception:
-        inc("http_errors_total")
         raise
-    if response.status_code >= 500:
-        inc("http_errors_total")
+    else:
+        status_code = response.status_code
+    finally:
+        duration_ms = (time.perf_counter() - started) * 1000
+        route = _route_template(request)
+        labels = {
+            "method": request.method,
+            "route": route,
+            "status_class": f"{status_code // 100}xx",
+        }
+        inc("http_requests_total", labels=labels)
+        if status_code >= 500 and not getattr(request.state, "http_error_recorded", False):
+            inc(
+                "http_errors_total",
+                labels={"status_class": "5xx", "error_code": "internal_error"},
+            )
+        inc("http_request_duration_ms_sum", duration_ms, labels=labels)
+        inc("http_request_duration_ms_count", labels=labels)
+        logger.info(
+            "request complete",
+            extra={
+                "event": "http.request_completed",
+                "request_id": request_id,
+                "method": request.method,
+                "route": route,
+                "status_code": status_code,
+                "duration_ms": round(duration_ms, 3),
+            },
+        )
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
     return response
 
 
@@ -177,7 +330,6 @@ def ready():
     注意：**必须运行时动态读 ``app.db.engine``**（而非 import 期绑定）——测试
     夹具会 monkeypatch ``app.db.engine`` 做引擎隔离，import 期绑定会破坏该机制。
     """
-    from fastapi.responses import JSONResponse
     from sqlalchemy import text
 
     from app import db as dbmod  # 动态读取：测试夹具替换 app.db.engine 后仍生效
@@ -199,8 +351,17 @@ def ready():
         db_err = "SC_HA_ENABLED=1 requires PostgreSQL; SQLite is single-writer only"
 
     redis_ok, redis_err = check_redis()
+    from app.metrics import set_gauge
+
+    set_gauge("dependency_ready", 1 if db_ok else 0, labels={"dependency": "database"})
+    set_gauge("dependency_ready", 1 if redis_ok else 0, labels={"dependency": "redis"})
 
     vision, text_state = get_vision_breaker().state, get_text_breaker().state
+    failed_checks: list[str] = []
+    if not db_ok:
+        failed_checks.append("database_unavailable")
+    if not redis_ok:
+        failed_checks.append("redis_unavailable")
     body = {
         "status": "ok" if db_ok else "error",
         "database": "ok" if db_ok else "error",
@@ -209,7 +370,23 @@ def ready():
         "degraded": (not db_ok) or (not redis_ok) or vision != "closed" or text_state != "closed",
     }
     if not db_ok or not redis_ok:
-        body["detail"] = "; ".join(x for x in (db_err if not db_ok else "", redis_err if not redis_ok else "") if x)
+        from app.observability import get_logger
+
+        get_logger("health").warning(
+            "readiness dependency failed",
+            extra={
+                "event": "dependency.health_changed",
+                "dependency": ",".join(failed_checks),
+                "error_code": "dependencies_unavailable",
+                "database_error": db_err[:500] if db_err else "",
+                "redis_error": redis_err[:500] if redis_err else "",
+            },
+        )
+        body["error_code"] = (
+            failed_checks[0] if len(failed_checks) == 1 else "dependencies_unavailable"
+        )
+        body["failed_checks"] = failed_checks
+        body["detail"] = "依赖不可用"
         return JSONResponse(status_code=503, content=body)
     return body
 

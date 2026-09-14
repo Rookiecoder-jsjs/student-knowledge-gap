@@ -25,6 +25,23 @@ from app.models import (
 
 
 @pytest.fixture(autouse=True)
+def _stable_auth_secret(monkeypatch):
+    """让带凭据的 TestClient 模拟真实部署的稳定签名密钥。"""
+    monkeypatch.setenv("SC_AUTH_SECRET", "test-auth-secret")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_throttle():
+    """避免不同测试的失败登录计数互相影响。"""
+    from app import auth_throttle
+
+    auth_throttle.reset_for_tests()
+    yield
+    auth_throttle.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _stop_llm_audit_threads():
     """测试间停掉审计写线程（TestClient lifespan 会启动它）。
 

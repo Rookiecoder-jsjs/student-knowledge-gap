@@ -41,8 +41,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from gateway.budget import GUARD, BudgetExceeded
+from gateway.observability import get_logger, setup_logging
 
 app = FastAPI(title="sc session-gateway (Phase 1)")
+_log = get_logger("main")
 
 # §5.7 月度软限额巡查循环（lifespan 启停；钩子=钉钉/日志）
 _STOP: list = [False]
@@ -55,8 +57,14 @@ async def _start_monthly_watch() -> None:
     from gateway import monthly_usage
 
     def _usage_notify(payload: dict) -> None:
-        print(f"[monthly-usage] {payload['message']} "
-              f"({payload['used_tokens']}/{payload['limit']})")
+        _log.warning(
+            "monthly usage threshold reached",
+            extra={
+                "event": "monthly_usage.threshold",
+                "used_tokens": payload["used_tokens"],
+                "limit": payload["limit"],
+            },
+        )
         from gateway import dingtalk
 
         dingtalk.notify_monthly_usage(payload["message"])
@@ -129,7 +137,14 @@ def _seed_driver_home(teacher_id: int) -> Path:
 
         _ch.seed_codex_home(home, _assets_dir(), env=os.environ)
     except Exception as e:  # noqa: BLE001 —— 播种失败不阻断网关（可手工补 config.toml）
-        print(f"[codex-home] seed t{teacher_id} failed: {e}")
+        _log.exception(
+            "codex home seed failed",
+            extra={
+                "event": "codex_home.seed_failed",
+                "teacher_id": teacher_id,
+                "error_code": "codex_home_seed_failed",
+            },
+        )
     return home
 
 
@@ -172,8 +187,13 @@ def _spawn_argv(teacher_id: int) -> list[str]:
             APP_SERVER_CMD, *APP_SERVER_ARGS,
         ]
     if hasattr(os, "geteuid") and os.geteuid() == 0:
-        print("[spawn-uid] root 但 setpriv 不可用——降级 root spawn，residual #1 "
-              "未关闭！请检查镜像（util-linux）")
+        _log.error(
+            "setpriv unavailable; falling back to root spawn",
+            extra={
+                "event": "gateway.uid_isolation_degraded",
+                "error_code": "setpriv_unavailable",
+            },
+        )
     return [APP_SERVER_CMD, *APP_SERVER_ARGS]
 
 
@@ -218,9 +238,19 @@ def _apply_uid_isolation(teacher_id: int) -> None:
                     continue
                 os.chmod(f, 0o600)
                 os.chown(f, uid, uid)
-        print(f"[spawn-uid] t{teacher_id} -> uid {uid}（0700，内核边界就位）")
+        _log.info(
+            "teacher bridge filesystem isolation applied",
+            extra={"event": "gateway.uid_isolation_applied", "teacher_id": teacher_id},
+        )
     except OSError as e:
-        print(f"[spawn-uid] t{teacher_id} 隔离失败（容器缺 CAP_CHOWN?）: {e}")
+        _log.exception(
+            "teacher bridge filesystem isolation failed",
+            extra={
+                "event": "gateway.uid_isolation_failed",
+                "teacher_id": teacher_id,
+                "error_code": "uid_isolation_failed",
+            },
+        )
 
 # ---------------------------------------------------------------------------
 # 账号与会话（§5.5 一期：管理员建账号 + 口令；二期钉钉 OAuth 替换此层）
@@ -519,7 +549,16 @@ class Bridge:
                 "threadId": thread_id, "turnId": turn_id,
             }, timeout=10)
         except Exception as e:  # noqa: BLE001
-            print(f"[budget] interrupt failed: {e}; reason={reason}")
+            _log.warning(
+                "budget interrupt failed",
+                extra={
+                    "event": "budget.interrupt_failed",
+                    "thread_id": thread_id,
+                    "turn_id": turn_id,
+                    "reason": reason,
+                },
+                exc_info=True,
+            )
 
     async def request(self, method: str, params: dict, timeout: float = 180.0):
         assert self.proc.stdin
@@ -882,12 +921,21 @@ async def internal_trigger(req: TriggerReq):
         # 触发式任务超限：202 受理但标注未执行（sc 侧 fire-and-forget 不重试风暴）
         return {"accepted": False, "reason": e.reason, "usage": e.usage}
     except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
-        raise HTTPException(502, f"turn/start failed: {e}") from e
+        _log.exception(
+            "turn start failed",
+            extra={
+                "event": "gateway.turn_start_failed",
+                "error_code": "turn_start_failed",
+                "thread_id": tid,
+            },
+        )
+        raise HTTPException(502, "turn/start failed") from e
     return {"accepted": True, "thread_id": tid, "template_version": req.template_version}
 
 
 @app.on_event("startup")
 def _startup() -> None:
+    setup_logging()
     load_accounts()
     # 壳二进制可执行自检：镜像层本应 chmod +x，但可写层可能被运维动作改没
     # （实例：UID 隔离人工验证残留 chown/chmod，spawn 变成每请求静默等满
@@ -896,8 +944,14 @@ def _startup() -> None:
 
     bin_path = _shutil.which(APP_SERVER_CMD)
     if bin_path and not os.access(bin_path, os.X_OK):
-        print(f"[startup] 告警：{bin_path} 无执行位——spawn 必失败，请 chmod +x "
-              f"或重建镜像（README：镜像层本有 chmod +x，可写层被改需就地修复）")
+        _log.error(
+            "app-server binary is not executable",
+            extra={
+                "event": "gateway.startup_check_failed",
+                "error_code": "app_server_not_executable",
+                "binary": bin_path,
+            },
+        )
     # 装车批第 6 批：CODEX_HOME 播种改**按驱动惰性**——Bridge.spawn 前
     # _seed_driver_home(teacher_id) 为 t<teacher_id>/ 播种 config.toml + models.json，
     # 不再启动时对根单次播种（根仅是卷挂载点，非任何驱动的 home）。

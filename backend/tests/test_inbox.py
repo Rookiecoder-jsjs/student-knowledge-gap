@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app import inbox
-from app.models import Report
+from app.models import Class, Report, School
 
 
 def _report(session, **kw) -> Report:
@@ -22,6 +22,15 @@ def _report(session, **kw) -> Report:
         close = True
     defaults = dict(type="class_improvement_advice", class_id=None,
                     content_markdown="# 建议\n\n- 杠杆一：巩固 P1", snapshot_json={})
+    class_id = kw.get("class_id")
+    if class_id is not None and s.get(Class, class_id) is None:
+        school = s.query(School).first()
+        if school is None:
+            school = School(name="测试学校")
+            s.add(school)
+            s.flush()
+        s.add(Class(id=class_id, school_id=school.id, name=f"测试班{class_id}", grade=7))
+        s.flush()
     r = Report(**{**defaults, **kw})
     s.add(r)
     s.flush()

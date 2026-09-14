@@ -68,6 +68,7 @@ def _set_sqlite_pragma(dbapi_conn, _):  # noqa: ANN001
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA busy_timeout=15000")  # 与 connect_args timeout 一致
         cur.execute("PRAGMA synchronous=NORMAL")  # WAL 下安全且更快（fsync 频次降低）
+        cur.execute("PRAGMA foreign_keys=ON")
     finally:
         cur.close()
 
@@ -78,18 +79,13 @@ def init_db() -> None:
     SC_USE_ALEMBIC=1 时走 ``alembic upgrade head``（G10：schema 变更可追踪、可回滚）；
     否则 ``create_all``（测试 fixture / 新库），并为存量库补增量列（``_legacy_alter_bootstrap``
     幂等 ALTER——create_all 不给已有表加列；alembic 轨不需要，初始迁移已含这些列）。
-    迁移失败回落 create_all 保证启动。
+    Alembic 迁移失败直接终止启动，避免服务使用不完整 schema。
     """
     from app import models  # noqa: F401  确保模型注册
 
     if os.environ.get("SC_USE_ALEMBIC", "").lower() in ("1", "true", "yes"):
-        try:
-            _alembic_upgrade_head()
-            return
-        except Exception:
-            # alembic 不可用 / 未基线的既有库迁移失败：回落 create_all 保证 schema 可用
-            Base.metadata.create_all(engine)
-            return
+        _alembic_upgrade_head()
+        return
     Base.metadata.create_all(engine)
     _legacy_alter_bootstrap()
 

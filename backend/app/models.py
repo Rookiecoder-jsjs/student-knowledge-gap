@@ -67,7 +67,7 @@ class Class(Base):
 class Student(Base):
     """学生（数据对象；三角色登录后可选开通自服务账号，见 auth-roles-design）。
 
-    username/password_hash/salt 为 PBKDF2 产物（与 Teacher 同算法同参数）；三者
+      username/password_hash/salt 为 PBKDF2 产物（旧 raw 摘要兼容，新摘要带参数标记）；三者
     皆 NULL = 未开通登录（批量导入默认不开）。登录名建议取 external_code（学籍号）。
     """
 
@@ -88,7 +88,7 @@ class Student(Base):
 class Teacher(Base):
     """教师账号（G11 鉴权本体；agent-product-design §5.5）。
 
-    password_hash/salt 为 PBKDF2 产物（与 gateway 账号文件同算法）；两者皆空
+      password_hash/salt 为 PBKDF2 产物（兼容 gateway 账号文件，新摘要带参数标记）；两者皆空
     = 未启用登录（bootstrap 兼容：存量测试与演示环境零改动）。admin=True
     可管理用量台账等校内管理面。教师↔班级授权在 teacher_class 多对多。
     """

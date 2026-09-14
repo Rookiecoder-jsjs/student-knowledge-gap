@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
-from app import auth
+from app import auth, auth_throttle
 from app.db import Base
 from app.models import Class, KbVersion, School, Student, Teacher, TeacherClass
 
@@ -111,6 +111,34 @@ def test_authenticate_wrong_password(adb):
         auth.authenticate(adb, "nobody", "pass123")
 
 
+def test_legacy_password_hash_upgrades_after_successful_login(adb):
+    _seed(adb)
+    teacher = _teacher(adb, "李老师", "li", "pass123")
+    old_salt = teacher.salt
+    old_hash = teacher.password_hash
+
+    auth.authenticate(adb, "li", "pass123")
+
+    assert old_hash == auth.hash_password("pass123", old_salt)
+    assert teacher.password_hash.startswith(auth.PASSWORD_HASH_PREFIX + b"$")
+    assert teacher.salt != old_salt
+    valid, needs_upgrade = auth.verify_password(
+        "pass123", teacher.salt, teacher.password_hash
+    )
+    assert valid is True
+    assert needs_upgrade is False
+
+
+def test_new_student_password_uses_versioned_hash(adb):
+    _seed(adb)
+    student_id = adb.query(Student).first().id
+    student, _ = auth.enable_student_login(
+        adb, student_id, "studentpw", username="student1"
+    )
+    assert student.password_hash.startswith(auth.PASSWORD_HASH_PREFIX + b"$")
+    assert auth.authenticate_student(adb, student.username, "studentpw")[0].id == student.id
+
+
 def test_security_mode_off_without_credentials(adb):
     _seed(adb)  # 只有班级与学生，无凭据教师
     assert auth.security_mode_on(adb) is False
@@ -120,6 +148,28 @@ def test_security_mode_on_with_credential_teacher(adb):
     _seed(adb)
     _teacher(adb, "李老师", "li", "pass123")
     assert auth.security_mode_on(adb) is True
+
+
+def test_runtime_secret_required_in_secure_mode(monkeypatch, adb):
+    _seed(adb)
+    _teacher(adb, "李老师", "li", "pass123")
+    monkeypatch.delenv("SC_AUTH_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="SC_AUTH_SECRET"):
+        auth.validate_runtime_secret(adb)
+
+
+def test_runtime_secret_required_for_ha_even_without_accounts(monkeypatch, adb):
+    monkeypatch.delenv("SC_AUTH_SECRET", raising=False)
+    monkeypatch.setenv("SC_HA_ENABLED", "1")
+    with pytest.raises(RuntimeError, match="SC_AUTH_SECRET"):
+        auth.validate_runtime_secret(adb)
+
+
+def test_runtime_secret_accepts_explicit_secret(monkeypatch, adb):
+    _seed(adb)
+    _teacher(adb, "李老师", "li", "pass123")
+    monkeypatch.setenv("SC_AUTH_SECRET", "explicit-test-secret")
+    auth.validate_runtime_secret(adb)
 
 
 def test_assert_class_access_matrix(adb):
@@ -294,3 +344,56 @@ def test_api_admin_and_login_flow(sec_client):
     assert client.post("/auth/teachers", headers=_H(jia_tok), json={
         "name": "x", "username": "xx", "password": "pass123", "school_id": 1,
     }).status_code == 403
+
+
+def test_login_failures_are_temporarily_throttled(sec_client):
+    client, _S, _ids = sec_client
+    for _ in range(auth_throttle.MAX_FAILURES):
+        response = client.post(
+            "/auth/login", json={"username": "jia", "password": "wrong"}
+        )
+        assert response.status_code == 401
+
+    blocked = client.post(
+        "/auth/login", json={"username": "jia", "password": "pass123"}
+    )
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+    # 不同账号的登录不应被同一条失败记录连坐。
+    assert client.post(
+        "/auth/login", json={"username": "yi", "password": "pass123"}
+    ).status_code == 200
+
+
+def test_login_rejects_oversized_credentials(sec_client):
+    client, _S, _ids = sec_client
+
+    too_long_username = client.post(
+        "/auth/login", json={"username": "u" * 65, "password": "pass123"}
+    )
+    assert too_long_username.status_code == 422
+
+    too_long_password = client.post(
+        "/auth/login", json={"username": "jia", "password": "p" * 129}
+    )
+    assert too_long_password.status_code == 422
+
+
+def test_login_rejects_oversized_body_and_extra_fields(sec_client):
+    client, _S, _ids = sec_client
+
+    oversized = client.post(
+        "/auth/login",
+        json={
+            "username": "jia",
+            "password": "pass123",
+            "unexpected": "x" * (64 * 1024),
+        },
+    )
+    assert oversized.status_code == 413
+
+    extra_field = client.post(
+        "/auth/login",
+        json={"username": "jia", "password": "pass123", "unexpected": True},
+    )
+    assert extra_field.status_code == 422

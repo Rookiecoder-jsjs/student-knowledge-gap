@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from datetime import date
 
@@ -56,6 +57,13 @@ from app.schemas import (
     ExamCreate,
     ManualScores,
     QuestionTagsUpdate,
+)
+from app.upload_limits import (
+    MAX_FILE_BYTES,
+    MAX_TOTAL_BYTES,
+    UploadTooLargeError,
+    read_upload,
+    read_uploads,
 )
 
 router = APIRouter()
@@ -124,13 +132,24 @@ async def excel_import(
     exam_id: int, file: UploadFile = File(...), ctx=Depends(require_teacher), db: Session = Depends(get_db)
 ):
     _guard_exam(db, ctx, exam_id)
-    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = tmp.name
     try:
+        raw = await read_upload(file, max_bytes=MAX_FILE_BYTES, label="Excel 文件")
+    except UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = tmp.name
         result = import_excel(db, exam_id, tmp_path)
     except Exception as e:
         raise HTTPException(400, f"Excel 解析失败: {e}")
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
     return {
         "imported": result.imported,
         "unmatched_students": result.unmatched_students,
@@ -206,7 +225,10 @@ async def photo_template(
     """阶段A：试卷照片 → 结构化模板 + 闭集知识点标注（source=LLM，待审核）。"""
     guard_class(class_id, db, ctx)
     kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
-    image = await file.read()
+    try:
+        image = await read_upload(file, max_bytes=MAX_FILE_BYTES, label="图片文件")
+    except UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
     if job_queue.enabled():
         digest = hashlib.sha256(image).hexdigest()
         object_key = f"llm-jobs/{digest}.jpg"
@@ -251,7 +273,10 @@ async def photo_response(
     stu = db.get(Student, student_id)
     if stu is not None:
         guard_class(stu.class_id, db, ctx)
-    image = await file.read()
+    try:
+        image = await read_upload(file, max_bytes=MAX_FILE_BYTES, label="图片文件")
+    except UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
     if job_queue.enabled():
         digest = hashlib.sha256(image).hexdigest()
         object_key = f"llm-jobs/{digest}.jpg"
@@ -316,9 +341,13 @@ async def photo_batch(
 ):
     """批量上传学生卷 -> 后台解析 + 卷面姓名匹配名单（不阻塞）。"""
     _guard_exam(db, ctx, exam_id)
-    uploads = [(f.filename or f"file_{i}.jpg", await f.read()) for i, f in enumerate(files)]
     try:
+        uploads = await read_uploads(
+            files, max_file_bytes=MAX_FILE_BYTES, max_total_bytes=MAX_TOTAL_BYTES
+        )
         saved = batch_up.validate_and_persist(uploads)
+    except UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
     except batch_up.BatchUploadError as e:
         raise _upload_error(e)
     try:

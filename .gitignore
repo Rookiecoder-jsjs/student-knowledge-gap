@@ -34,6 +34,7 @@ node_modules/
 docs/*
 !docs/architecture-fix-plan.md
 !docs/agent-product-design.md
+!docs/ops-observability-design.md
 frontend/design/
 design-system/
 

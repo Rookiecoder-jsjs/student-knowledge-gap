@@ -21,10 +21,12 @@ backend/scripts/backup_loop.sh）：
 from __future__ import annotations
 
 import os
+import logging
 import time
 from pathlib import Path
 
 INTERVAL_S = float(os.environ.get("SC_RETENTION_CHECK_S", "86400"))  # 每日
+_log = logging.getLogger("sc.gateway.retention")
 
 
 def rollout_max_age_days() -> int:
@@ -80,7 +82,14 @@ def clean_rollouts(
                     deleted += 1
                     freed += size
             except OSError as e:
-                print(f"[retention] skip {p}: {e}")
+                _log.warning(
+                    "rollout retention skipped file",
+                    extra={
+                        "event": "retention.file_skipped",
+                        "error_code": "retention_file_failed",
+                    },
+                    exc_info=True,
+                )
     return {"scanned": scanned, "deleted": deleted, "freed_bytes": freed}
 
 
@@ -95,10 +104,23 @@ async def retention_loop(stop_flag: list) -> None:
             try:
                 r = await asyncio.to_thread(clean_rollouts, home, days)
                 if r["deleted"]:
-                    print(f"[retention] removed {r['deleted']} rollouts, "
-                          f"freed {r['freed_bytes'] / 2**20:.1f} MiB")
+                    _log.info(
+                        "rollout retention completed",
+                        extra={
+                            "event": "retention.completed",
+                            "deleted": r["deleted"],
+                            "freed_bytes": r["freed_bytes"],
+                        },
+                    )
             except Exception as e:  # noqa: BLE001 —— 清理失败不影响主流程
-                print(f"[retention] sweep failed: {e}")
+                _log.warning(
+                    "rollout retention sweep failed",
+                    extra={
+                        "event": "retention.sweep_failed",
+                        "error_code": "retention_sweep_failed",
+                    },
+                    exc_info=True,
+                )
         waited = 0.0
         while waited < INTERVAL_S and not stop_flag[0]:
             await asyncio.sleep(min(5.0, INTERVAL_S - waited))
