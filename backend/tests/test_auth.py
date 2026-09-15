@@ -397,3 +397,72 @@ def test_login_rejects_oversized_body_and_extra_fields(sec_client):
         json={"username": "jia", "password": "pass123", "unexpected": True},
     )
     assert extra_field.status_code == 422
+
+
+def test_timing_equalizer_uses_current_iterations(session, monkeypatch):
+    """用户名不存在的均衡哈希必须用当前迭代参数——停在 legacy 60k 会以
+    响应时间泄露「用户名是否存在 / 是否已升级」。"""
+    captured: list[int] = []
+    original_hash = auth.hash_password
+
+    def spy(password, salt, iterations=auth.PBKDF2_ITERS):
+        captured.append(iterations)
+        return original_hash(password, salt, iterations)
+
+    monkeypatch.setattr(auth, "hash_password", spy)
+    with pytest.raises(auth.AuthError):
+        auth.authenticate_any(session, "ghost-user", "whatever")
+    assert captured == [auth.CURRENT_PBKDF2_ITERS]
+
+
+def test_legacy_wrong_password_burns_remaining_hash_budget(session, monkeypatch):
+    """存量 60k 摘要输错时补足到当前 120k，避免用户名时序枚举。"""
+    from app.models import Teacher
+
+    school, *_ = _seed(session)
+    teacher = Teacher(
+        school_id=school.id,
+        name="legacy",
+        username="legacy-user",
+        salt=b"0" * 16,
+        password_hash=auth.hash_password("correct", b"0" * 16),
+    )
+    session.add(teacher)
+    session.commit()
+
+    captured: list[int] = []
+    original_hash = auth.hash_password
+
+    def spy(password, salt, iterations=auth.PBKDF2_ITERS):
+        captured.append(iterations)
+        return original_hash(password, salt, iterations)
+
+    monkeypatch.setattr(auth, "hash_password", spy)
+    with pytest.raises(auth.AuthError):
+        auth.authenticate(session, "legacy-user", "wrong")
+
+    assert captured == [
+        auth.PBKDF2_ITERS,
+        auth.CURRENT_PBKDF2_ITERS - auth.PBKDF2_ITERS,
+    ]
+
+
+def test_client_ip_prefers_last_xff_hop():
+    """nginx $proxy_add_x_forwarded_for 把真实来源追加到 XFF 尾部——取最后一跳。"""
+
+    class _Client:
+        host = "10.0.0.1"  # 反代地址
+
+    class _Request:
+        headers = {"x-forwarded-for": "1.2.3.4, 5.6.7.8"}  # 1.2.3.4 为伪造值
+        client = _Client()
+
+    from app.api.routers.auth import _client_ip
+
+    assert _client_ip(_Request()) == "5.6.7.8"
+
+    class _DirectRequest:
+        headers: dict = {}
+        client = _Client()
+
+    assert _client_ip(_DirectRequest()) == "10.0.0.1"

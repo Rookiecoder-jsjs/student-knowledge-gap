@@ -44,7 +44,7 @@ def main() -> None:
     db_file = settings.database_url.replace("sqlite:///", "")
     if os.path.exists(db_file):
         os.remove(db_file)
-    init_db()
+    init_db(allow_create_all_fallback=True)
 
     out = Path(settings.output_dir)
     out.mkdir(exist_ok=True)

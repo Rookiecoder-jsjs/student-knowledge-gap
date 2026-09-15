@@ -8,11 +8,27 @@ message.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 
 
-MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_TOTAL_BYTES = 100 * 1024 * 1024
+def _env_mb(name: str, default: int) -> int:
+    """env 读取上限（MB）。空值/非法值回落默认（.env 模板允许 ``KEY=`` 空值）。"""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+# 单文件 10MB（手机全分辨率照片可能超限，学校可经 SC_MAX_UPLOAD_FILE_MB 放宽）；
+# 整批 100MB 需与 frontend/app/nginx.conf 的 client_max_body_size(110m) 同步调整。
+MAX_FILE_MB = _env_mb("SC_MAX_UPLOAD_FILE_MB", 10)
+MAX_BATCH_MB = _env_mb("SC_MAX_UPLOAD_BATCH_MB", 100)
+MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024
+MAX_TOTAL_BYTES = MAX_BATCH_MB * 1024 * 1024
 READ_CHUNK_BYTES = 1024 * 1024
 
 

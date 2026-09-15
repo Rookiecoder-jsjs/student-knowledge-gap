@@ -36,13 +36,24 @@ def set_gauge(
         _gauges[_key(name, labels)] = value
 
 
+def _escape_label_value(value: str) -> str:
+    """Prometheus 文本格式要求：反斜杠、双引号、换行必须转义。
+
+    换行不转义会把一行 label 值拆成多条 exposition 行（路径参数里的
+    ``%0A`` 可注入任意指标行），破坏整个 /metrics 载荷。
+    """
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+
+
 def _render_labels(labels: tuple[tuple[str, str], ...]) -> str:
     if not labels:
         return ""
-    escaped = (
-        f'{key}="{value.replace(chr(92), chr(92) + chr(92)).replace(chr(34), chr(92) + chr(34))}"'
-        for key, value in labels
-    )
+    escaped = (f'{key}="{_escape_label_value(value)}"' for key, value in labels)
     return "{" + ",".join(escaped) + "}"
 
 

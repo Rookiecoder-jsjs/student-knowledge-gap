@@ -86,6 +86,20 @@ def hash_password_for_storage(
     return PASSWORD_HASH_PREFIX + b"$" + str(iterations).encode("ascii") + b"$" + digest
 
 
+def _burn_password_hash_budget(password: str, salt: bytes, iterations: int) -> None:
+    """Spend the remaining PBKDF2 work needed to reach the current cost.
+
+    Legacy rows contain a raw 60k digest and therefore need one real 60k
+    verification. On a wrong password that would otherwise return faster than
+    a missing-user dummy hash (120k), so perform the remaining work without
+    using its result. This keeps migration-compatible verification from
+    reintroducing username enumeration through timing.
+    """
+    remaining = CURRENT_PBKDF2_ITERS - iterations
+    if remaining > 0:
+        hash_password(password, salt, remaining)
+
+
 def verify_password(password: str, salt: bytes, stored: bytes) -> tuple[bool, bool]:
     """校验密码并返回 ``(valid, needs_upgrade)``。
 
@@ -98,17 +112,22 @@ def verify_password(password: str, salt: bytes, stored: bytes) -> tuple[bool, bo
     if stored.startswith(PASSWORD_HASH_PREFIX + b"$"):
         parts = stored.split(b"$", 2)
         if len(parts) != 3 or parts[0] != PASSWORD_HASH_PREFIX:
+            _burn_password_hash_budget(password, salt, 0)
             return False, False
         try:
             iterations = int(parts[1])
             expected = bytes.fromhex(parts[2].decode("ascii"))
         except (ValueError, UnicodeDecodeError):
+            _burn_password_hash_budget(password, salt, 0)
             return False, False
         if iterations <= 0 or len(expected) != 32:
+            _burn_password_hash_budget(password, salt, 0)
             return False, False
         needs_upgrade = iterations < CURRENT_PBKDF2_ITERS
     candidate = hash_password(password, salt, iterations)
     valid = hmac.compare_digest(candidate, expected)
+    if not valid:
+        _burn_password_hash_budget(password, salt, iterations)
     return valid, bool(valid and needs_upgrade)
 
 
@@ -141,7 +160,11 @@ def validate_runtime_secret(db: Session) -> None:
     if (forced or ha or security_mode_on(db)) and not os.environ.get(
         "SC_AUTH_SECRET", ""
     ).strip():
-        raise RuntimeError("安全/HA 模式必须配置 SC_AUTH_SECRET")
+        raise RuntimeError(
+            "安全/HA 模式必须配置 SC_AUTH_SECRET。"
+            "存量部署升级：在 backend/.env 设置稳定随机值后重建容器"
+            "（旧行为为每次启动随机生成——重启即全员下线，故本版本起拒绝启动）。"
+        )
 
 
 def _sign(kind: str, uid: int, ttl_s: int) -> str:
@@ -208,7 +231,9 @@ def authenticate(db: Session, username: str, password: str) -> tuple[Teacher, st
     """口令登录：成功返回 (教师, token)。用户名不存在也走一次哈希比较防时序侧信道。"""
     row = db.scalar(select(Teacher).where(Teacher.username == username))
     if row is None:
-        hash_password(password, b"timing-equalizer")
+        # 均衡哈希必须用当前迭代参数：账号成功登录即升级为 CURRENT 迭代，
+        # 均衡侧若停在 legacy 60k，响应时间差会泄露「用户名是否存在/是否已升级」。
+        hash_password(password, b"timing-equalizer", CURRENT_PBKDF2_ITERS)
         raise AuthError("用户名或密码错误")
     if not _verify_row_password(row, password):
         raise AuthError("用户名或密码错误")
@@ -219,7 +244,7 @@ def authenticate_student(db: Session, username: str, password: str) -> tuple[Stu
     """学生口令登录（自服务门户）：成功返回 (学生, token)。"""
     row = db.scalar(select(Student).where(Student.username == username))
     if row is None:
-        hash_password(password, b"timing-equalizer")
+        hash_password(password, b"timing-equalizer", CURRENT_PBKDF2_ITERS)
         raise AuthError("用户名或密码错误")
     if not _verify_row_password(row, password):
         raise AuthError("用户名或密码错误")
@@ -270,7 +295,7 @@ def authenticate_any(
         if _verify_row_password(srow, password):
             return srow, issue_student_token(srow.id), "s"
         raise AuthError("用户名或密码错误")
-    hash_password(password, b"timing-equalizer")
+    hash_password(password, b"timing-equalizer", CURRENT_PBKDF2_ITERS)
     raise AuthError("用户名或密码错误")
 
 

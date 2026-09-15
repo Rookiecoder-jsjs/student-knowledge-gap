@@ -3,6 +3,11 @@
 无第三方依赖（stdlib logging + json）。关键路径（batch worker 生命周期、LLM 调用、
 commit 派生事件数）通过 ``sc.*`` 命名空间输出结构化字段，使失败可定位、数据质量
 可观测（G1 的静默失败正是可观测性缺失的症状之一）。
+
+安全边界提示：``_SENSITIVE_KEY_PARTS`` / ``_STDLIB_ATTRS`` 与
+``gateway/observability.py`` 是同一契约的两份拷贝（gateway 镜像自包含、不 COPY
+backend，无法共享模块）——任何一侧增删敏感字段必须同步另一侧，
+``backend/tests/test_observability_sync.py`` 会解析两侧常量字面量强制一致。
 """
 
 from __future__ import annotations

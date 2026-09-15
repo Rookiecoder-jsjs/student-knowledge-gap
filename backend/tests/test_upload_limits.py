@@ -41,3 +41,21 @@ def test_read_upload_returns_complete_payload_in_chunks():
     result = asyncio.run(read_upload(_Upload(payload), max_bytes=len(payload), label="文件"))
 
     assert result == payload
+
+
+def test_env_mb_helper_parses_and_falls_back(monkeypatch):
+    """上限 env 旋钮：空值/非法值回落默认，非正值抬到下限 1。"""
+    from app.upload_limits import MAX_FILE_BYTES, MAX_FILE_MB, _env_mb
+
+    monkeypatch.setenv("SC_TEST_UPLOAD_MB", "25")
+    assert _env_mb("SC_TEST_UPLOAD_MB", 10) == 25
+    monkeypatch.setenv("SC_TEST_UPLOAD_MB", "")
+    assert _env_mb("SC_TEST_UPLOAD_MB", 10) == 10
+    monkeypatch.setenv("SC_TEST_UPLOAD_MB", "garbage")
+    assert _env_mb("SC_TEST_UPLOAD_MB", 10) == 10
+    monkeypatch.setenv("SC_TEST_UPLOAD_MB", "0")
+    assert _env_mb("SC_TEST_UPLOAD_MB", 10) == 1
+
+    # 默认值口径不变（10MB 单文件），字节换算一致
+    assert MAX_FILE_MB == 10
+    assert MAX_FILE_BYTES == 10 * 1024 * 1024

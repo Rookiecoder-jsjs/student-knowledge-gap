@@ -69,7 +69,7 @@ def ensure_active_version() -> bool:
 
 def main() -> None:
     # 先建表：create_all 只加缺失的表（空库会直接建带 archived 的表，无需 ALTER）。
-    init_db()
+    init_db(allow_create_all_fallback=True)
     add_archived_column()
     ensure_active_version()
     print("[migrate] 完成")

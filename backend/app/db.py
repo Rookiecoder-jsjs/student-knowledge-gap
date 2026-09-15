@@ -73,21 +73,37 @@ def _set_sqlite_pragma(dbapi_conn, _):  # noqa: ANN001
         cur.close()
 
 
-def init_db() -> None:
+def init_db(*, allow_create_all_fallback: bool = False) -> None:
     """建表（schema 迁移的唯一入口；双轨决策见 alembic/README——问题8 统一后）。
 
     SC_USE_ALEMBIC=1 时走 ``alembic upgrade head``（G10：schema 变更可追踪、可回滚）；
     否则 ``create_all``（测试 fixture / 新库），并为存量库补增量列（``_legacy_alter_bootstrap``
     幂等 ALTER——create_all 不给已有表加列；alembic 轨不需要，初始迁移已含这些列）。
-    Alembic 迁移失败直接终止启动，避免服务使用不完整 schema。
+    Alembic 迁移失败直接抛出（服务启动 fail-fast，不带不完整 schema 上线）。
+    存量库（建表早于 alembic、无 alembic_version 表）在 alembic 轨会因重复建表
+    失败，需先 ``alembic stamp head`` 收编；命令行脚本/演示入口可传
+    ``allow_create_all_fallback=True`` 对**未基线化**库回落旧 create_all 自举
+    （已基线化库的迁移失败是真故障，任何入口都不静默降级）。
     """
     from app import models  # noqa: F401  确保模型注册
 
     if os.environ.get("SC_USE_ALEMBIC", "").lower() in ("1", "true", "yes"):
-        _alembic_upgrade_head()
-        return
+        try:
+            _alembic_upgrade_head()
+            return
+        except Exception:
+            if not allow_create_all_fallback or _alembic_baselined():
+                raise
+            # 仅脚本入口：未基线化存量库回落 create_all（旧默认行为）
     Base.metadata.create_all(engine)
     _legacy_alter_bootstrap()
+
+
+def _alembic_baselined() -> bool:
+    """库是否已纳入 alembic 管理（存在 alembic_version 表）。"""
+    from sqlalchemy import inspect
+
+    return inspect(engine).has_table("alembic_version")
 
 
 def _legacy_alter_bootstrap() -> None:
@@ -129,7 +145,15 @@ def _alembic_upgrade_head() -> None:
     cfg.set_main_option(
         "script_location", str(Path(__file__).resolve().parent.parent / "alembic")
     )
-    command.upgrade(cfg, "head")
+    try:
+        command.upgrade(cfg, "head")
+    except Exception as exc:
+        # 附运维动作提示：裸 alembic 报错（如 "table already exists"）不指向
+        # 「存量库未收编」这一根因。异常链保留原始错误。
+        raise RuntimeError(
+            "alembic upgrade head 失败：拒绝以不完整 schema 继续。"
+            "存量库（无 alembic_version 表）需先执行 `alembic stamp head` 收编。"
+        ) from exc
 
 
 @contextmanager

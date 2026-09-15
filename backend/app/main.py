@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import os
+import re
 import time
 from uuid import UUID, uuid4
 
@@ -82,8 +83,14 @@ def _request_id(request: Request) -> str:
 
 
 def _route_template(request: Request) -> str:
+    """路由模板标签（指标 + 日志共用）。
+
+    无路由对象时（404、以及 _auth_gate / _request_size_guard 等前置中间件
+    的拒绝路径）回落固定占位符——设计 §3.2 要求 route 必须用模板，禁止
+    带 ID 的原始 URL 入标签（高基数 + 不可控内容进 exposition）。
+    """
     route = request.scope.get("route")
-    return getattr(route, "path", None) or request.url.path
+    return getattr(route, "path", None) or "unmatched"
 
 
 @app.exception_handler(RequestValidationError)
@@ -121,7 +128,6 @@ async def _validation_error_handler(request: Request, exc: RequestValidationErro
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception):
     """Log the traceback internally and expose only a correlation-safe error."""
-    from app.metrics import inc
     from app.observability import get_logger
 
     request_id = _request_id(request)
@@ -140,7 +146,10 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
             "retryable": False,
         },
     )
-    inc("http_errors_total", labels={"status_class": "5xx", "error_code": "internal_error"})
+    # http_errors_total 由 _request_metrics 的 finally 统一计数（本异常路径：
+    # call_next 抛出时 status_code 已按 500 计一次）。本 handler 挂在
+    # ServerErrorMiddleware（用户中间件栈之外），在 finally 之后才运行——
+    # 此处再计数会把每个未处理 500 记成两次，污染 5xx 比例告警。
     return JSONResponse(
         status_code=500,
         content={
@@ -171,6 +180,8 @@ app.add_middleware(
 # 在 app.auth，这里只做「要不要拦/角色放行」的路径判定——开放模式（无凭据账号）
 # 整层透明。班级级授权不在此层（各端点经 guard_class/断言函数做归属校验）。
 _EXEMPT_PREFIXES = ("/health", "/ready", "/metrics", "/auth/login", "/mcp")
+# 探针路径：计入指标但不写 http.request_completed 日志（日志配额保护）
+_PROBE_PATHS = ("/health", "/ready", "/metrics")
 # 学生主体可触达的前缀（自服务只读面 + 会话探测）；其余一切路径教师/admin 专属。
 # 教师端点假定 kind=t，学生 token 在此层即被 403，端点无需各自防御。
 _STUDENT_ALLOWED_PREFIXES = ("/me", "/auth/me")
@@ -186,7 +197,13 @@ async def _request_size_guard(request, call_next):  # noqa: ANN001
             content_length = int(raw_length) if raw_length is not None else None
         except (TypeError, ValueError):
             content_length = None
-        if content_length is not None and content_length > _MAX_LOGIN_BODY_BYTES:
+        # chunked（无 Content-Length）同样要拦：Starlette 会把整个 chunked body
+        # 读进内存做 JSON 解析，旧「只看 Content-Length」防不住该路径；正常
+        # JSON 登录请求恒带 Content-Length，chunked 即视为异常客户端。
+        transfer_encoding = (request.headers.get("transfer-encoding") or "").lower()
+        if "chunked" in transfer_encoding or (
+            content_length is not None and content_length > _MAX_LOGIN_BODY_BYTES
+        ):
             from fastapi.responses import JSONResponse
 
             request_id = _request_id(request)
@@ -284,17 +301,21 @@ async def _request_metrics(request, call_next):  # noqa: ANN001
             )
         inc("http_request_duration_ms_sum", duration_ms, labels=labels)
         inc("http_request_duration_ms_count", labels=labels)
-        logger.info(
-            "request complete",
-            extra={
-                "event": "http.request_completed",
-                "request_id": request_id,
-                "method": request.method,
-                "route": route,
-                "status_code": status_code,
-                "duration_ms": round(duration_ms, 3),
-            },
-        )
+        # 探针不产生排障价值却占日志配额：healthcheck 每 30s 打一次 /ready，
+        # 20MB×5 轮转下探针+业务日志约一天转完一轮，事故时现场已被轮掉。
+        # 探针请求仍计入 http_requests_total（指标面不受影响）。
+        if request.url.path not in _PROBE_PATHS:
+            logger.info(
+                "request complete",
+                extra={
+                    "event": "http.request_completed",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "route": route,
+                    "status_code": status_code,
+                    "duration_ms": round(duration_ms, 3),
+                },
+            )
         if response is not None:
             response.headers["X-Request-ID"] = request_id
     return response
@@ -316,6 +337,26 @@ def metrics():
     from app.metrics import render_prometheus
 
     return Response(content=render_prometheus(), media_type="text/plain; version=0.0.4")
+
+
+# /ready 失败日志：脱敏 + 按签名限频。底层异常文本可能内嵌 DSN/凭据片段
+# （psycopg2/SQLAlchemy 连接错误常带 host/user，某些驱动带完整 DSN），
+# 先抹 URL userinfo 与 password/token/secret 键值再截断入日志。
+_DSN_SECRET_RE = re.compile(r"(?i)(password|pwd|token|secret)\s*[=:]\s*\S+")
+_URL_USERINFO_RE = re.compile(r"(\w+://)[^/\s@]+@")
+_READY_RELOG_SECONDS = 60.0
+_ready_log_state: dict[str, object] = {"failing": "", "ts": 0.0}
+
+
+def _redact_dependency_error(text: str) -> str:
+    redacted = _URL_USERINFO_RE.sub(r"\1***@", text or "")
+    redacted = _DSN_SECRET_RE.sub(r"\1=***", redacted)
+    return redacted[:300]
+
+
+def _reset_ready_log_state_for_tests() -> None:
+    _ready_log_state["failing"] = ""
+    _ready_log_state["ts"] = 0.0
 
 
 @app.get("/ready")
@@ -372,22 +413,46 @@ def ready():
     if not db_ok or not redis_ok:
         from app.observability import get_logger
 
-        get_logger("health").warning(
-            "readiness dependency failed",
-            extra={
-                "event": "dependency.health_changed",
-                "dependency": ",".join(failed_checks),
-                "error_code": "dependencies_unavailable",
-                "database_error": db_err[:500] if db_err else "",
-                "redis_error": redis_err[:500] if redis_err else "",
-            },
-        )
+        # 事件语义是 health_changed（状态变化），不是每次探针——healthcheck
+        # 每 30s 轮询一次，逐次告警会把日志打穿。同一故障签名只记一条，
+        # 每 60s 重报一次表明仍在降级（限频心跳）。
+        now = time.monotonic()
+        signature = ",".join(failed_checks)
+        if (
+            _ready_log_state["failing"] != signature
+            or (now - _ready_log_state["ts"]) >= _READY_RELOG_SECONDS
+        ):
+            _ready_log_state["failing"] = signature
+            _ready_log_state["ts"] = now
+            get_logger("health").warning(
+                "readiness dependency failed",
+                extra={
+                    "event": "dependency.health_changed",
+                    "dependency": signature,
+                    "error_code": "dependencies_unavailable",
+                    "database_error": _redact_dependency_error(db_err),
+                    "redis_error": _redact_dependency_error(redis_err),
+                },
+            )
         body["error_code"] = (
             failed_checks[0] if len(failed_checks) == 1 else "dependencies_unavailable"
         )
         body["failed_checks"] = failed_checks
         body["detail"] = "依赖不可用"
         return JSONResponse(status_code=503, content=body)
+    if _ready_log_state["failing"]:
+        # 恢复也要可见（设计 §6.2：告警恢复需通知），否则只报不收敛。
+        from app.observability import get_logger
+
+        get_logger("health").info(
+            "readiness dependency recovered",
+            extra={
+                "event": "dependency.health_changed",
+                "dependency": _ready_log_state["failing"],
+                "error_code": "dependencies_recovered",
+            },
+        )
+        _ready_log_state["failing"] = ""
     return body
 
 

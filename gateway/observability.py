@@ -1,4 +1,10 @@
-"""Gateway structured logging with the same JSON contract as the backend."""
+"""Gateway structured logging with the same JSON contract as the backend.
+
+安全边界提示：``_SENSITIVE_KEY_PARTS`` / ``_STDLIB_ATTRS`` 与
+``backend/app/observability.py`` 是同一契约的两份拷贝（gateway 镜像自包含、
+不 COPY backend，无法共享模块）——任何一侧增删敏感字段必须同步另一侧，
+``backend/tests/test_observability_sync.py`` 会解析两侧常量字面量强制一致。
+"""
 
 from __future__ import annotations
 
@@ -36,7 +42,8 @@ class JsonFormatter(logging.Formatter):
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
             "service": "gateway",
-            "version": os.environ.get("SC_BOX_VERSION") or "unknown",
+            # version 取值口径与 backend 一致（SC_APP_VERSION 优先，SC_BOX_VERSION 兜底）
+            "version": os.environ.get("SC_APP_VERSION") or os.environ.get("SC_BOX_VERSION") or "unknown",
             "logger": record.name,
             "msg": record.getMessage(),
         }

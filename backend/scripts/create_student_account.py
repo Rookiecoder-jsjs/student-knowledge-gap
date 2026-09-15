@@ -21,7 +21,7 @@ def main() -> None:
     ap.add_argument("--username", default=None, help="缺省取 external_code")
     args = ap.parse_args()
 
-    init_db()
+    init_db(allow_create_all_fallback=True)
     with SessionLocal() as db:
         try:
             stu, username = auth.enable_student_login(

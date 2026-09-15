@@ -40,7 +40,7 @@ def add_token_columns() -> bool:
 def main() -> None:
     from app.db import init_db
 
-    init_db()
+    init_db(allow_create_all_fallback=True)
     add_token_columns()
     print("[migrate] 完成")
 

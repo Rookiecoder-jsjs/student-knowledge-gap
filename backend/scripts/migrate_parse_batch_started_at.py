@@ -39,7 +39,7 @@ def add_started_at_column() -> bool:
 
 
 def main() -> None:
-    init_db()
+    init_db(allow_create_all_fallback=True)
     add_started_at_column()
     print("[migrate] 完成")
 

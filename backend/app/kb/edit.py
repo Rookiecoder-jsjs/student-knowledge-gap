@@ -19,11 +19,14 @@ from sqlalchemy.orm import Session
 
 from app.kb.floor_impact import floor_impact, weak_count_for_kp
 from app.models import (
+    Attribution,
     CorrectionLog,
     EvidenceEvent,
+    Intervention,
     KnowledgePoint,
     KpRelation,
     QuestionKp,
+    StudyRecord,
     TeachingProgress,
 )
 
@@ -221,11 +224,44 @@ def delete_kp(
         )
         or 0
     )
+    # 归因/干预/学习方案是事实记录（kp_id 均为 NOT-NULL 外键）：SQLite
+    # PRAGMA foreign_keys=ON（db.py）下直接 delete(kp) 会在 flush 抛
+    # IntegrityError → 500。硬删预检必须覆盖**所有**指向 knowledge_point
+    # 的 NOT-NULL 外键（root_kp_id 可空也计入——指向被删点同样是悬空引用）。
+    attribution_refs = (
+        session.scalar(
+            select(func.count(Attribution.id)).where(
+                (Attribution.kp_id == kp_id) | (Attribution.root_kp_id == kp_id)
+            )
+        )
+        or 0
+    )
+    intervention_refs = (
+        session.scalar(
+            select(func.count(Intervention.id)).where(Intervention.kp_id == kp_id)
+        )
+        or 0
+    )
+    study_refs = (
+        session.scalar(
+            select(func.count(StudyRecord.id)).where(StudyRecord.kp_id == kp_id)
+        )
+        or 0
+    )
 
     if force:
-        if evidence_refs > 0 or question_refs > 0:
+        blocking_refs = (
+            evidence_refs
+            + question_refs
+            + attribution_refs
+            + intervention_refs
+            + study_refs
+        )
+        if blocking_refs > 0:
             raise KbEditError(
-                f"该知识点被 {evidence_refs} 条证据、{question_refs} 道题标注引用，不可硬删"
+                f"该知识点被 {evidence_refs} 条证据、{question_refs} 道题标注、"
+                f"{attribution_refs} 条归因、{intervention_refs} 条干预、"
+                f"{study_refs} 条学习方案引用，不可硬删"
             )
         session.execute(
             delete(KpRelation).where(

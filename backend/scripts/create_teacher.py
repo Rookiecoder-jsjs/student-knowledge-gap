@@ -28,7 +28,7 @@ def main() -> None:
     ap.add_argument("--grant", default="", help="逗号分隔的班级 id 列表")
     args = ap.parse_args()
 
-    init_db()
+    init_db(allow_create_all_fallback=True)
     with SessionLocal() as db:
         salt = secrets.token_bytes(16)
         t = auth.Teacher(

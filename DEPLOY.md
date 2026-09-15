@@ -62,7 +62,9 @@ curl -X POST http://localhost:8080/api/kb/import \
 | `SC_LLM_ROUTER_URL` / `SC_LLM_ROUTER_TOKEN` | 空 | 统一 LLM 路由。后端与 Codex 只持内部令牌，供应商 key 注入 `llm-router` |
 | `SC_JOB_QUEUE_ENABLE` | 关 | `=1` 启用 PostgreSQL/SQLite 持久化报告任务，提交接口返回 `job_id` |
 | `SC_HA_ENABLED` / `SC_REDIS_URL` | 关/空 | `=1` 时 readiness 同时检查 Redis；HA overlay 使用 PostgreSQL + Redis + MinIO |
+| `SC_MAX_UPLOAD_FILE_MB` / `SC_MAX_UPLOAD_BATCH_MB` | `10` / `100` | 上传单文件 / 整批上限（MB）；调大整批需同步调整 `frontend/app/nginx.conf` 的 `client_max_body_size` |
 | `TMPDIR` | `/data/tmp` | **compose 注入**：批量上传临时文件挂卷，重启后 failed item 可重试 |
+| `SC_AUTH_SECRET` | 空 | token 签名密钥。**升级注意**：本版本起，安全模式（已建教师账号或 `SC_AUTH_REQUIRED=1`）或 HA 模式未配置该项将**拒绝启动**（旧行为为随机生成——重启即全员下线）；存量部署升级前先在 `backend/.env` 设置稳定值再重建容器 |
 
 其余算法/质量参数（`SC_MIN_EVIDENCE_COUNT`、`SC_WEAKNESS_MODE` 等）见 `.env.example` 与 README，不改默认即用生产已转正的取值。
 

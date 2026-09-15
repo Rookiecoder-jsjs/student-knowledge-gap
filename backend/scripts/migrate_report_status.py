@@ -46,7 +46,7 @@ def add_status_columns() -> bool:
 def main() -> None:
     from app.db import init_db
 
-    init_db()
+    init_db(allow_create_all_fallback=True)
     add_status_columns()
     print("[migrate] 完成")
 

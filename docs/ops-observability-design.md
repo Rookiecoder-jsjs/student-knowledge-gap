@@ -79,13 +79,13 @@ logging:
 
 | 事件 | 级别 | 说明 |
 |---|---|---|
-| `http.request_completed` | INFO | 所有请求，含 request_id、route、状态码、耗时 |
+| `http.request_completed` | INFO | 所有业务请求（探针 `/health` `/ready` `/metrics` 除外——探针计入指标、不占日志配额），含 request_id、route、状态码、耗时 |
 | `http.request_failed` | ERROR | 未处理异常或 5xx，带异常类型和堆栈 |
 | `auth.login_rejected` | INFO/WARN | 401、429 只记录原因码，不记录密码 |
 | `job.failed` | ERROR | 后台任务最终失败，带 job_id 和可重试性 |
 | `batch.item_failed` | ERROR | 单个上传项失败，带 item_id 和阶段 |
 | `llm.call_failed` | WARN/ERROR | 供应商、能力、熔断状态和耗时，不记录正文 |
-| `dependency.health_changed` | WARN | DB、Redis、LLM router 状态变化 |
+| `dependency.health_changed` | WARN | DB、Redis、LLM router 状态变化；`/ready` 探针轮询不逐次告警——同一故障签名只记一条，每 60s 重报心跳，恢复时记一条 INFO |
 | `backup.completed` / `backup.failed` | INFO/ERROR | 备份路径、耗时、大小和结果 |
 | `heartbeat.completed` / `heartbeat.failed` | INFO/WARN | 只记录目标域名、状态码和下次重试 |
 
@@ -98,7 +98,7 @@ logging:
 增加一个全局异常处理器，行为固定为：
 
 - 生成或复用 `request_id`；
-- 记录一次 `http.request_failed`，含完整堆栈和安全字段；
+- 记录一次 `http.request_failed`，含完整堆栈和安全字段（`http_errors_total` 计数由请求中间件的 finally 统一负责，异常处理器不重复计数）；
 - 对外只返回 `{"detail":"服务内部错误","request_id":"..."}`，不返回 SQL、文件路径、供应商响应或环境变量；
 - 5xx 统一增加 `X-Request-ID`，便于用户把页面错误交给运维定位；
 - 已知业务异常继续由各路由返回 4xx，不重复记录为内部错误。

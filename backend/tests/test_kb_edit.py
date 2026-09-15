@@ -376,6 +376,81 @@ def test_kp_hard_delete(client):
     assert c.delete(f"/kb/kps/{kp_105}?force=true").status_code == 400
 
 
+def test_kp_hard_delete_rejected_by_attribution_intervention_study_refs(client):
+    """强删预检必须覆盖所有指向 knowledge_point 的 NOT-NULL 外键。
+
+    SQLite PRAGMA foreign_keys=ON 下，漏检的 Attribution/Intervention/
+    StudyRecord 引用会在 flush 抛 IntegrityError → 未处理 500（预检本意
+    是给出 400 的可读拒绝）。
+    """
+    from datetime import date
+
+    from app.models import Attribution, ExamTemplate, Intervention, StudyRecord
+
+    c, sf = client
+    class_id, _ = _bootstrap(c)
+    student_id = _student_id(c, class_id)
+
+    # 归因引用（kp_id 直接指向）
+    kp_attr = c.post("/kb/kps", json={"code": "M7A-811", "name": "归因引用", "grade": 7}).json()["id"]
+    with sf() as s:
+        s.add(Attribution(student_id=student_id, kp_id=kp_attr, type="前置缺陷"))
+        s.commit()
+    r = c.delete(f"/kb/kps/{kp_attr}?force=true")
+    assert r.status_code == 400
+    assert "归因" in r.json()["detail"]
+
+    # 归因经 root_kp_id 指向（可空列，同样构成悬空引用）
+    kp_root = c.post("/kb/kps", json={"code": "M7A-812", "name": "根因引用", "grade": 7}).json()["id"]
+    with sf() as s:
+        s.add(Attribution(student_id=student_id, kp_id=kp_attr, root_kp_id=kp_root, type="前置缺陷"))
+        s.commit()
+    assert c.delete(f"/kb/kps/{kp_root}?force=true").status_code == 400
+
+    # 干预记录引用
+    kp_intv = c.post("/kb/kps", json={"code": "M7A-813", "name": "干预引用", "grade": 7}).json()["id"]
+    with sf() as s:
+        tpl = ExamTemplate(
+            class_id=class_id, name="干预卷", exam_date=date(2025, 10, 1), type="单元"
+        )
+        s.add(tpl)
+        s.flush()
+        s.add(
+            Intervention(
+                class_id=class_id,
+                kp_id=kp_intv,
+                exam_id=tpl.id,
+                kind="reteach",
+                scope="class",
+                baseline_as_of=date(2025, 10, 1),
+            )
+        )
+        s.commit()
+    r = c.delete(f"/kb/kps/{kp_intv}?force=true")
+    assert r.status_code == 400
+    assert "干预" in r.json()["detail"]
+
+    # 学习方案（StudyRecord）引用
+    kp_study = c.post("/kb/kps", json={"code": "M7A-814", "name": "学习方案引用", "grade": 7}).json()["id"]
+    with sf() as s:
+        s.add(
+            StudyRecord(
+                class_id=class_id,
+                student_id=student_id,
+                kp_id=kp_study,
+                plan_markdown="计划",
+            )
+        )
+        s.commit()
+    r = c.delete(f"/kb/kps/{kp_study}?force=true")
+    assert r.status_code == 400
+    assert "学习方案" in r.json()["detail"]
+
+    # 无任何引用的 kp 仍可正常硬删（守卫不误伤）
+    kp_free = c.post("/kb/kps", json={"code": "M7A-815", "name": "无引用", "grade": 7}).json()["id"]
+    assert c.delete(f"/kb/kps/{kp_free}?force=true").status_code == 200
+
+
 def test_kp_container_delete_rejected(client):
     c, sf = client
     _bootstrap(c)

@@ -119,10 +119,26 @@ def _student_payload(ctx: auth.AccessContext) -> dict:
     }
 
 
+def _client_ip(request: Request) -> str:
+    """客户端 IP：nginx 反代后 request.client.host 恒为代理地址。
+
+    nginx 以 ``$proxy_add_x_forwarded_for`` 把真实来源**追加**到 XFF 尾部——
+    客户端伪造的 XFF 排最前，最后一跳才是网关实际看到的来源地址；直连后端
+    （仅 127.0.0.1 调试端口）无 XFF，回落 request.client.host。登录限流按
+    此口径区分来源 IP，否则全部用户共享代理 IP、按 IP 维度形同虚设。
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        last_hop = forwarded.split(",")[-1].strip()
+        if last_hop:
+            return last_hop
+    return request.client.host if request.client is not None else "unknown"
+
+
 @router.post("/auth/login")
 def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """口令登录 → Bearer token（教师/admin 或学生；开放模式同样可用）。"""
-    client_ip = request.client.host if request.client is not None else "unknown"
+    client_ip = _client_ip(request)
     retry_after = auth_throttle.check(req.username, client_ip)
     if retry_after is not None:
         raise HTTPException(
