@@ -38,6 +38,7 @@ from app.models import Report, StudyRecord, Student
 from app.pipeline.mastery import mastery_at
 from app.pipeline.progress import loop_states_for_student
 from app.pipeline.weakness import assess_student_kps
+from app.queries.knowledge_graph import student_knowledge_graph
 from app.study import get_or_generate_study_record, self_mark_learned, self_report_map
 
 router = APIRouter()
@@ -73,6 +74,13 @@ def _mastery_payload(db: Session, s: Student, when: datetime) -> dict:
         if m is not None:
             out.append({"code": kp.code, "name": kp.name, "mastery": round(m, 3)})
     return {"student_id": s.id, "as_of": str(when.date()), "mastery": out}
+
+
+def _knowledge_graph_payload(db: Session, s: Student, when: datetime) -> dict:
+    """学生图谱只读面：结构与 active KB 对齐，指标仅含该生。"""
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    graph = _graph(db, kb.id)
+    return student_knowledge_graph(db, graph, s.id, s.class_id, when)
 
 
 def _weaknesses_payload(db: Session, s: Student, when: datetime) -> dict:
@@ -319,6 +327,15 @@ def me_mastery(
     return _mastery_payload(db, _self(ctx), _as_dt(as_of))
 
 
+@router.get("/me/knowledge-graph")
+def me_knowledge_graph(
+    as_of: date | None = None,
+    ctx=Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    return _knowledge_graph_payload(db, _self(ctx), _as_dt(as_of))
+
+
 @router.get("/me/weaknesses")
 def me_weaknesses(
     as_of: date | None = None,
@@ -434,6 +451,15 @@ def preview_mastery(
     db: Session = Depends(get_db),
 ):
     return _mastery_payload(db, s, _as_dt(as_of))
+
+
+@router.get("/admin/students/{student_id}/portal/knowledge-graph")
+def preview_knowledge_graph(
+    as_of: date | None = None,
+    s: Student = Depends(_preview_student),
+    db: Session = Depends(get_db),
+):
+    return _knowledge_graph_payload(db, s, _as_dt(as_of))
 
 
 @router.get("/admin/students/{student_id}/portal/weaknesses")

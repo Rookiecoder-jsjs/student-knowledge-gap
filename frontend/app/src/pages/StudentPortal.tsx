@@ -6,7 +6,7 @@ import {
   Student,
   Warning,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AccountCluster, TopBar, TopBarNav } from "../components/TopBar";
 import { LoopStateChip } from "../components/ActionPlan";
@@ -14,6 +14,7 @@ import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "../compon
 import { ReportMarkdown } from "../components/Markdown";
 import {
   meActionPlan,
+  meKnowledgeGraph,
   meMastery,
   meProfile,
   meReportFull,
@@ -23,6 +24,7 @@ import {
   meStudyRecords,
   meWeaknesses,
   portalActionPlan,
+  portalKnowledgeGraph,
   portalMastery,
   portalProfile,
   portalReportFull,
@@ -35,8 +37,10 @@ import type { StudyRecordListItem } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
 import { PRODUCT_NAME } from "../lib/site";
-import type { MasteryItem, WeakItem } from "../lib/types";
+import type { KnowledgeGraphNode, MasteryItem, WeakItem } from "../lib/types";
 import { ACCENTS } from "../lib/theme";
+
+const KnowledgeGraph2D = lazy(() => import("../components/graph/KnowledgeGraph2D"));
 
 /**
  * 学生自服务门户（auth-roles-design §6 + frontend-ends-design 学生端）：/me 面——
@@ -483,6 +487,12 @@ function MasteryTab({ source }: { source: PortalSource }) {
     () => portalCall(source, meMastery, portalMastery),
     [source.kind, source.studentId]
   );
+  const graph = useAsync(
+    () => portalCall(source, meKnowledgeGraph, portalKnowledgeGraph),
+    [source.kind, source.studentId]
+  );
+  const [selectedGraphNode, setSelectedGraphNode] = useState<KnowledgeGraphNode | null>(null);
+  useEffect(() => setSelectedGraphNode(null), [source.kind, source.studentId]);
   const sorted = useMemo(
     () => (data?.mastery ?? []).slice().sort((a, b) => a.mastery - b.mastery),
     [data]
@@ -490,6 +500,36 @@ function MasteryTab({ source }: { source: PortalSource }) {
   return (
     <div className="space-y-3">
       <SectionTitle>各知识点掌握度</SectionTitle>
+      <div>
+        <p className="mb-2 text-xs text-ink-faint">学习路径 · 点击节点查看掌握度</p>
+        {graph.loading && <Skeleton rows={4} />}
+        {graph.error && <ErrorState message={graph.error} onRetry={graph.reload} />}
+        {graph.data && graph.data.nodes.length > 0 && (
+          <div className="space-y-2">
+            <Suspense fallback={<Card className="p-4"><Skeleton rows={4} /></Card>}>
+              <KnowledgeGraph2D
+                nodes={graph.data.nodes}
+                edges={graph.data.edges}
+                selectedId={selectedGraphNode?.id ?? null}
+                onSelect={setSelectedGraphNode}
+              />
+            </Suspense>
+            {selectedGraphNode && (
+              <Card className="p-3 text-xs">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-semibold">{selectedGraphNode.name}</span>
+                  <span className="font-mono text-ink-faint">{selectedGraphNode.code}</span>
+                </div>
+                <p className="mt-1 text-ink-faint">
+                  {selectedGraphNode.mastery == null
+                    ? "暂时没有足够证据"
+                    : `当前掌握度 ${Math.round(selectedGraphNode.mastery * 100)}% · 证据 ${selectedGraphNode.evidence_count} 条`}
+                </p>
+              </Card>
+            )}
+          </div>
+        )}
+      </div>
       {loading && <Skeleton rows={4} />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && data.mastery.length === 0 && (

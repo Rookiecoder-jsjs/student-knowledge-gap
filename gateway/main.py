@@ -48,11 +48,35 @@ _log = get_logger("main")
 
 # §5.7 月度软限额巡查循环（lifespan 启停；钩子=钉钉/日志）
 _STOP: list = [False]
+_BRIDGE_IDLE_TTL_S = max(
+    60.0, float(os.environ.get("SC_GATEWAY_BRIDGE_IDLE_TTL_S", "1800"))
+)
+_BRIDGE_REAPER_TASK: asyncio.Task | None = None
+
+
+async def _bridge_reaper_loop() -> None:
+    """回收无 SSE、无挂起请求的长期空闲 app-server 桥。"""
+    while not _STOP[0]:
+        await asyncio.sleep(60)
+        now = time.time()
+        for key, bridge in list(_BRIDGES.items()):
+            if bridge.subscribers or bridge._pending:
+                continue
+            if now - bridge.last_used < _BRIDGE_IDLE_TTL_S:
+                continue
+            _log.info(
+                "stopping idle app-server bridge",
+                extra={"event": "bridge.idle_reaped", "bridge": key},
+            )
+            bridge.stop()
+            _BRIDGES.pop(key, None)
 
 
 @app.on_event("startup")
 async def _start_monthly_watch() -> None:
     import asyncio
+
+    _STOP[0] = False
 
     from gateway import monthly_usage
 
@@ -79,11 +103,21 @@ async def _start_monthly_watch() -> None:
     from gateway import retention
 
     asyncio.create_task(retention.retention_loop(_STOP))
+    global _BRIDGE_REAPER_TASK
+    _BRIDGE_REAPER_TASK = asyncio.create_task(_bridge_reaper_loop())
 
 
 @app.on_event("shutdown")
 async def _stop_monthly_watch() -> None:
+    global _BRIDGE_REAPER_TASK
     _STOP[0] = True
+    if _BRIDGE_REAPER_TASK is not None:
+        _BRIDGE_REAPER_TASK.cancel()
+        try:
+            await _BRIDGE_REAPER_TASK
+        except asyncio.CancelledError:
+            pass
+        _BRIDGE_REAPER_TASK = None
 
 # 装车批第 3 步后规范壳 = runtime 源码构建的 codex-app-server(gateway 镜像内
 # 直启,无子命令,args 空;旧 npm `codex app-server` 形态仅由外部 env 显式还原)
@@ -506,7 +540,15 @@ class Bridge:
                     self._observe_budget(msg)
                     event = json.dumps({"type": "event", **msg}, ensure_ascii=False)
                     for q in list(self.subscribers):
-                        q.put_nowait(event)
+                        try:
+                            q.put_nowait(event)
+                        except asyncio.QueueFull:
+                            # 慢客户端不能反向阻塞 app-server；丢弃最旧事件并保留最新进度。
+                            try:
+                                q.get_nowait()
+                                q.put_nowait(event)
+                            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                                pass
         finally:
             # stdout 提前关闭时，不能让 turn/start 一直等到 180s 超时；立即唤醒
             # 所有挂起 RPC，由上层重建桥或把可读错误反馈给前端。
@@ -518,7 +560,14 @@ class Bridge:
             # 同时结束旧 SSE 生成器。否则旧连接会永远等在自己的 queue 上，浏览器
             # 以为连接仍健康，重建后的桥事件也无法抵达这个订阅。
             for q in list(self.subscribers):
-                q.put_nowait(None)
+                try:
+                    q.put_nowait(None)
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(None)
+                    except (asyncio.QueueEmpty, asyncio.QueueFull):
+                        pass
             self.subscribers.clear()
 
     def _observe_budget(self, msg: dict) -> None:
@@ -572,7 +621,11 @@ class Bridge:
         )
         self.proc.stdin.write(payload + "\n")
         self.proc.stdin.flush()
-        return await asyncio.wait_for(fut, timeout)
+        try:
+            return await asyncio.wait_for(fut, timeout)
+        finally:
+            # 超时或调用方取消后不应把永远等不到响应的 Future 留在桥上。
+            self._pending.pop(rid, None)
 
     def respond(
         self,
@@ -704,7 +757,7 @@ async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
 @app.get("/threads/{thread_id}/events")
 async def thread_events(thread_id: str, sess: Session = Depends(require_auth)):
     """SSE：该教师 app-server 的全部通知流（浏览器按 threadId 自行过滤）。"""
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     pending = _PENDING_SUBSCRIBERS.setdefault(sess.username, set())
     pending.add(queue)
     try:

@@ -44,6 +44,12 @@ export interface StudentInfo {
   username?: string | null;
 }
 
+export interface InterventionStudentSummary {
+  student_id: number;
+  suggested: number;
+  done: number;
+}
+
 export interface ProgressEntry {
   kp_id: number;
   code: string;
@@ -282,6 +288,36 @@ export interface KpRelationView {
   to: KpRelationEndpoint;
   type: string;
   weight: number;
+}
+
+/** 知识结构图：结构节点保留无证据项，指标字段仅在可评估时点存在。 */
+export interface KnowledgeGraphNode {
+  id: number;
+  code: string;
+  name: string;
+  chapter: string;
+  grade: number;
+  importance: string;
+  mastery: number | null;
+  weak_share: number | null;
+  evidence_count: number;
+  student_count: number;
+  state?: "weak" | "watch" | "good" | "no_data" | "not_learned";
+}
+
+export interface KnowledgeGraphEdge {
+  id: number;
+  from: number;
+  to: number;
+  type: string;
+  weight: number;
+}
+
+export interface ClassKnowledgeGraph {
+  kb_version_id: number;
+  as_of: string;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
 }
 
 // ---------------------------------------------------------------------------

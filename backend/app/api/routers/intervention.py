@@ -186,6 +186,44 @@ def list_interventions(
     }
 
 
+@router.get("/interventions/student-summary")
+def intervention_student_summary(
+    class_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)
+):
+    """返回班级内按学生聚合的干预执行计数。
+
+    学生名单页只需要角标计数，不应为每一页学生拉取全部干预并逐人重算
+    loop_state。这里使用单条分组查询，保留事实层状态，避免把重型闭环推导
+    放进列表首屏路径。
+    """
+    clazz = db.get(Class, class_id)
+    if clazz is None:
+        raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
+    rows = db.execute(
+        select(Intervention.student_id, Intervention.status, func.count(Intervention.id))
+        .where(
+            Intervention.class_id == class_id,
+            Intervention.student_id.is_not(None),
+        )
+        .group_by(Intervention.student_id, Intervention.status)
+    )
+    by_student: dict[int, dict[str, int]] = {}
+    for student_id, status, count in rows:
+        if student_id is None:
+            continue
+        item = by_student.setdefault(student_id, {"suggested": 0, "done": 0})
+        if status in item:
+            item[status] = int(count)
+    return {
+        "class_id": class_id,
+        "students": [
+            {"student_id": student_id, **counts}
+            for student_id, counts in by_student.items()
+        ],
+    }
+
+
 def _student_loop(
     db: Session, ctx, student_id: int, cache: dict[int, dict[int, str]]
 ) -> dict[int, str]:

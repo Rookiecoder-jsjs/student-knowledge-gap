@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.main import app
+from app.models import Intervention, KnowledgePoint
 
 KB_YAML = Path(__file__).resolve().parents[1] / "kb" / "math" / "grade7" / "kb.yaml"
 
@@ -104,6 +107,60 @@ def test_list_classes_students_progress(client):
     ).json()["added"] == 2
     prog = c.get(f"/classes/{class_id}/progress").json()["progress"]
     assert {p["code"] for p in prog} == {"M7A-101", "M7A-102"}
+
+
+def test_intervention_student_summary_is_aggregated(client):
+    c, session_factory = client
+    class_id, student_ids = _bootstrap(c)
+    exam_id = _create_exam(c, class_id)
+    with session_factory() as db:
+        kp_id = db.scalar(select(KnowledgePoint.id))
+        assert kp_id is not None
+        db.add_all(
+            [
+                Intervention(
+                    class_id=class_id,
+                    student_id=student_ids[0],
+                    kp_id=kp_id,
+                    exam_id=exam_id,
+                    kind="reteach",
+                    scope="student",
+                    baseline_as_of=datetime(2025, 11, 1),
+                    status="suggested",
+                ),
+                Intervention(
+                    class_id=class_id,
+                    student_id=student_ids[0],
+                    kp_id=kp_id,
+                    exam_id=exam_id,
+                    kind="practice",
+                    scope="student",
+                    baseline_as_of=datetime(2025, 11, 1),
+                    status="done",
+                ),
+            ]
+        )
+        db.commit()
+
+    response = c.get(f"/interventions/student-summary?class_id={class_id}")
+    assert response.status_code == 200
+    rows = {row["student_id"]: row for row in response.json()["students"]}
+    assert rows[student_ids[0]]["suggested"] == 1
+    assert rows[student_ids[0]]["done"] == 1
+
+
+def test_class_knowledge_graph_returns_versioned_structure(client):
+    c, _ = client
+    class_id, _ = _bootstrap(c)
+
+    response = c.get(f"/classes/{class_id}/knowledge-graph")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["kb_version_id"] == 1
+    assert payload["nodes"]
+    assert all("mastery" in node and "weak_share" in node for node in payload["nodes"])
+    assert all({"id", "from", "to", "type", "weight"} <= set(edge) for edge in payload["edges"])
 
 
 def test_exam_list_detail_responses_matrix(client):

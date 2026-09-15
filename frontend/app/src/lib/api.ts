@@ -6,6 +6,7 @@ import type {
   BatchJob,
   BatchJobSummary,
   ClassDiagnosisSheet,
+  ClassKnowledgeGraph,
   ClassOverview,
   ClassSummary,
   ExamDetail,
@@ -173,6 +174,12 @@ export const kpDetail = (kpId: number) => request<KpDetail>(`/kb/kps/${kpId}`);
 export const listRelations = (kbVersionId?: number) =>
   request<{ kb_version_id: number; relations: KpRelationView[] }>(
     `/kb/relations${kbVersionId ? `?kb_version_id=${kbVersionId}` : ""}`
+  );
+
+/** 班级知识结构图：服务端聚合掌握度/薄弱占比，避免前端 N+1。 */
+export const classKnowledgeGraph = (classId: number, asOf?: string) =>
+  request<ClassKnowledgeGraph>(
+    `/classes/${classId}/knowledge-graph${asOf ? `?as_of=${asOf}` : ""}`
   );
 
 // ---- 知识库编辑（kb-edit §4.3/§4.4）-------------------------------
@@ -371,7 +378,17 @@ export const patchProgress = (classId: number, kpId: number, taughtAt: string) =
 
 // ---- 列表 ------------------------------------------------------------------
 
-export const listClasses = () => request<{ classes: ClassSummary[] }>("/classes");
+type ClassesResponse = { classes: ClassSummary[] };
+let classesInFlight: Promise<ClassesResponse> | null = null;
+
+/** 同一渲染帧内多个壳/页面并发取班级时复用请求，避免首屏重复打接口。 */
+export const listClasses = (): Promise<ClassesResponse> => {
+  if (classesInFlight) return classesInFlight;
+  classesInFlight = request<ClassesResponse>("/classes").finally(() => {
+    classesInFlight = null;
+  });
+  return classesInFlight;
+};
 
 export const listClassesOverview = () =>
   request<{ classes: ClassOverview[] }>("/classes/overview");
@@ -621,7 +638,16 @@ export const inboxList = (
   return request<InboxList>(`/inbox?${q.toString()}`);
 };
 
-export const inboxSummary = () => request<InboxSummary>("/inbox/summary");
+let inboxSummaryInFlight: Promise<InboxSummary> | null = null;
+
+/** 路由切换瞬间的多个壳实例共享同一次收件箱角标请求。 */
+export const inboxSummary = (): Promise<InboxSummary> => {
+  if (inboxSummaryInFlight) return inboxSummaryInFlight;
+  inboxSummaryInFlight = request<InboxSummary>("/inbox/summary").finally(() => {
+    inboxSummaryInFlight = null;
+  });
+  return inboxSummaryInFlight;
+};
 
 export const reportFull = (reportId: number) =>
   request<ReportFull>(`/reports/${reportId}/full`);
@@ -735,6 +761,14 @@ export const portalProfile = (studentId: number) =>
 export const portalMastery = (studentId: number, asOf?: string) =>
   request<{ student_id: number; as_of: string; mastery: MasteryItem[] }>(
     `/admin/students/${studentId}/portal/mastery${asOf ? `?as_of=${asOf}` : ""}`
+  );
+
+export const meKnowledgeGraph = (asOf?: string) =>
+  request<ClassKnowledgeGraph>(`/me/knowledge-graph${asOf ? `?as_of=${asOf}` : ""}`);
+
+export const portalKnowledgeGraph = (studentId: number, asOf?: string) =>
+  request<ClassKnowledgeGraph>(
+    `/admin/students/${studentId}/portal/knowledge-graph${asOf ? `?as_of=${asOf}` : ""}`
   );
 
 export const portalWeaknesses = (studentId: number, asOf?: string) =>
@@ -937,6 +971,12 @@ export const interventionSummaryOf = (classId: number) =>
   request<InterventionSummary>(
     `/interventions/summary?class_id=${classId}`
   );
+
+export const interventionStudentSummary = (classId: number) =>
+  request<{
+    class_id: number;
+    students: { student_id: number; suggested: number; done: number }[];
+  }>(`/interventions/student-summary?class_id=${classId}`);
 
 // 定向复测（progress-loop-design P2）已于 2026-09-11 软退役：retestBlueprint /
 // linkRetest 端点与建卷入口移除，验证语义由软闭合+自然考试被动验证接管。

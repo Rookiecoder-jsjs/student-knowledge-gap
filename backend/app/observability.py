@@ -96,9 +96,9 @@ def setup_logging(level: str | None = None) -> None:
         )
     )
     logger.addHandler(handler)
-    # 保留向 root 传播：测试用 pytest caplog（挂 root）可捕获 sc 日志；生产 root 无
-    # handler 不重复输出。
-    logger.propagate = True
+    # Uvicorn/root logger 已有一套 handler；向上冒泡会让每条业务日志
+    # 同时输出 JSON 与纯文本两行，放大日志量并缩短轮转保留时间。
+    logger.propagate = False
     _CONFIGURED = True
 
 

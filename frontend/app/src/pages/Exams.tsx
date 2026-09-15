@@ -1,5 +1,5 @@
 import { ArrowRight, Plus } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ActionPlanPanel,
@@ -8,11 +8,13 @@ import {
 import { Badge, Button, Card, EmptyState, ErrorState, Page, PageHeader, Pagination, Select, Skeleton, StatusDot, Tabs } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
-import { classDiagnosisSheet, listClasses, listExams } from "../lib/api";
+import { classDiagnosisSheet, classKnowledgeGraph, listClasses, listExams } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { setBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
-import type { ExamSummary } from "../lib/types";
+import type { ExamSummary, KnowledgeGraphNode } from "../lib/types";
+
+const KnowledgeGraph2D = lazy(() => import("../components/graph/KnowledgeGraph2D"));
 
 const STAGE_LABELS = ["建卷", "审核", "采集", "提交", "概况"];
 
@@ -235,7 +237,24 @@ function ExamList({
 /** tab 2：班级诊断单——滚动状态（§1.2 五区块；行动/闭环区块待 intervention-loop 接入）。 */
 function ClassDiagnosisTab({ cid }: { cid: number }) {
   const sheet = useAsync(() => classDiagnosisSheet(cid), [cid]);
+  const graph = useAsync(() => classKnowledgeGraph(cid), [cid]);
+  const [graphFilter, setGraphFilter] = useState<"all" | "weak" | "prerequisite" | "confusable">("all");
+  const [selectedGraphNode, setSelectedGraphNode] = useState<number | null>(null);
   const s = sheet.data;
+  const graphView = useMemo(() => {
+    const payload = graph.data;
+    if (!payload) return null;
+    if (graphFilter === "all") return payload;
+    if (graphFilter === "weak") {
+      const nodes = payload.nodes.filter((node) => (node.weak_share ?? 0) > 0 || (node.mastery ?? 1) < 0.6);
+      const ids = new Set(nodes.map((node) => node.id));
+      return { ...payload, nodes, edges: payload.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)) };
+    }
+    const edges = payload.edges.filter((edge) => edge.type === graphFilter);
+    const ids = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
+    return { ...payload, nodes: payload.nodes.filter((node) => ids.has(node.id)), edges };
+  }, [graph.data, graphFilter]);
+  const selectedNode = graph.data?.nodes.find((node) => node.id === selectedGraphNode) ?? null;
 
   if (sheet.loading) return <Skeleton rows={6} />;
   if (sheet.error) return <ErrorState message={sheet.error} onRetry={sheet.reload} />;
@@ -281,6 +300,50 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
           </div>
         </div>
       </Card>
+
+      {/* 区块一补充：知识结构 2D 探索图，不替换诊断正文。 */}
+      <section>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold">知识结构</p>
+            <p className="mt-0.5 text-xs text-ink-faint">按班级掌握度定位共性薄弱点与前置关系</p>
+          </div>
+          <Select
+            name="knowledge-graph-filter"
+            size="sm"
+            value={graphFilter}
+            onChange={(event) => {
+              setGraphFilter(event.target.value as typeof graphFilter);
+              setSelectedGraphNode(null);
+            }}
+            className="w-32"
+            aria-label="知识结构筛选"
+          >
+            <option value="all">全部关系</option>
+            <option value="weak">只看薄弱点</option>
+            <option value="prerequisite">只看前置</option>
+            <option value="confusable">只看易混</option>
+          </Select>
+        </div>
+        {graph.loading && <Skeleton rows={5} />}
+        {graph.error && <ErrorState message={graph.error} onRetry={graph.reload} />}
+        {graphView && graphView.nodes.length > 0 && (
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_16rem]">
+            <Suspense fallback={<Card className="p-4"><Skeleton rows={5} /></Card>}>
+              <KnowledgeGraph2D
+                nodes={graphView.nodes}
+                edges={graphView.edges}
+                selectedId={selectedGraphNode}
+                onSelect={(node) => setSelectedGraphNode(node?.id ?? null)}
+              />
+            </Suspense>
+            <GraphNodeInspector node={selectedNode} />
+          </div>
+        )}
+        {graphView && graphView.nodes.length === 0 && (
+          <Card className="p-5 text-sm text-ink-faint">当前筛选没有可展示的知识点。</Card>
+        )}
+      </section>
 
       {/* 区块二：班级改进意见（最新一份，LLM/模板） */}
       {s.improvement_advice ? (
@@ -355,5 +418,28 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
         </Card>
       )}
     </div>
+  );
+}
+
+function GraphNodeInspector({ node }: { node: KnowledgeGraphNode | null }) {
+  if (!node) {
+    return (
+      <Card className="h-fit p-4 text-sm text-ink-faint">
+        点击图中的知识点查看班级指标。
+      </Card>
+    );
+  }
+  return (
+    <Card className="h-fit p-4">
+      <p className="text-sm font-semibold">{node.name}</p>
+      <p className="mt-0.5 font-mono text-xs text-ink-faint">{node.code}</p>
+      <dl className="mt-4 space-y-2.5 text-xs">
+        <div className="flex justify-between gap-3"><dt className="text-ink-faint">章节</dt><dd className="text-right text-ink-soft">{node.chapter}</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-ink-faint">班级平均掌握度</dt><dd className="font-semibold text-ink">{node.mastery == null ? "暂无" : `${Math.round(node.mastery * 100)}%`}</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-ink-faint">薄弱占比</dt><dd className="font-semibold text-ink">{node.weak_share == null ? "暂无" : `${Math.round(node.weak_share * 100)}%`}</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-ink-faint">有效学生数</dt><dd className="font-semibold text-ink">{node.student_count}</dd></div>
+        <div className="flex justify-between gap-3"><dt className="text-ink-faint">证据数</dt><dd className="font-semibold text-ink">{node.evidence_count}</dd></div>
+      </dl>
+    </Card>
   );
 }

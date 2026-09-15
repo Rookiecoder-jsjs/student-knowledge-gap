@@ -144,6 +144,8 @@ export default function Diagnosis() {
             <label className="flex items-center gap-2 text-sm text-ink-soft">
               截至
               <Input
+                id="diagnosis-as-of"
+                name="asOf"
                 type="date"
                 value={asOf}
                 onChange={(e) => setAsOf(e.target.value)}
@@ -379,6 +381,8 @@ function AttributionCard({
           ) : (
             <div className="space-y-2 rounded-lg bg-surface-2 p-3">
               <textarea
+                id="diagnosis-override-note"
+                name="overrideNote"
                 rows={2}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}

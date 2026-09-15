@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Page, PageHeader, Pagination, Skeleton } from "../components/ui";
 import { Reveal } from "../components/motion";
-import { enableStudentAccount, listAllInterventions, listStudents } from "../lib/api";
+import { enableStudentAccount, interventionStudentSummary, listStudents } from "../lib/api";
 import type { StudentInfo } from "../lib/types";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
@@ -25,22 +25,11 @@ export default function Students() {
     if (data && data.students.length === 0 && data.total && page > 1) setPage((p) => p - 1);
   }, [data, page]);
   const flags = roleFlags(useAuth().session);
-  // 干预摘要（intervention-loop §6）：每行 chip「N 项建议 · M 已执行」——聚合一次
-  const iv = useAsync(
-    () => listAllInterventions(cid),
-    [cid]
+  // 干预摘要：只取按学生聚合的计数，避免拉取整个班级的明细并逐行推导 loop_state。
+  const iv = useAsync(() => interventionStudentSummary(cid), [cid]);
+  const byStudent = new Map(
+    (iv.data?.students ?? []).map((row) => [row.student_id, row]),
   );
-  const byStudent = new Map<number, { suggested: number; done: number; awaiting: number }>();
-  for (const row of iv.data ?? []) {
-    if (row.student_id == null) continue;
-    const slot = byStudent.get(row.student_id) ?? { suggested: 0, done: 0, awaiting: 0 };
-    if (row.status === "suggested") slot.suggested += 1;
-    if (row.status === "done") slot.done += 1;
-    // 行级折叠状态（闭环一期 P1）：待复测/持平/未闭合都算「进行中」
-    if (row.loop_state && row.loop_state !== "已建议" && row.loop_state !== "已跳过"
-        && row.loop_state !== "已闭合" && row.loop_state !== "达标") slot.awaiting += 1;
-    byStudent.set(row.student_id, slot);
-  }
 
   // admin 开通/重置学生自服务账号（frontend-ends-design §D）
   const [enableFor, setEnableFor] = useState<StudentInfo | null>(null);
@@ -105,9 +94,7 @@ export default function Students() {
                     <Badge tone={stat.suggested > 0 ? "warn" : "neutral"}>
                       {stat.suggested > 0
                         ? `${stat.suggested} 条行动待确认`
-                        : stat.awaiting > 0
-                          ? `${stat.awaiting} 项干预进行中`
-                          : `${stat.done} 项干预已执行`}
+                        : `${stat.done} 项干预已执行`}
                     </Badge>
                   )}
                 </p>

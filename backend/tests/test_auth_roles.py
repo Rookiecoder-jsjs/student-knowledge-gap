@@ -205,12 +205,15 @@ def test_student_self_read_isolated_from_teacher_surface(sec_client):
 
     assert client.get("/me", headers=_H(tok)).status_code == 200
     assert client.get("/me/mastery", headers=_H(tok)).status_code == 200
+    graph = client.get("/me/knowledge-graph", headers=_H(tok))
+    assert graph.status_code == 200 and graph.json()["nodes"]
     assert client.get("/me/weaknesses", headers=_H(tok)).status_code == 200
     assert client.get("/me/reports", headers=_H(tok)).status_code == 200
 
     # 学生撞教师端点 → 中间件 403（不是 401）
     assert client.get("/classes", headers=_H(tok)).status_code == 403
     assert client.get(f"/classes/{ids['c1']}/students", headers=_H(tok)).status_code == 403
+    assert client.get(f"/classes/{ids['c1']}/knowledge-graph", headers=_H(tok)).status_code == 403
     assert client.get(f"/students/{ids['stu']}/weaknesses", headers=_H(tok)).status_code == 403
 
 
@@ -405,7 +408,7 @@ def test_student_portal_preview_admin_only(sec_client):
     r = client.get(base, headers=_H(root))
     assert r.status_code == 200, r.text
     assert r.json()["student"]["id"] == stu_id
-    for sub in ("mastery", "weaknesses", "reports", "action-plan"):
+    for sub in ("mastery", "knowledge-graph", "weaknesses", "reports", "action-plan"):
         assert client.get(f"{base}/{sub}", headers=_H(root)).status_code == 200, sub
 
 
@@ -440,7 +443,7 @@ def test_student_portal_preview_matches_me_and_is_read_only(sec_client):
     assert client.get(f"{base}/reports/{issued_id}/full", headers=_H(root)).status_code == 200
 
     # 只读：预览全部端点后报告总数不变（不 get-or-generate）
-    for sub in ("", "/mastery", "/weaknesses", "/reports", "/action-plan"):
+    for sub in ("", "/mastery", "/knowledge-graph", "/weaknesses", "/reports", "/action-plan"):
         assert client.get(f"{base}{sub}", headers=_H(root)).status_code == 200
     with S() as s:
         assert s.scalar(select(func.count(Report.id))) == n_before

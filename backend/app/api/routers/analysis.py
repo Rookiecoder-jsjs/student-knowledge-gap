@@ -34,6 +34,7 @@ from app.pipeline.mastery import mastery_at
 from app.pipeline.progress import loop_states_for_student
 from app.pipeline.weakness import assess_student_kps
 from app.queries.diagnosis_sheet import class_diagnosis_sheet
+from app.queries.knowledge_graph import class_knowledge_graph
 from app.reports.diagnosis_orchestrator import (
     get_or_create_narrative,
     get_or_generate_diagnosis,
@@ -197,6 +198,27 @@ def class_diagnosis_sheet_endpoint(class_id: int, ctx=Depends(require_teacher), 
     kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
     graph = _graph(db, kb.id)
     return class_diagnosis_sheet(db, graph, class_id)
+
+
+@router.get("/classes/{class_id}/knowledge-graph")
+def class_knowledge_graph_endpoint(
+    class_id: int,
+    as_of: date | None = None,
+    ctx=Depends(require_teacher),
+    db: Session = Depends(get_db),
+):
+    """班级知识结构图数据（教师只读）。
+
+    结构按班级所属学科的 active KB 版本隔离；掌握度、薄弱占比和证据数
+    均在服务端一次聚合，前端只负责可视化，不逐学生请求分析端点。
+    """
+    clazz = db.get(ClassModel, class_id)
+    if clazz is None:
+        raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    graph = _graph(db, kb.id)
+    return class_knowledge_graph(db, graph, class_id, _as_dt(as_of))
 
 
 @router.get("/students/{student_id}/diagnosis")

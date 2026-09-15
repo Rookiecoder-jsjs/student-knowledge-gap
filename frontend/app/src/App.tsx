@@ -276,7 +276,10 @@ function usePortalGate() {
   const [probe, setProbe] = useState(0);
 
   useEffect(() => {
-    if (session !== undefined && session !== null) {
+    // 会话恢复完成前不要探测开放模式；否则 Shell 与页面挂载时会各自触发
+    // 一次 /classes，产生无意义的 401 并延迟首屏。
+    if (session === undefined) return;
+    if (session !== null) {
       setMode("secure");
       return;
     }

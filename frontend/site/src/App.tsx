@@ -2,8 +2,8 @@ import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Footer } from "./components/site/Footer";
 import { Nav } from "./components/site/Nav";
+import Home from "./pages/Home";
 
-const Home = lazy(() => import("./pages/Home"));
 const Product = lazy(() => import("./pages/Product"));
 const Solutions = lazy(() => import("./pages/Solutions"));
 const Security = lazy(() => import("./pages/Security"));

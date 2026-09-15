@@ -9,7 +9,7 @@ import {
   Upload,
 } from "@phosphor-icons/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { KpDetailEditor } from "../components/KpDetailEditor";
 import {
   Badge,
@@ -24,6 +24,7 @@ import {
   PageHeader,
   Select,
   Skeleton,
+  Tabs,
 } from "../components/ui";
 import { Reveal, StaggerItem, StaggerList } from "../components/motion";
 import {
@@ -35,6 +36,7 @@ import {
   kpDetail,
   listAllKps,
   listKbVersions,
+  listRelations,
   patchKbVersion,
   type KbCompatibility,
   type KpDetail,
@@ -45,6 +47,9 @@ import { getBackTarget, roleFlags, setBackTarget } from "../lib/portal";
 import { useAuth } from "../lib/AuthContext";
 import { versionStatusLabel } from "../lib/labels";
 import { ACCENTS } from "../lib/theme";
+import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "../lib/types";
+
+const KnowledgeGraph2D = lazy(() => import("../components/graph/KnowledgeGraph2D"));
 
 /**
  * 知识库浏览页（2026-09-11 按使用频率重构，frontend-ends-design §知识库）。
@@ -67,6 +72,7 @@ export default function Kb() {
   // 面包屑（lib/portal getBackTarget——location.state 在本 app 不可靠）
   const kbState = location.state as { kbVersionId?: number } | null;
   const [versionId, setVersionId] = useState<number | null>(kbState?.kbVersionId ?? null);
+  const [view, setView] = useState<"list" | "graph">("list");
   const kbBackTo = getBackTarget("/kb", "/");
   // 多学科（2026-09-11）：学科从版本表派生；缺省跟随全局 active 版本的学科。
   // 版本治理（切换/兼容对照）都在同学科内进行——后端按 subject 解析 active。
@@ -99,6 +105,10 @@ export default function Kb() {
         ? listAllKps(currentVersionId).then((kps) => ({ kb_version_id: currentVersionId, kps }))
         : Promise.resolve({ kb_version_id: 0, kps: [] as KpNode[] }),
     [currentVersionId]
+  );
+  const relations = useAsync(
+    () => (view === "graph" && currentVersionId ? listRelations(currentVersionId) : Promise.resolve(null)),
+    [currentVersionId, view],
   );
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -146,6 +156,28 @@ export default function Kb() {
     }
     return [...map.entries()];
   }, [kps.data, query]);
+
+  const graphNodes = useMemo<KnowledgeGraphNode[]>(
+    () => (kps.data?.kps ?? []).filter((node) => !node.archived).map((node) => ({
+      ...node,
+      chapter: node.chapter || "未分组",
+      mastery: null,
+      weak_share: null,
+      evidence_count: 0,
+      student_count: 0,
+    })),
+    [kps.data],
+  );
+  const graphEdges = useMemo<KnowledgeGraphEdge[]>(
+    () => (relations.data?.relations ?? []).map((relation) => ({
+      id: relation.id,
+      from: relation.from.id,
+      to: relation.to.id,
+      type: relation.type,
+      weight: relation.weight,
+    })),
+    [relations.data],
+  );
 
   // 章节手风琴：首次数据到达默认展开第一章；搜索时全部展开（结果直接可见）
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -362,6 +394,9 @@ export default function Kb() {
       <input
         ref={importFileRef}
         type="file"
+        id="kb-import-file"
+        name="kb-import-file"
+        aria-label="导入知识库 YAML 文件"
         accept=".yaml,.yml"
         className="sr-only"
         onChange={(e) => {
@@ -372,6 +407,17 @@ export default function Kb() {
       />
       {toolbarErr && <p className="mb-3 text-xs text-danger">{toolbarErr}</p>}
 
+      {currentVersionId && (
+        <Tabs
+          ariaLabel="知识库视图"
+          layoutId="kb-view"
+          className="mb-4"
+          tabs={[{ key: "list", label: "目录" }, { key: "graph", label: "关系图" }] as const}
+          value={view}
+          onChange={setView}
+        />
+      )}
+
       {versions.error && <ErrorState message={versions.error} onRetry={versions.reload} />}
       {versions.loading && <Skeleton rows={3} />}
       {versions.data && versions.data.versions.length === 0 && (
@@ -380,7 +426,7 @@ export default function Kb() {
         </Card>
       )}
 
-      {kps.data && kps.data.kps.length > 0 && (
+      {view === "list" && kps.data && kps.data.kps.length > 0 && (
         <Reveal>
           {/* 搜索框（修 P2-5） */}
           <div className="relative mb-3">
@@ -389,6 +435,9 @@ export default function Kb() {
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint"
             />
             <input
+              id="kb-search"
+              name="kb-search"
+              aria-label="搜索知识点"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索编码 / 名称 / 章节…"
@@ -444,10 +493,30 @@ export default function Kb() {
           </Card>
         </Reveal>
       )}
-      {kps.data && kps.data.kps.length > 0 && chapters.length === 0 && (
+      {view === "list" && kps.data && kps.data.kps.length > 0 && chapters.length === 0 && (
         <Card>
           <EmptyState title="没有匹配的知识点" hint="换个关键词，或清空搜索查看全部章节。" />
         </Card>
+      )}
+
+      {view === "graph" && currentVersionId && (
+        <section className="space-y-3">
+          {relations.loading && <Skeleton rows={5} />}
+          {relations.error && <ErrorState message={relations.error} onRetry={relations.reload} />}
+          {relations.data && graphNodes.length > 0 && (
+            <Suspense fallback={<Card className="p-4"><Skeleton rows={5} /></Card>}>
+              <KnowledgeGraph2D
+                nodes={graphNodes}
+                edges={graphEdges}
+                selectedId={selectedId}
+                onSelect={(node) => setSelectedId(node?.id ?? null)}
+              />
+            </Suspense>
+          )}
+          {relations.data && graphNodes.length === 0 && (
+            <Card><EmptyState title="当前版本没有可展示的知识点" hint="请先在目录视图补充知识点。" /></Card>
+          )}
+        </section>
       )}
 
       {/* 详情浮卡：阅读态默认，编辑态经「编辑知识点」进入 */}

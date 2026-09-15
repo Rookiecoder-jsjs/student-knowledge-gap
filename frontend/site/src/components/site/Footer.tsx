@@ -13,7 +13,7 @@ export function Footer() {
           </p>
         </div>
         <nav aria-label="页脚导航">
-          <p className="text-xs font-semibold tracking-[0.2em] text-white/40 uppercase">页面</p>
+          <p className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">页面</p>
           <ul className="mt-4 space-y-2.5 text-sm">
             <li><a className="text-white/70 transition-colors hover:text-white" href="/product">产品</a></li>
             <li><a className="text-white/70 transition-colors hover:text-white" href="/solutions">方案</a></li>
@@ -22,7 +22,7 @@ export function Footer() {
           </ul>
         </nav>
         <div>
-          <p className="text-xs font-semibold tracking-[0.2em] text-white/40 uppercase">联系</p>
+          <p className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">联系</p>
           <ul className="mt-4 space-y-2.5 text-sm text-white/70">
             <li>
               商务合作：<a className="underline decoration-white/30 underline-offset-4 transition-colors hover:text-white" href={`mailto:${SITE.email}`}>{SITE.email}</a>
@@ -34,7 +34,7 @@ export function Footer() {
         </div>
       </div>
       <div className="border-t border-white/10">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-white/40 md:px-6">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-white/60 md:px-6">
           <span>© 2026 {SITE.name}</span>
           <span>让教学改进持续发生</span>
         </div>

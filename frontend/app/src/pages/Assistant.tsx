@@ -915,6 +915,8 @@ export default function Assistant() {
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-ink-faint">网关地址</span>
               <input
+                id="gateway-url"
+                name="gatewayUrl"
                 value={base}
                 onChange={(e) => setBase(e.target.value)}
                 className="w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink transition-colors focus:border-accent"
@@ -948,6 +950,8 @@ export default function Assistant() {
             </Button>
             {/* 模型选择（model/list 数据驱动；目录扩模型零代码） */}
             <Select
+              id="assistant-model"
+              name="model"
               size="sm"
               value={modelId}
               onChange={(e) => changeModel(e.target.value)}
@@ -964,6 +968,8 @@ export default function Assistant() {
             </Select>
             {/* 思考强度（当前模型 supported_reasoning_levels） */}
             <Select
+              id="assistant-effort"
+              name="reasoningEffort"
               size="sm"
               value={effort}
               onChange={(e) => changeEffort(e.target.value)}
@@ -1184,6 +1190,8 @@ export default function Assistant() {
           <div className="border-t border-line p-3">
             <div className="flex items-end gap-2">
               <textarea
+                id="assistant-input"
+                name="prompt"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
