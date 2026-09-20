@@ -19,15 +19,19 @@ export default function ClassPicker() {
 
   return (
     <div className="mx-auto flex min-h-[100dvh] max-w-[1200px] flex-col px-6 py-12">
-      {/* 品牌 hero：模块色渐变，落地页视觉锚点 */}
-      <header className="mb-10 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0f766e] via-[#14b8a6] to-[#2563eb] px-8 py-9 text-white shadow-lift">
-        <div className="flex items-center gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 text-white backdrop-blur">
+      {/* 品牌 hero：包豪斯红块 + 原色几何构成，落地页视觉锚点 */}
+      <header className="relative mb-10 overflow-hidden border-2 border-ink bg-accent px-8 py-9 text-white shadow-lift">
+        {/* 原色几何构成（纯装饰）：圆 = 班级，方 = 考试，条 = 待办 */}
+        <span className="pointer-events-none absolute right-16 top-6 h-16 w-16 rounded-full bg-bh-yellow" aria-hidden />
+        <span className="pointer-events-none absolute right-40 top-12 h-10 w-10 bg-bh-blue" aria-hidden />
+        <span className="pointer-events-none absolute bottom-5 right-8 h-3 w-24 bg-white/90" aria-hidden />
+        <div className="relative flex items-center gap-4">
+          <span className="flex h-12 w-12 items-center justify-center bg-white text-accent">
             <TreeStructure size={24} weight="bold" />
           </span>
           <div>
             <h1 className="font-display text-3xl font-bold tracking-tight">班级概览</h1>
-            <p className="mt-1 text-sm text-white/80">
+            <p className="mt-1 text-sm text-white/85">
               选择班级进入工作台，或创建新班级开始分析
             </p>
           </div>
@@ -39,8 +43,8 @@ export default function ClassPicker() {
 
       {data && data.classes.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-line bg-surface/70 px-10 py-16 text-center shadow-soft">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
-            <PlusCircle size={30} className="text-accent" weight="thin" />
+          <span className="flex h-16 w-16 items-center justify-center bg-accent text-white">
+            <PlusCircle size={30} weight="bold" />
           </span>
           <div>
             <p className="text-lg font-semibold">还没有班级</p>
@@ -51,7 +55,7 @@ export default function ClassPicker() {
           </div>
           <Link
             to="/wizard"
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
+            className="mt-2 inline-flex items-center gap-2 border-2 border-ink bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-soft transition-colors hover:bg-accent-deep active:translate-x-px active:translate-y-px"
           >
             <PlusCircle size={17} />
             开始初始化（约 5 分钟）
@@ -96,7 +100,7 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group flex w-full flex-col rounded-2xl bg-surface p-6 text-left shadow-soft transition-all duration-200 hover:-translate-y-1 hover:shadow-lift hover:ring-2 hover:ring-accent/15 active:scale-[0.99]"
+      className="group flex w-full flex-col border-2 border-ink bg-surface p-6 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-lift active:translate-x-px active:translate-y-px"
     >
       <div className="flex items-start justify-between">
         <p className="text-lg font-semibold tracking-tight">{c.name}</p>
@@ -146,9 +150,9 @@ function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
           </span>
         </div>
         {total > 0 && (
-          <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+          <div className="h-2 w-full overflow-hidden bg-surface-2 border border-ink/30">
             <div
-              className="h-full rounded-full bg-accent transition-all duration-500"
+              className="h-full bg-accent"
               style={{ width: `${pct}%` }}
             />
           </div>

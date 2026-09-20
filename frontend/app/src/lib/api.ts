@@ -32,6 +32,14 @@ import type {
   Weaknesses,
 } from "./types";
 
+// 页面长期从 api 层取类型；此处统一再导出（类型层修补，零运行时影响）
+export type {
+  InboxItem,
+  InboxSummary,
+  ReportFull,
+  UsageLedger,
+} from "./types";
+
 export class ApiError extends Error {
   status: number;
 

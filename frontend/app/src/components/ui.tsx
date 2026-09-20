@@ -36,7 +36,7 @@ export function Page({
   );
 }
 
-/** 彩色 icon 底座（教育风标志元素）：软色底 + 深色 icon，随页面 accent。 */
+/** 彩色 icon 底座（包豪斯标志元素）：实心方块 + 白色 icon，随页面 accent。 */
 export function IconTile({
   children,
   className = "",
@@ -46,7 +46,7 @@ export function IconTile({
 }) {
   return (
     <span
-      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/12 text-accent-deep ${className}`}
+      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center bg-accent text-white ${className}`}
     >
       {children}
     </span>
@@ -62,20 +62,20 @@ export function Button({
   className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  // 教育风：primary 带模块色光晕，其余靠填充/描边，hover 轻浮起
+  // 包豪斯：方形、无光晕；primary 实色，secondary 黑框 hover 反白，按压位移替代缩放
   const styles: Record<Variant, string> = {
     primary:
-      "bg-accent text-white shadow-[0_4px_14px_-6px] shadow-accent/60 hover:bg-accent-deep hover:shadow-lift disabled:bg-accent/40 disabled:shadow-none",
+      "bg-accent text-white hover:bg-accent-deep disabled:bg-accent/40",
     secondary:
-      "bg-surface text-ink border border-line-strong hover:border-accent/50 hover:text-accent hover:bg-surface-2 disabled:opacity-40",
+      "bg-surface text-ink border-2 border-ink hover:bg-ink hover:text-surface disabled:opacity-40",
     ghost:
-      "text-ink-soft hover:bg-accent/10 hover:text-accent disabled:opacity-40",
+      "text-ink-soft hover:bg-surface-2 hover:text-ink disabled:opacity-40",
     danger:
-      "bg-danger text-white hover:brightness-90 hover:shadow-lift disabled:opacity-40",
+      "bg-danger text-white hover:bg-danger/85 disabled:opacity-40",
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center gap-1.5 px-3.5 py-2 text-sm font-semibold tracking-wide transition-colors duration-150 active:translate-x-px active:translate-y-px disabled:cursor-not-allowed ${styles[variant]} ${className}`}
       {...props}
     />
   );
@@ -116,10 +116,10 @@ export function Card({
   className?: string;
   interactive?: boolean;
 }) {
-  // 教育风：大圆角纯白卡片、无描边，靠底色差浮起；interactive 用 ring 而非描边
-  const base = "rounded-2xl bg-surface shadow-soft";
+  // 包豪斯：方形卡片 + 2px 粗黑骨架，靠描边与硬偏移阴影分层；interactive 悬停硬抬升
+  const base = "border-2 border-ink bg-surface";
   const hover = interactive
-    ? "transition-all duration-150 hover:shadow-lift hover:ring-2 hover:ring-accent/15"
+    ? "transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lift"
     : "";
   return <div className={`${base} ${hover} ${className}`}>{children}</div>;
 }
@@ -144,8 +144,8 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/12">
-        <FolderOpen size={22} className="text-accent-deep" weight="thin" />
+      <span className="flex h-12 w-12 items-center justify-center bg-accent text-white">
+        <FolderOpen size={22} weight="bold" />
       </span>
       <p className="text-sm font-medium text-ink-soft">{title}</p>
       {hint && <p className="max-w-[46ch] text-xs leading-relaxed text-ink-faint">{hint}</p>}
@@ -162,8 +162,8 @@ export function ErrorState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center" role="alert">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-danger/12">
-        <WarningCircle size={22} className="text-danger" weight="thin" />
+      <span className="flex h-12 w-12 items-center justify-center bg-danger text-white">
+        <WarningCircle size={22} weight="bold" />
       </span>
       <p className="max-w-[52ch] text-sm text-ink-soft">{message}</p>
       {onRetry && (
@@ -203,7 +203,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;
   return (
     <input
-      className={`rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
+      className={`border-[1.5px] border-ink bg-surface px-3 py-2 text-sm text-ink tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
       {...rest}
     />
   );
@@ -223,8 +223,8 @@ export function SectionTitle({
 }) {
   return (
     <div className="mb-2.5 flex items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-        <span className="h-3 w-[3px] rounded-full bg-accent" aria-hidden />
+      <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+        <span className="h-3 w-[3px] bg-accent" aria-hidden />
         {children}
         {count !== undefined && (
           <span className="font-normal normal-case tracking-normal text-ink-faint">（{count}）</span>
@@ -249,7 +249,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight tracking-tight text-ink">{title}</h1>
+        <h1 className="font-display text-[30px] font-bold leading-tight tracking-tight text-ink [box-shadow:inset_0_-0.28em_0_0_var(--color-accent-soft)]">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
@@ -343,14 +343,14 @@ export function Modal({
       />
       <div
         ref={panelRef}
-        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto rounded-2xl border border-line-strong bg-surface p-6 shadow-float`}
+        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto border-2 border-ink bg-surface p-6 shadow-float`}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-[15px] font-semibold tracking-tight text-ink">{title}</h3>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+            className="flex h-8 w-8 items-center justify-center text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X size={18} />
           </button>
@@ -370,7 +370,7 @@ export function StatusDot({ state }: { state: "done" | "active" | "todo" }) {
     state === "done"
       ? "bg-accent"
       : state === "active"
-        ? "bg-accent ring-4 ring-accent/15"
+        ? "bg-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas"
         : "bg-line border border-ink-faint/40";
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} aria-hidden />;
 }
@@ -398,7 +398,7 @@ export function StatTile({
           ? "text-danger"
           : "text-ink";
   return (
-    <div className="rounded-2xl bg-surface px-4 py-3.5 shadow-soft">
+    <div className="border-2 border-ink bg-surface px-4 py-3.5">
       {icon && <IconTile className="mb-2.5">{icon}</IconTile>}
       <p className={`font-display text-[28px] font-bold leading-tight tabular-nums tracking-tight ${val}`}>
         {value}

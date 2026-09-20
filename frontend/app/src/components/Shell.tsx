@@ -8,17 +8,13 @@ import {
   Tray,
   TreeStructure,
 } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { inboxSummary, listClasses, type InboxSummary as InboxSummaryData } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 
-/** 利落缓动（SaaS ease-out）。 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
-/** 顶部导航：3 个模块，激活态 = 各自模块色胶囊（颜色即位置）。 */
+/** 顶部导航：3 个模块，激活态 = 各自模块色方块（颜色即位置）。 */
 const NAV = [
   { to: "", label: "工作台", icon: House, accent: ACCENTS.dashboard },
   { to: "/exams", label: "考试", icon: Exam, accent: ACCENTS.exam },
@@ -31,7 +27,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const cid = Number(classId) || 0;
   const nav = useNavigate();
   const location = useLocation();
-  const reduce = useReducedMotion();
   const classes = useAsync(() => listClasses(), []);
   const currentName = classes.data?.classes.find((c) => c.class_id === cid)?.name;
 
@@ -60,14 +55,14 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
-      {/* 顶部导航：毛玻璃 + 模块色胶囊 */}
-      <header className="sticky top-0 z-40 border-b border-line/70 bg-surface/80 backdrop-blur">
+      {/* 顶部导航：3px 粗黑骨架 + 模块色方块 */}
+      <header className="sticky top-0 z-40 border-b-[3px] border-ink bg-canvas">
         <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-4 px-6">
           <Link
             to="/"
             className="flex shrink-0 items-center gap-2.5 transition-opacity hover:opacity-80"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-white shadow-[0_4px_14px_-2px] shadow-accent/50">
+            <span className="flex h-9 w-9 items-center justify-center bg-accent text-white">
               <TreeStructure size={18} weight="bold" />
             </span>
             <div className="leading-tight">
@@ -79,32 +74,22 @@ export function Shell({ children }: { children: ReactNode }) {
           <nav className="flex items-center gap-1" aria-label="主导航">
             {NAV.map(({ to, label, icon: Icon, accent }) => {
               const active = isActiveFor(to);
-              const pill = (
-                <span
-                  className="absolute inset-0 rounded-full"
-                  style={{ background: accent }}
-                  aria-hidden
-                />
-              );
               return (
                 <Link
                   key={to}
                   to={`${base}${to}`}
                   aria-current={active ? "page" : undefined}
-                  className={`relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    active ? "text-white" : "text-ink-soft hover:text-ink"
+                  className={`relative flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-colors ${
+                    active ? "text-white" : "text-ink-soft hover:bg-surface-2 hover:text-ink"
                   }`}
                 >
-                  {active && !reduce && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-0 rounded-full"
+                  {active && (
+                    <span
+                      className="absolute inset-0"
                       style={{ background: accent }}
-                      transition={{ type: "spring", stiffness: 320, damping: 30, ease: EASE }}
                       aria-hidden
                     />
                   )}
-                  {active && reduce && pill}
                   <Icon size={16} weight={active ? "fill" : "regular"} className="relative" />
                   <span className="relative">{label}</span>
                 </Link>

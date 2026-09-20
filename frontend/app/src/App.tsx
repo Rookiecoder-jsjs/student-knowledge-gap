@@ -1,4 +1,3 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { ExamWorkspace } from "./components/ExamWorkspace";
@@ -22,22 +21,9 @@ import TemplateView from "./pages/TemplateView";
 import Usage from "./pages/Usage";
 import Wizard from "./pages/Wizard";
 
-/** 利落减速曲线（案头 ease-out）。 */
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
+/** 包豪斯静帧（方案 3 motion=still）：路由切换不再做进场/退场动画，保留挂载结构。 */
 function Animated({ children }: { children: ReactNode }) {
-  const reduce = useReducedMotion();
-  if (reduce) return <>{children}</>;
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18, ease: EASE }}
-    >
-      {children}
-    </motion.div>
-  );
+  return <>{children}</>;
 }
 
 /** 考试工作区阶段路由：stepper + 阶段面板。 */
@@ -54,8 +40,7 @@ function ExamStage({ stage, children }: { stage: number; children: ReactNode }) 
 export default function App() {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
+    <Routes location={location} key={location.pathname}>
         <Route path="/" element={<Animated><ClassPicker /></Animated>} />
         <Route path="/wizard" element={<Animated><Wizard /></Animated>} />
         <Route path="/kb" element={<Animated><Kb /></Animated>} />
@@ -81,6 +66,5 @@ export default function App() {
         <Route path="/c/:classId/students/:studentId/diagnosis" element={<Shell><Animated><Diagnosis /></Animated></Shell>} />
         <Route path="/c/:classId/students/:studentId/mastery" element={<Shell><Animated><Mastery /></Animated></Shell>} />
       </Routes>
-    </AnimatePresence>
   );
 }
