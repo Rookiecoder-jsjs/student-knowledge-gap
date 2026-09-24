@@ -35,6 +35,7 @@ docs/*
 !docs/architecture-fix-plan.md
 !docs/agent-product-design.md
 !docs/ops-observability-design.md
+!docs/demo-data.md
 frontend/design/
 design-system/
 

@@ -1,22 +1,39 @@
 @import "tailwindcss";
 
-/* 官网 C+B 设计令牌：与产品端共享暖纸、墨青、琥珀和低眩光暗面。 */
+/* 官网与教师端共用同一套包豪斯令牌：暖纸、结构黑、工作台红与原色点缀。 */
 @theme {
-  --color-paper: #f6f2e9;
-  --color-surface: #fffdf8;
-  --color-ink: #20302a;
-  --color-ink-soft: #52615a;
-  --color-ink-faint: #727d76;
-  --color-line: #e4ded0;
-  --color-line-strong: #cec5b3;
-  --color-primary: #0f766e;
-  --color-primary-deep: #115e59;
-  --color-annot: #b7791f;
-  --color-night: #0d2a27;
-  --color-night-2: #16463f;
-  --color-mint: #5eead4;
-  --font-display: "Outfit", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Noto Sans SC", "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #f2efe9;
+  --color-surface: #f7f4ec;
+  --color-surface-2: #eae6da;
+  --color-ink: #141414;
+  --color-ink-soft: #55524a;
+  --color-ink-faint: #8f8a7d;
+  --color-line: #d3cebe;
+  --color-line-strong: #141414;
+  --color-primary: #d63a2f;
+  --color-primary-deep: #a92418;
+  --color-primary-soft: #f6dbd5;
+  --color-annot: #a16207;
+  --color-night: #141414;
+  --color-night-2: #202020;
+  --color-mint: #f2efe9;
+  --color-bh-blue: #1f5fbf;
+  --color-bh-yellow: #e2a93b;
+
+  --shadow-soft: 2px 2px 0 0 rgb(20 20 20 / 0.12);
+  --shadow-lift: 4px 4px 0 0 rgb(20 20 20 / 0.24);
+  --shadow-float: 9px 9px 0 0 rgb(20 20 20 / 0.88);
+
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+
+  --font-display: "Outfit", "Inter", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
 }
 
 :root[data-theme="dark"] {
@@ -27,11 +44,17 @@
   --color-ink-faint: #7d8b86;
   --color-line: #263143;
   --color-line-strong: #3a4860;
-  --color-primary: #2dd4bf;
-  --color-primary-deep: #5eead4;
-  --color-annot: #f0b44d;
+  --color-primary: #e45a50;
+  --color-primary-deep: #ff8178;
+  --color-primary-soft: #3a1e20;
+  --color-annot: #f5c552;
   --color-night: #070b11;
-  --color-night-2: #0f191f;
+  --color-night-2: #121923;
+  --color-bh-blue: #5790e6;
+  --color-bh-yellow: #f5c552;
+  --shadow-soft: 2px 2px 0 0 rgb(0 0 0 / 0.3);
+  --shadow-lift: 4px 4px 0 0 rgb(0 0 0 / 0.4);
+  --shadow-float: 9px 9px 0 0 rgb(0 0 0 / 0.55);
   color-scheme: dark;
 }
 
@@ -46,8 +69,8 @@
     -webkit-font-smoothing: antialiased;
     min-width: 320px;
     min-height: 100vh;
-    background-image: radial-gradient(900px 380px at 86% -14%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%);
-    background-attachment: fixed;
+    font-variant-numeric: tabular-nums;
+    text-rendering: optimizeLegibility;
   }
   ::selection {
     background: color-mix(in srgb, var(--color-primary) 18%, transparent);
@@ -55,6 +78,7 @@
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+    border-radius: 0;
   }
   /* 减弱动效：全站兜底（组件级另用 useReducedMotion 关位移） */
   @media (prefers-reduced-motion: reduce) {
@@ -73,22 +97,38 @@
 
 .paper-grid {
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--color-line) 45%, transparent) 1px, transparent 1px);
-  background-size: 36px 36px;
+    linear-gradient(to right, color-mix(in srgb, var(--color-ink) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-ink) 10%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
   mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+/* 官网大版面也沿用工作台的硬边和偏移层级。 */
+.bauhaus-card {
+  border: 2px solid var(--color-ink);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.bauhaus-card-interactive {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.bauhaus-card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
 }
 
 @media print {
   :root[data-theme="dark"] {
     --color-paper: #fff;
     --color-surface: #fff;
-    --color-ink: #20302a;
-    --color-ink-soft: #52615a;
-    --color-ink-faint: #727d76;
-    --color-line: #e4ded0;
-    --color-line-strong: #cec5b3;
-    --color-primary: #0f766e;
-    --color-primary-deep: #115e59;
+    --color-ink: #141414;
+    --color-ink-soft: #55524a;
+    --color-ink-faint: #8f8a7d;
+    --color-line: #d3cebe;
+    --color-line-strong: #141414;
+    --color-primary: #d63a2f;
+    --color-primary-deep: #a92418;
   }
 }

@@ -17,10 +17,10 @@ export function FeaturePanel({
   className?: string;
 }) {
   return (
-    <div className={`rounded-2xl border border-line bg-surface p-6 shadow-[0_20px_50px_-30px_rgba(28,25,23,0.25)] ${className}`}>
+    <div className={`border-2 border-ink bg-surface p-6 shadow-lift ${className}`}>
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon size={20} weight="duotone" />
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-ink bg-primary text-white shadow-soft">
+          <Icon size={20} weight="bold" />
         </span>
         <p className="font-display text-base font-bold tracking-tight text-ink">{title}</p>
       </div>

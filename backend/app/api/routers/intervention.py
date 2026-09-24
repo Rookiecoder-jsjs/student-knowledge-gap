@@ -63,7 +63,7 @@ def class_action_plan(
     if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     graph = _graph(db, kb.id)
     return action_plan_view(db, graph, class_id, exam_id=exam_id)
 
@@ -80,7 +80,9 @@ def student_action_plan(
     stu = _student_or_404(db, student_id)
     guard_class(stu.class_id, db, ctx)
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
 
@@ -235,7 +237,9 @@ def _student_loop(
         cache[student_id] = {}
         return cache[student_id]
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     cache[student_id] = loop_states_for_student(
@@ -383,6 +387,7 @@ def single_effect(
     kb = _active_kb(
         db,
         _auth.class_subject(db, ctx, _iv_cls) if _iv_cls is not None else None,
+        _iv_cls.grade if _iv_cls is not None else None,
     )
     graph = _graph(db, kb.id)
     try:
@@ -400,6 +405,6 @@ def interventions_summary(
     if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     graph = _graph(db, kb.id)
     return intervention_summary(db, graph, class_id)

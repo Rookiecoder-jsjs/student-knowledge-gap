@@ -69,6 +69,7 @@ def generate_exam_reports(session: Session, exam_id: int) -> ExamReportResult:
     kb = _active_kb(
         session,
         template.subject or (_kb_cls.subject if _kb_cls is not None else None),
+        _kb_cls.grade if _kb_cls is not None else None,
     )
     if kb is None:
         logger.warning("考试 %s 报告生成跳过：无 active 知识库版本", exam_id)
@@ -110,10 +111,11 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
     )
 
     # 一次批量预取全班×全 kp 证据，班级报告与各生诊断共享（避免 N 次全表扫描）
+    class_grade = session.scalar(select(Class.grade).where(Class.id == class_id))
     events_by_sk = get_events_batch(
         session,
         [s.id for s in students],
-        list(graph.grade7_kp_ids()),
+        list(graph.grade_kp_ids(class_grade)),
         as_of,
     )
 
@@ -200,13 +202,17 @@ def _actions_head(
     ]
 
 
-def _active_kb(session: Session, subject: str | None = None) -> KbVersion | None:
+def _active_kb(
+    session: Session,
+    subject: str | None = None,
+    grade: int | None = None,
+) -> KbVersion | None:
     """active 知识库（strict 策略统一在 kb.resolver，候选5a；多学科按 subject 解析）。
 
     报告生成是 best-effort：strict 无 active / 无任何版本均返回 None，报告跳过、不影响提交。
     """
     try:
-        return active_kb(session, subject)
+        return active_kb(session, subject, grade)
     except KbNotActiveError:
         logger.warning("考试报告生成跳过：SC_KB_STRICT_ACTIVE 下无 active 知识库版本")
         return None

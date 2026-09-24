@@ -31,7 +31,7 @@ export function ThemeToggle() {
         setMode(next);
         setThemeMode(next);
       }}
-      className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-line bg-surface text-ink-soft transition-colors hover:border-primary/45 hover:text-primary"
+      className="inline-flex h-9 w-9 cursor-pointer items-center justify-center border-2 border-ink bg-surface text-ink-soft shadow-soft transition-[background-color,color,transform] hover:bg-ink hover:text-surface active:translate-x-px active:translate-y-px"
     >
       <Icon size={16} aria-hidden />
     </button>

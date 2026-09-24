@@ -16,7 +16,7 @@ export function SectionHeading({
 }) {
   return (
     <Reveal className={center ? "text-center" : ""}>
-      <p className={`text-xs font-semibold tracking-[0.2em] uppercase ${dark ? "text-mint" : "text-primary"}`}>
+      <p className={`text-xs font-semibold tracking-[0.2em] uppercase ${dark ? "text-bh-yellow" : "text-primary"}`}>
         {kicker}
       </p>
       <h2

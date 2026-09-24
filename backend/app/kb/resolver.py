@@ -31,9 +31,17 @@ def strict_active() -> bool:
     return os.environ.get("SC_KB_STRICT_ACTIVE", "").lower() in ("1", "true", "yes")
 
 
-def active_kb(session: Session, subject: str | None = None) -> KbVersion | None:
-    """取 status=active 的最新版本（多学科口径：可按学科解析）；无 active 时按
-    strict 决定兜底或抛错。
+def active_kb(
+    session: Session,
+    subject: str | None = None,
+    grade: int | None = None,
+) -> KbVersion | None:
+    """取 status=active 的最新版本（可按学科和年级解析）。
+
+    当调用方知道班级年级时，优先选择 ``KbVersion.grade`` 精确匹配的版本；
+    没有精确版本时再回落到该学科的通用版本（``grade IS NULL``）。这让同一
+    学科可以同时维护七、八、九年级的 active 图谱，而不会让班级分析串到
+    最新年级。无 active 时仍按 strict 策略决定是否允许兜底。
 
     - subject 给定：在该学科内解析（调用方经 ``Class.subject`` 传入）——学科内
       无 active 时 strict 抛错 / 非严格兜底**同学科**最新版本并 warning，绝不
@@ -46,19 +54,37 @@ def active_kb(session: Session, subject: str | None = None) -> KbVersion | None:
     stmt = select(KbVersion).where(KbVersion.status == "active")
     if subject is not None:
         stmt = stmt.where(KbVersion.subject == subject)
-    kb = session.scalar(stmt.order_by(KbVersion.id.desc()))
+    if grade is not None:
+        exact = stmt.where(KbVersion.grade == grade).order_by(KbVersion.id.desc())
+        kb = session.scalar(exact)
+        if kb is None:
+            # 通用版本可承载多个年级，是精确版本缺失时的安全回落。
+            kb = session.scalar(stmt.where(KbVersion.grade.is_(None)).order_by(KbVersion.id.desc()))
+    else:
+        kb = session.scalar(stmt.order_by(KbVersion.id.desc()))
     if kb is not None:
         return kb
     if strict_active():
+        scope = []
+        if subject:
+            scope.append(f"学科：{subject}")
+        if grade is not None:
+            scope.append(f"年级：{grade}")
+        scope_text = f"（{'，'.join(scope)}）" if scope else ""
         raise KbNotActiveError(
-            f"无审核通过(active)的知识库版本"
-            f"{f'（学科：{subject}）' if subject else ''}，请先审核并激活"
-            f"（SC_KB_STRICT_ACTIVE 已开启）"
+            f"无审核通过(active)的知识库版本{scope_text}，请先审核并激活"
+            "（SC_KB_STRICT_ACTIVE 已开启）"
         )
     stmt2 = select(KbVersion)
     if subject is not None:
         stmt2 = stmt2.where(KbVersion.subject == subject)
-    kb = session.scalar(stmt2.order_by(KbVersion.id.desc()))
+    if grade is not None:
+        exact = stmt2.where(KbVersion.grade == grade).order_by(KbVersion.id.desc())
+        kb = session.scalar(exact)
+        if kb is None:
+            kb = session.scalar(stmt2.where(KbVersion.grade.is_(None)).order_by(KbVersion.id.desc()))
+    else:
+        kb = session.scalar(stmt2.order_by(KbVersion.id.desc()))
     if kb is None:
         return None
     if kb.status != "active":

@@ -145,10 +145,10 @@ export function ProductSection() {
         <Container className="max-w-[880px]">
           <SectionHeading center kicker="变化" title="从忙于整理，到专注改进" />
           <Reveal className="mt-10">
-            <div className="overflow-x-auto rounded-2xl border border-line">
+            <div className="overflow-x-auto border-2 border-ink shadow-soft">
               <table className="w-full min-w-[560px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-paper text-left">
+                  <tr className="border-b-2 border-ink bg-paper text-left">
                     <th className="px-5 py-3.5 font-medium text-ink-faint">环节</th>
                     <th className="px-5 py-3.5 font-medium text-ink-faint">常见做法</th>
                     <th className="px-5 py-3.5 font-medium text-primary">带来的改变</th>

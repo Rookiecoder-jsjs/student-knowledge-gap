@@ -225,7 +225,12 @@ async def photo_template(
 ):
     """阶段A：试卷照片 → 结构化模板 + 闭集知识点标注（source=LLM，待审核）。"""
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
+    clazz = db.get(Class, class_id)
+    kb = _active_kb(
+        db,
+        _auth.class_subject(db, ctx, clazz),
+        clazz.grade if clazz is not None else None,
+    )
     try:
         image = await read_upload(file, max_bytes=MAX_FILE_BYTES, label="图片文件")
     except UploadTooLargeError as e:
@@ -594,6 +599,7 @@ def update_question_tags(question_id: int, req: QuestionTagsUpdate, ctx=Depends(
         (_tpl.subject or (_cls.subject if _cls else None))
         if _tpl is not None
         else None,
+        _cls.grade if _cls is not None else None,
     )
     graph = _graph(db, kb.id)
     resolved = []

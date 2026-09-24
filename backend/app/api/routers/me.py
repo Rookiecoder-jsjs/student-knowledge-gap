@@ -65,10 +65,10 @@ def _profile_payload(s: Student) -> dict:
 
 def _mastery_payload(db: Session, s: Student, when: datetime) -> dict:
     """掌握度（与学生诊断单/教师端同算法，仅限该生）。"""
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
     out = []
-    for kp_id in graph.grade7_kp_ids():
+    for kp_id in graph.grade_kp_ids(s.clazz.grade if s.clazz else None):
         kp = graph.kp(kp_id)
         m = mastery_at(db, s.id, kp_id, when)
         if m is not None:
@@ -78,14 +78,21 @@ def _mastery_payload(db: Session, s: Student, when: datetime) -> dict:
 
 def _knowledge_graph_payload(db: Session, s: Student, when: datetime) -> dict:
     """学生图谱只读面：结构与 active KB 对齐，指标仅含该生。"""
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
-    return student_knowledge_graph(db, graph, s.id, s.class_id, when)
+    return student_knowledge_graph(
+        db,
+        graph,
+        s.id,
+        s.class_id,
+        when,
+        s.clazz.grade if s.clazz else None,
+    )
 
 
 def _weaknesses_payload(db: Session, s: Student, when: datetime) -> dict:
     """薄弱点（与教师端 /students/{id}/weaknesses 同形状）。"""
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
     assessments = assess_student_kps(db, graph, s.id, s.class_id, when)
     # 进度生命周期（闭环一期 P1）：薄弱项携带干预进度状态，门户呈现闭环故事
@@ -224,7 +231,7 @@ def _study_list_payload(
 ) -> dict:
     """学习记录列表（不含方案正文；行级带折叠态，弱项卡片/学习页共用）。"""
     _validate_page(offset, limit)
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
     total = db.scalar(
         select(func.count(StudyRecord.id)).where(StudyRecord.student_id == s.id)
@@ -269,10 +276,15 @@ def _study_plan_payload(
 ) -> dict:
     """学习方案视图。self 走 get-or-generate（可写）；预览 allow_generate=False
     （无记录 404，绝不触发 LLM/写库）。"""
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
     kp_id = next(
-        (kid for kid in graph.grade7_kp_ids() if graph.kp(kid).code == kp_code), None
+        (
+            kid
+            for kid in graph.grade_kp_ids(s.clazz.grade if s.clazz else None)
+            if graph.kp(kid).code == kp_code
+        ),
+        None,
     )
     if kp_id is None:
         raise HTTPException(404, "知识点不存在")
@@ -411,7 +423,7 @@ def me_self_mark(
 ):
     """自报「我学会了」：软闭合——只推进干预状态机，掌握度不动（app.study 硬边界）。"""
     s = _self(ctx)
-    kb = _active_kb(db, s.clazz.subject if s.clazz else None)
+    kb = _active_kb(db, s.clazz.subject if s.clazz else None, s.clazz.grade if s.clazz else None)
     graph = _graph(db, kb.id)
     try:
         out = self_mark_learned(db, graph, s, record_id)

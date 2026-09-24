@@ -125,8 +125,12 @@ def compute_quality_model(
     # ---- 班级知识点掌握度（derive-on-read） ----
     # events_by_sk 由调用方预取传入（auto_generate 提交时批量生成共享）；缺省则内部预取。
     if events_by_sk is None:
+        class_grade = clazz.grade if clazz is not None else None
         events_by_sk = get_events_batch(
-            session, [s.id for s in students], list(graph.grade7_kp_ids()), as_of
+            session,
+            [s.id for s in students],
+            list(graph.grade_kp_ids(class_grade)),
+            as_of,
         )
     per_student: dict[int, list[KpAssessment]] = {
         sid: assess_student_kps(

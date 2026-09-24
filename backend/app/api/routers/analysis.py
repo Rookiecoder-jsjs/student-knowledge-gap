@@ -60,12 +60,14 @@ def student_mastery(
     guard_class(stu.class_id, db, ctx)
     # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
     out = []
-    for kp_id in graph.grade7_kp_ids():
+    for kp_id in graph.grade_kp_ids(stu.clazz.grade if stu.clazz else None):
         kp = graph.kp(kp_id)
         m = mastery_at(db, student_id, kp_id, when)
         if m is not None:
@@ -83,7 +85,9 @@ def student_weaknesses(
     guard_class(stu.class_id, db, ctx)
     # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -125,7 +129,9 @@ def run_attributions(
     guard_class(stu.class_id, db, ctx)
     # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)
@@ -169,7 +175,7 @@ def quality_report(
         guard_exam(tpl, db, ctx)  # 班级归属 + 学科收窄一次裁决
     # 考试语境学科（rbac-scopes-design 承重墙）：exam.subject ?? 班级默认
     subject = (tpl.subject or clazz.subject) if tpl is not None else clazz.subject
-    kb = _active_kb(db, subject)
+    kb = _active_kb(db, subject, clazz.grade)
     graph = _graph(db, kb.id)
     # get-or-generate 编排在领域层（候选2 diagnosis_orchestrator）：不感知 HTTP
     try:
@@ -195,7 +201,7 @@ def class_diagnosis_sheet_endpoint(class_id: int, ctx=Depends(require_teacher), 
     if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     graph = _graph(db, kb.id)
     return class_diagnosis_sheet(db, graph, class_id)
 
@@ -216,9 +222,9 @@ def class_knowledge_graph_endpoint(
     if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     graph = _graph(db, kb.id)
-    return class_knowledge_graph(db, graph, class_id, _as_dt(as_of))
+    return class_knowledge_graph(db, graph, class_id, _as_dt(as_of), clazz.grade)
 
 
 @router.get("/students/{student_id}/diagnosis")
@@ -237,7 +243,9 @@ def diagnosis(
     guard_class(stu.class_id, db, ctx)
     # 班级语境学科解析（rbac-scopes-design §4）：科任学科绑定覆盖班级默认
     kb = _active_kb(
-        db, _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None
+        db,
+        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
+        stu.clazz.grade if stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     try:
@@ -297,6 +305,7 @@ def verify_attribution(
         _auth.class_subject(db, ctx, _stu.clazz)
         if _stu is not None and _stu.clazz
         else None,
+        _stu.clazz.grade if _stu is not None and _stu.clazz else None,
     )
     graph = _graph(db, kb.id)
     when = _as_dt(as_of)

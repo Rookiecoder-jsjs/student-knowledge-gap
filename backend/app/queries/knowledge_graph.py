@@ -23,6 +23,7 @@ def class_knowledge_graph(
     graph: KpGraph,
     class_id: int,
     as_of: datetime,
+    class_grade: int | None = None,
 ) -> dict:
     """返回班级可见知识图谱及按知识点聚合的掌握度指标。
 
@@ -34,7 +35,9 @@ def class_knowledge_graph(
     student_ids = list(
         session.scalars(select(Student.id).where(Student.class_id == class_id))
     )
-    metric_kp_ids = list(graph.grade7_kp_ids())
+    metric_kp_ids = list(
+        graph.grade_kp_ids(class_grade) if class_grade is not None else graph.grade7_kp_ids()
+    )
     events_by_sk = get_events_batch(session, student_ids, metric_kp_ids, as_of)
 
     mastery_sum: defaultdict[int, float] = defaultdict(float)
@@ -64,6 +67,7 @@ def class_knowledge_graph(
         kp_id
         for kp_id in graph.kp_ids()
         if not getattr(graph.kp(kp_id), "archived", False)
+        and (class_grade is None or graph.kp(kp_id).grade == class_grade)
     }
     nodes: list[dict] = []
     for kp_id in sorted(node_ids, key=lambda value: graph.kp(value).code):
@@ -98,10 +102,13 @@ def student_knowledge_graph(
     student_id: int,
     class_id: int,
     as_of: datetime,
+    class_grade: int | None = None,
 ) -> dict:
     """返回学生自服务图谱，只携带该生自己的指标。"""
 
-    metric_kp_ids = list(graph.grade7_kp_ids())
+    metric_kp_ids = list(
+        graph.grade_kp_ids(class_grade) if class_grade is not None else graph.grade7_kp_ids()
+    )
     events_by_sk = get_events_batch(session, [student_id], metric_kp_ids, as_of)
     assessments = {
         assessment.kp_id: assessment
@@ -119,6 +126,7 @@ def student_knowledge_graph(
         kp_id
         for kp_id in graph.kp_ids()
         if not getattr(graph.kp(kp_id), "archived", False)
+        and (class_grade is None or graph.kp(kp_id).grade == class_grade)
     }
     nodes: list[dict] = []
     for kp_id in sorted(node_ids, key=lambda value: graph.kp(value).code):

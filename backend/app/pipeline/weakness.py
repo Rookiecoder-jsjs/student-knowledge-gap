@@ -31,7 +31,7 @@ from app.config import (
     WEAKNESS_P25_MARGIN,
 )
 from app.kb.graph import KpGraph
-from app.models import EvidenceEvent, Student, TeachingProgress
+from app.models import Class, EvidenceEvent, Student, TeachingProgress
 from app.pipeline.mastery import get_events_batch, mastery_of_events
 
 TRAJ_STABLE = "稳定"
@@ -134,7 +134,13 @@ def assess_student_kps(
     掌握度快照，mastery_of_events 仍为纯函数推导。
     """
     covered = covered_kp_ids(session, class_id, as_of)
-    kp_ids = list(graph.grade7_kp_ids())
+    clazz = session.get(Class, class_id)
+    class_grade = clazz.grade if clazz is not None else None
+    kp_ids = list(
+        graph.grade_kp_ids(class_grade)
+        if class_grade is not None
+        else graph.grade7_kp_ids()
+    )
     class_student_ids = [
         sid
         for (sid,) in session.execute(

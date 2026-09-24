@@ -74,13 +74,13 @@ export function AboutSection() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <div className="rounded-2xl border border-line bg-surface p-6 shadow-[0_20px_50px_-30px_rgba(28,25,23,0.25)]">
+            <div className="border-2 border-ink bg-surface p-6 shadow-lift">
               <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">一起把改变做起来</p>
               <ul className="mt-4 divide-y divide-line">
                 {ENDS.map((e) => (
                   <li key={e.t} className="flex items-start gap-3 py-3.5">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <e.icon size={20} weight="duotone" />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-ink bg-primary text-white shadow-soft">
+                      <e.icon size={20} weight="bold" />
                     </span>
                     <div>
                       <p className="font-display text-sm font-bold text-ink">{e.t}</p>

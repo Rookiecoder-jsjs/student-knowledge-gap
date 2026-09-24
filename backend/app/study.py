@@ -171,7 +171,7 @@ def get_or_generate_study_record(
     - ``allow_generate=True`` 而资格不符同样拒绝——生成是可写操作，先验资格。
     """
     now = now or datetime.now()
-    if kp_id not in set(graph.grade7_kp_ids()):
+    if kp_id not in set(graph.grade_kp_ids(student.clazz.grade if student.clazz else None)):
         raise LookupError("知识点不存在")
 
     assessments = assess_student_kps(session, graph, student.id, student.class_id, now)

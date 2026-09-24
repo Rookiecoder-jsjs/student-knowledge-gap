@@ -5,6 +5,7 @@ import {
   PlusCircle,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
+import { useMemo } from "react";
 import { AccountCluster, TOOL_LINK, TopBar } from "../components/TopBar";
 import { ErrorState, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
@@ -22,6 +23,19 @@ export default function ClassPicker() {
   const nav = useNavigate();
   const { session } = useAuth();
   const { data, loading, error, reload } = useAsync(() => listClassesOverview(), []);
+  const groups = useMemo(() => {
+    const map = new Map<string, ClassOverview[]>();
+    for (const clazz of data?.classes ?? []) {
+      const key = `${clazz.school_id}:${clazz.grade}:${clazz.name}`;
+      const rows = map.get(key) ?? [];
+      rows.push(clazz);
+      map.set(key, rows);
+    }
+    return [...map.values()].sort((a, b) => {
+      const grade = a[0].grade - b[0].grade;
+      return grade || a[0].name.localeCompare(b[0].name, "zh-CN");
+    });
+  }, [data]);
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -83,13 +97,25 @@ export default function ClassPicker() {
         )}
 
         {data && data.classes.length > 0 && (
-          <StaggerList className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {data.classes.map((c) => (
-              <StaggerItem key={c.class_id}>
-                <ClassCard c={c} onClick={() => nav(`/c/${c.class_id}`)} />
-              </StaggerItem>
-            ))}
-          </StaggerList>
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-ink-faint">
+              <span className="rounded-full bg-surface-2 px-2.5 py-1">{groups.length} 个班级</span>
+              <span className="rounded-full bg-surface-2 px-2.5 py-1">
+                {[...new Set(data.classes.map((c) => c.grade))].length} 个年级
+              </span>
+              <span className="rounded-full bg-surface-2 px-2.5 py-1">
+                {[...new Set(data.classes.map((c) => c.subject))].join(" / ")}
+              </span>
+              <span>同一班级按学科分别进入工作台</span>
+            </div>
+            <StaggerList className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {groups.map((rows) => (
+                <StaggerItem key={`${rows[0].school_id}:${rows[0].grade}:${rows[0].name}`}>
+                  <ClassGroupCard rows={rows} onClick={(classId) => nav(`/c/${classId}`)} />
+                </StaggerItem>
+              ))}
+            </StaggerList>
+          </>
         )}
 
         {data && data.classes.length > 0 && (
@@ -105,70 +131,53 @@ export default function ClassPicker() {
   );
 }
 
-function ClassCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
+function ClassGroupCard({ rows, onClick }: { rows: ClassOverview[]; onClick: (classId: number) => void }) {
+  const first = rows[0];
+  return (
+    <article className="border-2 border-ink bg-surface p-4 shadow-soft">
+      <div className="flex items-start justify-between gap-3 px-1 pb-3">
+        <div>
+          <p className="text-lg font-semibold tracking-tight">{first.name}</p>
+          <p className="mt-1 text-xs text-ink-faint">{first.grade} 年级 · {rows.length} 门学科</p>
+        </div>
+        <span className="rounded-full bg-accent-soft px-2 py-1 text-[11px] font-medium text-accent-deep">演示班级</span>
+      </div>
+      <div className="space-y-2 border-t border-line pt-3">
+        {rows
+          .slice()
+          .sort((a, b) => a.subject.localeCompare(b.subject, "zh-CN"))
+          .map((clazz) => (
+            <SubjectCard key={clazz.class_id} c={clazz} onClick={() => onClick(clazz.class_id)} />
+          ))}
+      </div>
+    </article>
+  );
+}
+
+function SubjectCard({ c, onClick }: { c: ClassOverview; onClick: () => void }) {
   const { taught, total } = c.progress;
   const pct = total > 0 ? Math.round((taught / total) * 100) : 0;
   return (
     <button
       onClick={onClick}
-      className="group flex w-full flex-col border-2 border-ink bg-surface p-6 text-left shadow-soft transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-1 hover:shadow-lift active:translate-x-px active:translate-y-px"
+      className="group flex w-full items-center gap-3 border-2 border-ink bg-canvas px-3 py-2.5 text-left shadow-soft transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lift active:translate-x-px active:translate-y-px"
     >
-      <div className="flex items-start justify-between">
-        <p className="text-lg font-semibold tracking-tight">{c.name}</p>
-        <ArrowRight
-          size={18}
-          className="text-ink-faint transition-[color,transform] group-hover:translate-x-0.5 group-hover:text-accent"
-        />
-      </div>
-      <p className="mt-1 text-xs text-ink-faint">
-        {c.grade} 年级 · {c.subject}
-      </p>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2.5">
-        <span className="text-sm text-ink-soft">
-          <b className="font-semibold text-ink">{c.student_count}</b> 学生
-        </span>
-        <span className="text-sm text-ink-soft">
-          <b className="font-semibold text-ink">{c.exam_count}</b> 考试
-        </span>
-        {c.todo_count > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-lg border border-warn/20 bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
-            <ClipboardText size={12} />
-            {c.todo_count} 项待办
-          </span>
-        )}
-      </div>
-
-      <div className="mt-4 border-t border-line pt-3 text-xs text-ink-faint">
-        {c.latest_exam ? (
-          <p className="truncate">
-            最近：{c.latest_exam.name} · {c.latest_exam.exam_date}
-            <span className="ml-1 text-ink-soft">
-              （{c.latest_exam.submitted} 已提交
-              {c.latest_exam.pending > 0 ? ` / ${c.latest_exam.pending} 待提交` : ""}）
-            </span>
-          </p>
-        ) : (
-          <p>暂无考试</p>
-        )}
-      </div>
-
-      <div className="mt-3">
-        <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-ink-faint">教学进度</span>
-          <span className="font-medium text-ink-soft">
-            {total > 0 ? `${taught}/${total} · ${pct}%` : "未导入知识库"}
-          </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-ink">{c.subject}</span>
+          <span className="text-[11px] text-ink-faint">{c.student_count} 人</span>
         </div>
-        {total > 0 && (
-          <div className="h-2 w-full overflow-hidden bg-surface-2 border border-ink/30">
-            <div
-              className="h-full bg-accent transition-[width] duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        )}
+        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-ink-faint">
+          <span>{c.exam_count} 场考试</span>
+          <span>进度 {total > 0 ? `${pct}%` : "—"}</span>
+          {c.todo_count > 0 && (
+            <span className="inline-flex items-center gap-1 text-warn">
+              <ClipboardText size={11} /> {c.todo_count} 待办
+            </span>
+          )}
+        </div>
       </div>
+      <ArrowRight size={16} className="shrink-0 text-ink-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
     </button>
   );
 }

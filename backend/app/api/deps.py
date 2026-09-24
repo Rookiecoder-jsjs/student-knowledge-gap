@@ -150,14 +150,19 @@ def _graph(session: Session, kb_version_id: int) -> KpGraph:
     return KpGraph(session, kb_version_id)
 
 
-def _active_kb(session: Session, subject: str | None = None) -> KbVersion:
+def _active_kb(
+    session: Session,
+    subject: str | None = None,
+    grade: int | None = None,
+) -> KbVersion:
     """active 知识库（strict 策略统一在 kb.resolver，候选5a）。
 
-    subject 透传 resolver（多学科口径：调用方经班级 ``Class.subject`` 传入）。
+    subject/grade 透传 resolver（调用方经班级 ``Class.subject`` / ``Class.grade``
+    传入），避免同一学科不同年级串用最新版本。
     strict 无 active → 400；无任何版本 → 400「尚未导入」。HTTP 层只做信号翻译。
     """
     try:
-        kb = active_kb(session, subject)
+        kb = active_kb(session, subject, grade)
     except KbNotActiveError as e:
         raise HTTPException(400, str(e))
     if kb is None:

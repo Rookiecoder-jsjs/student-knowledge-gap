@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import CLASS_COMMON_WEAK_RATIO
 from app.kb.graph import KpGraph
-from app.models import ExamResponse, ExamTemplate, Student
+from app.models import Class, ExamResponse, ExamTemplate, Student
 from app.pipeline.mastery import get_events_batch
 from app.pipeline.weakness import assess_student_kps
 
@@ -47,7 +47,10 @@ def _common_weak_of_exam(
     )
     if not committed:
         return [], None
-    events_by_sk = get_events_batch(session, student_ids, list(graph.grade7_kp_ids()), as_of)
+    class_grade = session.scalar(select(Class.grade).where(Class.id == class_id))
+    events_by_sk = get_events_batch(
+        session, student_ids, list(graph.grade_kp_ids(class_grade)), as_of
+    )
     weak_count: dict[int, int] = {}
     n_assessed: dict[int, int] = {}
     for sid in committed:
@@ -131,8 +134,9 @@ def class_diagnosis_sheet(
                 select(Student.id).where(Student.class_id == class_id)
             ).all()
         ]
+        class_grade = session.scalar(select(Class.grade).where(Class.id == class_id))
         events_by_sk = get_events_batch(
-            session, student_ids, list(graph.grade7_kp_ids()), as_of
+            session, student_ids, list(graph.grade_kp_ids(class_grade)), as_of
         )
         committed_student_ids = set(
             session.scalars(

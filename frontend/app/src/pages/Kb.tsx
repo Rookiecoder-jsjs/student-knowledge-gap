@@ -694,7 +694,7 @@ function VersionMenu({
   onActivate,
   onCreate,
 }: {
-  versions: { id: number; version: string; status: string; is_active: boolean }[];
+  versions: { id: number; grade: number | null; version: string; status: string; is_active: boolean }[];
   currentVersionId: number | null;
   currentIsActive: boolean;
   canActivate: boolean;
@@ -754,7 +754,7 @@ function VersionMenu({
               className={itemCls}
             >
               <span className="min-w-0 flex-1 truncate">
-                v{v.version} · {versionStatusLabel(v.status)}
+                {v.grade ? `${v.grade}年级 · ` : "通用 · "}v{v.version} · {versionStatusLabel(v.status)}
                 {v.is_active ? "（当前启用）" : ""}
               </span>
               {v.id === currentVersionId && <Check size={13} className="shrink-0 text-accent" />}

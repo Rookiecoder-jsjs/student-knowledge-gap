@@ -225,7 +225,7 @@ def list_kps(
             if kb.grade is not None and kb.grade != clazz.grade:
                 raise HTTPException(400, "知识库版本与班级年级不匹配")
         else:
-            kb = _active_kb(db, _auth.class_subject(db, ctx, clazz))
+            kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     elif kb_version_id is not None:
         kb = db.get(KbVersion, kb_version_id)
         if kb is None:

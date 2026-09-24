@@ -50,12 +50,14 @@ def resolve_graph(session: Session, class_id: int | None = None) -> tuple:
     from app.kb.resolver import active_kb
 
     subject: str | None = None
+    grade: int | None = None
     if class_id is not None:
         clazz = session.get(Class, class_id)
         if clazz is not None:
             subject = class_subject(session, mcp_context(session), clazz)
+            grade = clazz.grade
     try:
-        kb = active_kb(session, subject)
+        kb = active_kb(session, subject, grade)
     except KbNotActiveError as e:
         raise ToolInputError(str(e)) from e
     if kb is None:
@@ -234,7 +236,7 @@ def get_student_progress(
     loop = loop_states_for_student(session, graph, student_id, stu.class_id, when)
     rows: list[dict] = []
     on_track = 0
-    for kp_id in graph.grade7_kp_ids():
+    for kp_id in graph.grade_kp_ids(stu.clazz.grade if stu.clazz else None):
         state = loop.get(kp_id)
         if state is None:
             continue

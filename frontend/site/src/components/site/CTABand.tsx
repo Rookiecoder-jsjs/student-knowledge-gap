@@ -9,7 +9,7 @@ const ROLES = ["校长 / 校领导", "教务 / 年级管理员", "教研员 / �
 const STAGES = ["小学", "初中", "高中", "九年一贯制", "其他"];
 
 const inputCls =
-  "w-full rounded-lg border border-line-strong bg-paper px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-primary";
+  "w-full border-2 border-ink bg-paper px-3 py-2.5 text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-primary";
 
 /**
  * 预约演示（全站唯一转化动作）：三字段起，mailto 提交。
@@ -37,10 +37,10 @@ export function CTABand() {
   }
 
   return (
-    <section id="cta" className="scroll-mt-20 bg-night py-20 md:py-24">
+    <section id="cta" className="scroll-mt-20 border-y-[3px] border-ink bg-night py-20 md:py-24">
       <div className="mx-auto grid w-full max-w-[1200px] items-center gap-10 px-4 md:px-6 lg:grid-cols-[1fr_1.1fr]">
         <Reveal>
-          <p className="text-xs font-semibold tracking-[0.2em] text-mint uppercase">预约演示</p>
+          <p className="text-xs font-semibold tracking-[0.2em] text-bh-yellow uppercase">预约演示</p>
           <h2 className="mt-3 font-display text-3xl leading-tight font-bold tracking-tight text-white md:text-4xl">
             用一次真实的教学场景，
             <br />
@@ -51,19 +51,19 @@ export function CTABand() {
           </p>
           <ul className="mt-6 space-y-2.5 text-sm text-white/70">
             <li className="flex items-center gap-2">
-              <CheckCircle size={16} className="shrink-0 text-mint" /> 演示约 40 分钟，含答疑
+              <CheckCircle size={16} className="shrink-0 text-bh-yellow" weight="fill" /> 演示约 40 分钟，含答疑
             </li>
             <li className="flex items-center gap-2">
-              <CheckCircle size={16} className="shrink-0 text-mint" /> 可从一个年级或学科开始，逐步推广
+              <CheckCircle size={16} className="shrink-0 text-bh-yellow" weight="fill" /> 可从一个年级或学科开始，逐步推广
             </li>
             <li className="flex items-center gap-2">
-              <CheckCircle size={16} className="shrink-0 text-mint" /> 围绕学校真实场景，结果清晰可验证
+              <CheckCircle size={16} className="shrink-0 text-bh-yellow" weight="fill" /> 围绕学校真实场景，结果清晰可验证
             </li>
           </ul>
         </Reveal>
 
         <Reveal delay={0.1}>
-          <form onSubmit={submit} noValidate className="rounded-[20px] border border-white/10 bg-surface p-6 shadow-[0_32px_80px_-32px_rgba(0,0,0,0.5)] md:p-7">
+          <form onSubmit={submit} noValidate className="border-2 border-ink bg-surface p-6 shadow-float md:p-7">
             <div className="grid gap-4 sm:grid-cols-2">
               <label htmlFor="demo-school" className="block">
                 <span className="text-sm font-medium text-ink">学校名称</span>
@@ -86,7 +86,7 @@ export function CTABand() {
                 </select>
               </label>
             </div>
-            {err && <p id="demo-error" role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>}
+            {err && <p id="demo-error" role="alert" className="mt-3 border-2 border-red-700 bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>}
             {sent && (
               <p aria-live="polite" className="mt-3 text-xs text-primary-deep">
                 已打开邮件客户端；若未弹出，请直接致邮 {SITE.email}

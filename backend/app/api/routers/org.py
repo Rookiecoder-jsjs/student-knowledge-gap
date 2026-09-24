@@ -69,7 +69,12 @@ def create_class(school_id: int, req: ClassCreate, ctx=Depends(require_teacher),
 @router.post("/classes/{class_id}/progress")
 def update_progress(class_id: int, req: ProgressUpdate, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     _guard(db, ctx, class_id)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, db.get(Class, class_id)))
+    clazz = db.get(Class, class_id)
+    kb = _active_kb(
+        db,
+        _auth.class_subject(db, ctx, clazz),
+        clazz.grade if clazz else None,
+    )
     graph = _graph(db, kb.id)
 
     added = 0
@@ -139,7 +144,7 @@ def classes_overview(ctx=Depends(require_teacher), db: Session = Depends(get_db)
         key = (subject, clazz.grade)
         if key not in graph_cache:
             try:
-                kb = active_kb(db, subject)
+                kb = active_kb(db, subject, clazz.grade)
             except KbNotActiveError:
                 kb = None
             graph_cache[key] = (

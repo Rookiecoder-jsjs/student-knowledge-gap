@@ -197,7 +197,7 @@ def get_class_overview() -> dict:
             key = (subject, clazz.grade)
             if key not in graph_cache:
                 try:
-                    kb = active_kb(db, subject)
+                    kb = active_kb(db, subject, clazz.grade)
                 except KbNotActiveError:
                     kb = None
                 graph_cache[key] = (

@@ -59,13 +59,13 @@ export function SolutionsSection() {
         <Stagger className="space-y-6">
             {ROLES.map((r) => (
               <StaggerItem key={r.who}>
-                <article className="rounded-2xl border border-line bg-surface p-6 md:p-8">
+                <article className="border-2 border-ink bg-surface p-6 shadow-soft md:p-8">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <r.icon size={22} weight="duotone" />
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-ink bg-primary text-white shadow-soft">
+                      <r.icon size={22} weight="bold" />
                     </span>
                     <h2 className="font-display text-xl font-bold tracking-tight text-ink">{r.who}</h2>
-                    <span className="ml-auto hidden rounded-full bg-paper px-3 py-1 text-xs text-ink-faint md:inline">
+                    <span className="ml-auto hidden border-2 border-ink bg-paper px-3 py-1 text-xs font-semibold text-ink-soft md:inline">
                       {r.tools}
                     </span>
                   </div>
