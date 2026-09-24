@@ -48,9 +48,9 @@ export function TeachingProgressCard({ classId }: { classId: number }) {
       </div>
 
       {/* 进度条 */}
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+      <div className="h-1.5 w-full overflow-hidden bg-surface-2">
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500"
+          className="h-full bg-accent transition-[width] duration-500"
           style={{ width: `${Math.max(3, pct)}%` }}
         />
       </div>
@@ -80,9 +80,9 @@ export function TeachingProgressCard({ classId }: { classId: number }) {
                       {c.taught}/{c.total}
                     </span>
                   </div>
-                  <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
+                  <div className="h-1 w-full overflow-hidden bg-surface-2">
                     <div
-                      className="h-full rounded-full bg-accent/70 transition-[width] duration-500"
+                      className="h-full bg-accent/70 transition-[width] duration-500"
                       style={{ width: `${Math.max(2, cpct)}%` }}
                     />
                   </div>

@@ -1,7 +1,5 @@
-import { motion, useReducedMotion } from "framer-motion";
-import { Component, lazy, Suspense, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, Fragment, lazy, Suspense, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { EASE } from "./lib/motion-tokens";
 import { ExamWorkspace } from "./components/ExamWorkspace";
 import { Shell } from "./components/Shell";
 import { ApiError, listClasses } from "./lib/api";
@@ -96,26 +94,10 @@ function Deferred({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * 页面进入微动效（单段 ease-out）。无外层 AnimatePresence，exit 无消费方已移除。
- * key=pathname：Shell 跨路由持久化后 motion.div 若不重挂，initial 不再重演 →
- * 内容硬切瞬跳（2026-09-12 工具组反馈）。以 pathname 自 key 让页面段每次导航
- * 重挂、重放进入动画——侧栏在 Shell 内，不受此 key 影响。
- */
+/** 包豪斯静帧：保留页面随路径重置的语义，侧栏保持挂载。 */
 function Animated({ children }: { children: ReactNode }) {
-  const reduce = useReducedMotion();
   const { pathname } = useLocation();
-  if (reduce) return <>{children}</>;
-  return (
-    <motion.div
-      key={pathname}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18, ease: EASE }}
-    >
-      {children}
-    </motion.div>
-  );
+  return <Fragment key={pathname}>{children}</Fragment>;
 }
 
 /**
@@ -190,7 +172,7 @@ function TeacherRoutes() {
     // <AnimatePresence mode="wait"> + <Routes key={pathname}> 会让 Shell（侧栏）
     // 随每次导航销毁重建——layoutId 激活胶囊永远无法滑动、班级列表/待签发角标
     // 重拉闪变，主区先淡出到全空再淡入（闪烁主体，总过渡时长翻倍）。Shell 现已
-    // 跨路由持久化，过渡只留每页 Animated 的单段进入动画。
+    // 跨路由持久化，页面内容由 Animated 静态直出。
     <Routes>
       <Route path="/" element={<Animated><ClassPicker /></Animated>} />
       <Route path="/wizard" element={<Animated><Wizard /></Animated>} />

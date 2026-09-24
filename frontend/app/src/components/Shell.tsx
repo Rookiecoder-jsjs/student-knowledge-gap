@@ -34,7 +34,7 @@ const NAV = [
  * 教师工作台壳（side-nav-redesign 2026-09-11）：顶栏 tab 迁左成侧栏菜单，
  * 三组分区——班级（工作台/考试/学生）· 工具（待签发/AI 教研员/知识库）·
  * 管理（校务台）。品牌+班级切换器在侧栏顶部，账号簇沉底，无顶栏、页面全高。
- * 激活态颜色即位置：胶囊色 = 落点页 Page accent。
+ * 激活态颜色即位置：方块色 = 落点页 Page accent。
  */
 export function Shell({ children }: { children: ReactNode }) {
   const { classId } = useParams();
@@ -277,7 +277,7 @@ export function Shell({ children }: { children: ReactNode }) {
       />
       <div className="flex min-w-0 flex-1 flex-col [--shell-top:48px] md:[--shell-top:0px]">
         {/* 移动端顶条（<md）：菜单钮开抽屉；md+ 由侧栏接管 */}
-        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface/85 px-3 backdrop-blur md:hidden">
+        <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b-[3px] border-ink bg-canvas px-3 md:hidden">
           <button
             onClick={() => setNavOpen(true)}
             aria-label="打开导航"

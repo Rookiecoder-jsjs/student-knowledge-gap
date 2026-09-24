@@ -43,7 +43,7 @@ export function Page({
   );
 }
 
-/** 彩色 icon 底座（教育风标志元素）：软色底 + 深色 icon，随页面 accent。 */
+/** 彩色 icon 底座（包豪斯标志元素）：实心方块 + 白色 icon，随页面 accent。 */
 export function IconTile({
   children,
   className = "",
@@ -53,7 +53,7 @@ export function IconTile({
 }) {
   return (
     <span
-      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/12 text-accent-deep ${className}`}
+      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center bg-accent text-white ${className}`}
     >
       {children}
     </span>
@@ -78,19 +78,20 @@ export function Button({
   className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+  // 包豪斯：方形、无光晕；primary 实色，secondary 黑框 hover 反白，按压位移替代缩放
   const styles: Record<Variant, string> = {
     primary:
-      "bg-accent text-white ring-1 ring-inset ring-black/5 shadow-[0_8px_18px_-10px] shadow-accent/70 hover:bg-accent-deep hover:shadow-lift disabled:bg-accent/40 disabled:shadow-none",
+      "bg-accent text-white hover:bg-accent-deep disabled:bg-accent/40",
     secondary:
-      "bg-surface text-ink border border-line-strong shadow-soft hover:border-accent/45 hover:text-accent-deep hover:bg-surface-2 disabled:opacity-40",
+      "bg-surface text-ink border-2 border-ink hover:bg-ink hover:text-surface disabled:opacity-40",
     ghost:
-      "text-ink-soft hover:bg-accent/10 hover:text-accent disabled:opacity-40",
+      "text-ink-soft hover:bg-surface-2 hover:text-ink disabled:opacity-40",
     danger:
-      "bg-danger text-white hover:brightness-90 hover:shadow-lift disabled:opacity-40",
+      "bg-danger text-white hover:bg-danger/85 disabled:opacity-40",
   };
   return (
     <button
-      className={`inline-flex cursor-pointer items-center justify-center gap-1.5 font-semibold transition-[transform,background-color,border-color,color,box-shadow] duration-150 active:scale-[0.98] disabled:cursor-not-allowed ${SIZES[size]} ${styles[variant]} ${className}`}
+      className={`inline-flex cursor-pointer items-center justify-center gap-1.5 font-semibold tracking-wide transition-colors duration-150 active:translate-x-px active:translate-y-px disabled:cursor-not-allowed ${SIZES[size]} ${styles[variant]} ${className}`}
       {...props}
     />
   );
@@ -133,11 +134,10 @@ export function Card({
   className?: string;
   interactive?: boolean;
 }) {
-  // 专业商务系（saas-redesign §4.4）：1px 细描边卡 + 轻阴影；interactive 才 lift
-  //（仅 transform/阴影/border-color，GPU 友好）
-  const base = "rounded-[14px] border border-line bg-surface shadow-soft";
+  // 包豪斯：方形卡片 + 2px 粗黑骨架，靠描边与硬偏移阴影分层；interactive 悬停硬抬升
+  const base = "border-2 border-ink bg-surface";
   const hover = interactive
-    ? "transition-[transform,border-color,box-shadow] duration-150 hover:-translate-y-px hover:border-accent/40 hover:shadow-lift"
+    ? "transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-lift"
     : "";
   return <div className={`${base} ${hover} ${className}`}>{children}</div>;
 }
@@ -287,8 +287,8 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/12">
-        <FolderOpen size={22} className="text-accent-deep" weight="thin" />
+      <span className="flex h-12 w-12 items-center justify-center bg-accent text-white">
+        <FolderOpen size={22} weight="bold" />
       </span>
       <p className="text-sm font-medium text-ink-soft">{title}</p>
       {hint && <p className="max-w-[46ch] text-xs leading-relaxed text-ink-faint">{hint}</p>}
@@ -305,8 +305,8 @@ export function ErrorState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center" role="alert">
-      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-danger/12">
-        <WarningCircle size={22} className="text-danger" weight="thin" />
+      <span className="flex h-12 w-12 items-center justify-center bg-danger text-white">
+        <WarningCircle size={22} weight="bold" />
       </span>
       <p className="max-w-[52ch] text-sm text-ink-soft">{message}</p>
       {onRetry && (
@@ -405,7 +405,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;
   return (
     <input
-      className={`min-h-9 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink shadow-[inset_0_1px_0_rgb(255_255_255/.04)] tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
+      className={`min-h-9 border-[1.5px] border-ink bg-surface px-3 py-2 text-sm text-ink tabular-nums placeholder:text-ink-faint transition-colors focus:border-accent ${className}`}
       {...rest}
     />
   );
@@ -424,9 +424,9 @@ export function SectionTitle({
   right?: ReactNode;
 }) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
-        <span className="h-3.5 w-[3px] rounded-full bg-accent" aria-hidden />
+    <div className="mb-2.5 flex items-center justify-between gap-2">
+      <h2 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
+        <span className="h-3 w-[3px] bg-accent" aria-hidden />
         {children}
         {count !== undefined && (
           <span className="font-normal normal-case tracking-normal text-ink-faint">（{count}）</span>
@@ -450,11 +450,11 @@ export function PageHeader({
 }) {
   return (
     // 吸顶（saas-redesign §6）：top 取 --shell-top（Shell 移动端顶条 48px 让位，
-    // 缺省 0）；负外边距出血到主区内容边，底衬毛玻璃避免内容穿透。
-    <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-line/70 bg-canvas/92 px-4 py-4 shadow-[0_12px_24px_-28px_rgba(33,42,36,.7)] backdrop-blur-xl md:-mx-8 md:px-8">
+    // 缺省 0）；负外边距出血到主区内容边，实色底衬避免内容穿透。
+    <div className="sticky top-[var(--shell-top,0px)] z-20 -mx-4 mb-6 flex flex-wrap items-center justify-between gap-4 border-b-2 border-ink bg-canvas px-4 py-4 md:-mx-8 md:px-8">
       <div>
         <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-accent">{PRODUCT_NAME}</p>
-        <h1 className="font-display text-[22px] font-bold leading-tight tracking-[-0.02em] text-ink">{title}</h1>
+        <h1 className="font-display text-[22px] font-bold leading-tight tracking-tight text-ink [box-shadow:inset_0_-0.28em_0_0_var(--color-accent-soft)]">{title}</h1>
         {desc && <p className="mt-1 text-sm text-ink-soft">{desc}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
@@ -549,14 +549,14 @@ export function Modal({
       />
       <div
         ref={panelRef}
-        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto rounded-2xl border border-line-strong bg-surface p-6 shadow-float`}
+        className={`relative w-full ${MODAL_SIZE[size]} max-h-[85vh] overflow-auto border-2 border-ink bg-surface p-6 shadow-float`}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-[15px] font-semibold tracking-tight text-ink">{title}</h3>
           <button
             onClick={onClose}
             aria-label="关闭"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
+            className="flex h-8 w-8 items-center justify-center text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <X size={18} />
           </button>
@@ -576,7 +576,7 @@ export function StatusDot({ state }: { state: "done" | "active" | "todo" }) {
     state === "done"
       ? "bg-accent"
       : state === "active"
-        ? "bg-accent ring-4 ring-accent/15"
+        ? "bg-accent ring-2 ring-accent ring-offset-2 ring-offset-canvas"
         : "bg-line border border-ink-faint/40";
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} aria-hidden />;
 }
@@ -604,7 +604,7 @@ export function StatTile({
           ? "text-danger"
           : "text-ink";
   return (
-    <div className="relative overflow-hidden rounded-[14px] border border-line bg-surface px-4 py-3.5 shadow-soft before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent/55">
+    <div className="border-2 border-ink bg-surface px-4 py-3.5">
       {icon && <IconTile className="mb-2.5">{icon}</IconTile>}
       <p className={`font-display text-[28px] font-bold leading-tight tabular-nums tracking-tight ${val}`}>
         {value}
