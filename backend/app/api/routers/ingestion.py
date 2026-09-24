@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
+from app.api.routers.jobs import PhotoTemplateResult, PhotoResponseResult, QueuedJob
 from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
 from app.db import utcnow
 from app import jobs as job_queue
@@ -212,7 +213,7 @@ def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get
 # ---------------------------------------------------------------------------
 
 
-@router.post("/exams/photo-template")
+@router.post("/exams/photo-template", response_model=PhotoTemplateResult | QueuedJob)
 async def photo_template(
     file: UploadFile = File(...),
     class_id: int = Form(...),
@@ -244,7 +245,7 @@ async def photo_template(
                 "exam_date": exam_date.isoformat(),
                 "type": type,
             },
-            idempotency_key=f"photo_template:{class_id}:{name}:{exam_date.isoformat()}:{digest}",
+            idempotency_key=f"photo_template:{class_id}:{kb.id}:{type}:{name}:{exam_date.isoformat()}:{digest}",
         )
         db.commit()
         return {"job_id": job.id, "status": "queued", "next": f"GET /jobs/{job.id}"}
@@ -260,7 +261,7 @@ async def photo_template(
     }
 
 
-@router.post("/exams/{exam_id}/photo-response")
+@router.post("/exams/{exam_id}/photo-response", response_model=PhotoResponseResult | QueuedJob)
 async def photo_response(
     exam_id: int,
     student_id: int = Form(...),

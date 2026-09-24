@@ -45,3 +45,8 @@ design-system/
 gateway/accounts.json
 # runtime 壳二进制 staging（deploy/stage-gateway-runtime.sh 生成，可再生）
 gateway/.runtime/
+
+# Browser regression artifacts
+playwright-report/
+test-results/
+!docs/reliability-and-teacher-priorities.md

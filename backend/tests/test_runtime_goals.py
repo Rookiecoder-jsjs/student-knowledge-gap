@@ -669,6 +669,12 @@ def test_g10_backup_db(tmp_path):
 
     src = tmp_path / "src.db"
     con = sqlite3.connect(str(src))
+    # Backups now verify core business tables, not only SQLite readability.
+    from sqlalchemy import create_engine
+    from app.db import Base
+    backup_engine = create_engine(f"sqlite:///{src}")
+    Base.metadata.create_all(backup_engine)
+    backup_engine.dispose()
     con.execute("create table t(x int)")
     con.execute("insert into t values (42)")
     con.commit()

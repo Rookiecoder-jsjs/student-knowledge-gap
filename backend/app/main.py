@@ -335,7 +335,9 @@ def health():
 def metrics():
     """Low-dependency Prometheus-compatible runtime counters."""
     from app.metrics import render_prometheus
+    from app.ops_metrics import collect
 
+    collect()
     return Response(content=render_prometheus(), media_type="text/plain; version=0.0.4")
 
 

@@ -1,0 +1,33 @@
+groups:
+  - name: sc-operations
+    rules:
+      - alert: ScMetricsUnavailable
+        expr: up{job="sc-backend"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "学情服务指标不可达", description: "检查服务进程、网络和 /ready，参见 DEPLOY.md 运维演练。"}
+      - alert: ScJobsStalled
+        expr: sc_jobs_oldest_wait_seconds > 600
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "任务等待超过十分钟", description: "检查 worker、模型供应商及数据库；不要直接重复上传。"}
+      - alert: ScJobsFailing
+        expr: sc_jobs_failures_since_success >= 3
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "任务连续失败", description: "按 job_id 检查受控日志，修复依赖后重试。"}
+      - alert: ScBackupOverdue
+        expr: (time() - sc_backup_last_success_timestamp_seconds > 93600) and on(instance, job) (sc_backup_monitor_enabled == 1)
+        for: 15m
+        labels: {severity: critical}
+        annotations: {summary: "超过 26 小时没有通过恢复检查的备份", description: "检查 backup 容器和备份卷空间，手工执行备份与恢复验证。"}
+      - alert: ScDiskLow
+        expr: sc_disk_available_ratio < 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "数据磁盘可用空间低于 10%", description: "检查日志、图片和备份保留策略；不要删除在线数据库 WAL 文件。"}
+      - alert: ScMetricsCollectionFailed
+        expr: sc_ops_collect_ok == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "运维指标采集失败", description: "检查 source 标签对应的数据库、磁盘或备份目录，避免把陈旧指标当作健康状态。"}

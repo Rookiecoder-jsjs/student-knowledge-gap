@@ -29,6 +29,8 @@
   --color-accent-soft: #f6dbd5;
 
   /* 包豪斯原色装饰（蓝/黄仅作图形装饰，不作白字底色——黄底白字对比不足） */
+  --color-module-student: #141414;
+  --color-graph-neutral: #687386;
   --color-bh-blue: #1f5fbf;
   --color-bh-yellow: #e2a93b;
 
@@ -69,9 +71,9 @@
 :root {
   --color-accent-soft: color-mix(in srgb, var(--color-accent) 13%, #f7f4ec);
   --color-accent-deep: color-mix(in srgb, var(--color-accent) 82%, black);
-  --brand-night: #0d2a27;
-  --brand-night-2: #16463f;
-  --brand-annot: #b7791f;
+  --brand-night: #d63a2f;
+  --brand-night-2: #a92418;
+  --brand-annot: #e2a93b;
 }
 
 /* 暗色主题（saas-redesign §4.1/§4.2）：蓝黑族不用纯黑、文本不用纯白；
@@ -79,6 +81,8 @@
    语义色主色统一提亮一档，soft 走同一 mix 兑暗面；阴影加深
    （暗面层级主要靠 surface 亮度阶 + 描边，阴影只兜底）。 */
 :root[data-theme="dark"] {
+  --color-module-student: #536174;
+  --color-graph-neutral: #a1acbd;
   --color-canvas: #0a0e16;
   --color-surface: #121923;
   --color-surface-2: #1b2431;
@@ -166,8 +170,9 @@ body {
   position: relative;
   overflow: hidden;
   color: white;
-  background: linear-gradient(135deg, var(--brand-night), var(--brand-night-2));
-  box-shadow: 0 22px 52px -30px rgb(13 42 39 / 0.7);
+  background: var(--brand-night);
+  border: 2px solid var(--color-ink);
+  box-shadow: var(--shadow-lift);
 }
 
 .brand-band::after {
@@ -176,7 +181,8 @@ body {
   inset: auto -8% -72% 42%;
   height: 210%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(94 234 212 / 0.12), transparent 64%);
+  background: var(--color-bh-yellow);
+  opacity: 0.12;
   pointer-events: none;
 }
 

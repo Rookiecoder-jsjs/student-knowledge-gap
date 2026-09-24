@@ -1,3 +1,5 @@
+import { usePhotoJob } from "../lib/usePhotoJob";
+import { JobProgress } from "../components/JobProgress";
 import { Camera, Sparkle, Table, WarningCircle } from "@phosphor-icons/react";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -32,11 +34,24 @@ export default function ExamNew() {
     "1|选择|5|下列关于绝对值的说法正确的是|M7A-105\n2|解答|10|计算：(-3)+5|M7A-111"
   );
 
+  const [parsedExam, setParsedExam] = useState<number | null>(null);
+  const acceptPhoto = (r: Record<string, unknown>) => {
+    if (typeof r.exam_id !== "number" || !Array.isArray(r.warnings)) {
+      setError("解析结果不完整，请联系管理员");
+      return;
+    }
+    setWarnings(r.warnings as string[]);
+    setParsedExam(r.exam_id);
+  };
+  const task = usePhotoJob("photo_template", acceptPhoto);
+
   const submitPhoto = async () => {
     if (!file) return setError("请先选择试卷照片");
     if (!name.trim()) return setError("请填写考试名称");
     setBusy(true);
     setError(null);
+    setParsedExam(null);
+    setWarnings([]);
     try {
       const r = await photoTemplate(file, {
         class_id: cid,
@@ -44,13 +59,8 @@ export default function ExamNew() {
         exam_date: date,
         type,
       });
-      if (r.warnings.length > 0) {
-        setWarnings(r.warnings);
-        // 停留展示警告，由教师确认后进入审核台
-        setTimeout(() => nav(`/c/${cid}/exams/${r.exam_id}/review`), 2600);
-      } else {
-        nav(`/c/${cid}/exams/${r.exam_id}/review`);
-      }
+      if ("job_id" in r) task.track(r.job_id);
+      else acceptPhoto(r);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -147,6 +157,8 @@ export default function ExamNew() {
 
   return (
     <Page accent={ACCENTS.exam}>
+      <JobProgress task={task} />
+      {parsedExam !== null && <Button className="mb-4" onClick={() => nav(`/c/${cid}/exams/${parsedExam}/review`)}>进入标注审核</Button>}
       <Link
         to={`/c/${cid}/exams`}
         className="mb-4 inline-flex items-center gap-1 text-sm text-ink-soft transition-colors hover:text-accent"
@@ -181,7 +193,7 @@ export default function ExamNew() {
         <div className="mb-4 rounded-lg border border-warn/20 bg-warn-soft p-4" role="status">
           <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-warn">
             <WarningCircle size={16} />
-            解析警告（即将进入审核台）
+            解析警告（确认后进入审核台）
           </p>
           <ul className="list-disc pl-5 text-sm text-warn">
             {warnings.map((w, i) => (
@@ -197,7 +209,7 @@ export default function ExamNew() {
       )}
 
       <Card className="max-w-[720px] space-y-5 p-7">
-        <div className="grid grid-cols-[1.5fr_1fr_1fr] gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-[1.5fr_1fr_1fr] gap-4">
           <Field label="考试名称">
             <Input placeholder="如：10月月考" value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
@@ -236,7 +248,7 @@ export default function ExamNew() {
               className="sr-only"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-            <Button onClick={submitPhoto} disabled={busy || !file} className="w-full justify-center">
+            <Button onClick={submitPhoto} disabled={busy || task.active || !file} className="w-full justify-center">
               {busy ? "AI 解析中，请稍候…" : "开始解析"}
             </Button>
           </div>
@@ -255,11 +267,11 @@ export default function ExamNew() {
               填了题干但没标知识点的题，可一键让 AI 从知识库中推荐，审核后再建卷。
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={recommendTags} disabled={busy} className="justify-center">
+              <Button variant="secondary" onClick={recommendTags} disabled={busy || task.active} className="justify-center">
                 <Sparkle size={15} />
                 AI 推荐标注
               </Button>
-              <Button onClick={submitManual} disabled={busy} className="flex-1 justify-center">
+              <Button onClick={submitManual} disabled={busy || task.active} className="flex-1 justify-center">
                 {busy ? "创建中…" : "创建考试模板"}
               </Button>
             </div>

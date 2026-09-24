@@ -7,7 +7,7 @@ export const ACCENTS = {
   /** 考试：构成蓝 */
   exam: "#1f5fbf",
   /** 学生：构成黑 */
-  student: "#141414",
+  student: "var(--color-module-student)",
   /** 知识点/分析：暗赭（白字 AA 达标） */
   knowledge: "#8a5f0e",
 } as const;

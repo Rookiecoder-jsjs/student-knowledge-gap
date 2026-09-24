@@ -634,3 +634,32 @@ def test_batch_sync_guard(monkeypatch):
         eng.dispose()  # Windows: 释放连接池句柄，否则 remove 被文件锁阻塞
         _os.remove(db_path)
 
+
+
+def test_queued_photos_keep_contract_and_finish_once(client, monkeypatch, tmp_path):
+    from app import jobs
+    from app.api import deps
+    monkeypatch.setenv("SC_JOB_QUEUE_ENABLE", "1")
+    monkeypatch.setenv("SC_OBJECT_STORAGE_DIR", str(tmp_path / "objects"))
+    monkeypatch.setattr(jobs, "SessionLocal", deps.SessionLocal)
+    student_id = _bootstrap(client)
+    set_client(MockLLMClient([STAGE_A_PAYLOAD, STAGE_B_PAYLOAD]))
+    response = client.post("/exams/photo-template",
+        files={"file": ("paper.jpg", _jpeg_bytes(), "image/jpeg")},
+        data={"class_id": 1, "name": "异步考试", "exam_date": "2025-10-20", "type": "单元"})
+    assert response.status_code == 200, response.text
+    job_id = response.json()["job_id"]
+    assert jobs.run_once(worker_id="test-worker")
+    result = client.get(f"/jobs/{job_id}").json()
+    assert result["status"] == "succeeded", result
+    assert result["result"]["questions"] == 3
+    exam_id = result["result"]["exam_id"]
+    response = client.post(f"/exams/{exam_id}/photo-response",
+        files={"file": ("student.jpg", _jpeg_bytes(), "image/jpeg")}, data={"student_id": student_id})
+    assert response.status_code == 200, response.text
+    response_job = response.json()["job_id"]
+    assert jobs.run_once(worker_id="test-worker")
+    result = client.get(f"/jobs/{response_job}").json()
+    assert result["status"] == "succeeded", result
+    assert result["result"]["response_id"] > 0
+    assert not jobs.run_once(worker_id="test-worker")

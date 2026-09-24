@@ -61,9 +61,11 @@ services:
       SC_DATABASE_URL: "sqlite:////data/sc.db"   # 卷内持久化（覆盖 env_file）
       SC_LLM_ROUTER_URL: ${SC_LLM_ROUTER_URL:-http://llm-router:8090/v1}
       SC_JOB_QUEUE_ENABLE: ${SC_JOB_QUEUE_ENABLE:-0}
+      SC_BACKUP_DIR: /backups
       TMPDIR: /data/tmp                          # 批量 tempfile 挂卷：重启后 failed item 可重试
     volumes:
       - sc-data:/data
+      - sc-backups:/backups:ro
     ports:
       - "127.0.0.1:8000:8000"                    # 仅本机调试/验证，不对外
     logging: *default-logging

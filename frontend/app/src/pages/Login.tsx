@@ -6,26 +6,17 @@ import {
   SignIn,
   Student,
 } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "../components/ui";
 import { useAuth } from "../lib/AuthContext";
 import { EXPIRED_KEY } from "../lib/auth";
 import { landingFor } from "../lib/portal";
-import { EASE } from "../lib/motion-tokens";
 import { ACCENTS } from "../lib/theme";
 import { PRODUCT_NAME, WEBSITE_URL } from "../lib/site";
 import { BrandMark } from "../components/BrandMark";
 
-/** 统一登录页（auth-roles-design §7）：教师/管理员/学生同一入口。
-
-左右分栏 · 墨面品牌栏（2026-09-11 质感重设计，替换旧 teal→blue 饱和渐变）：
-左 = 深墨底 + 三模块色低透明度光斑 + 知识点图谱线稿 + Outfit display 大字
-陈述 + 三端模块色列表（颜色即位置的第一次陈述）+ 信任线；右 = 纸面表单。
-手机端左栏折叠为品牌锁定行。入场动效沿用全站 EASE，尊重 reduced-motion。
-设计系统对齐：深墨只出现在这一块品牌面板，其余保持「冷灰画布 + 纯白卡片」。
-*/
+/** 统一登录入口：原色几何品牌面与全站静帧主题共用令牌。 */
 
 const ENDS = [
   {
@@ -48,27 +39,9 @@ const ENDS = [
   },
 ] as const;
 
-/** 入场揭示：fade + 12px 上移，按 delay 逐层错峰；reduced-motion 直出终态。 */
-function Reveal({
-  delay = 0,
-  className,
-  children,
-}: {
-  delay?: number;
-  className?: string;
-  children: ReactNode;
-}) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      className={className}
-      initial={reduce ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: EASE, delay }}
-    >
-      {children}
-    </motion.div>
-  );
+/** 与全站一致，静态呈现内容。保留 delay 调用兼容。 */
+function Reveal({ className, children }: { delay?: number; className?: string; children: ReactNode }) {
+  return <div className={className}>{children}</div>;
 }
 
 /** 知识点图谱线稿（装饰）：节点 + 连线的星座图，白线极淡，三枚模块色节点
@@ -195,22 +168,21 @@ export default function Login() {
 
   return (
     <div className="grid min-h-[100dvh] bg-canvas lg:grid-cols-[1.08fr_1fr]">
-      {/* 左：墨面品牌栏（lg 以上展示）——深墨底吃住三团模块色光斑，
-          图谱线稿补纹理层级；内容分品牌 / 陈述 / 信任三段 justify-between */}
+      {/* 桌面品牌栏：原色背景、图谱线稿和模块入口。 */}
       <aside className="brand-band relative hidden flex-col justify-between overflow-hidden px-14 py-12 lg:flex">
         {/* 模块色光斑：低透明度大面积模糊（旧饱和渐变的替代，质感主来源） */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <span
             className="absolute -top-24 -right-16 h-[28rem] w-[28rem] rounded-full blur-[110px]"
-            style={{ background: "#5eead4", opacity: 0.11 }}
+            style={{ background: "var(--color-bh-yellow)", opacity: 0.11 }}
           />
           <span
             className="absolute -left-24 bottom-[16%] h-[24rem] w-[24rem] rounded-full blur-[110px]"
-            style={{ background: "#d6a34f", opacity: 0.09 }}
+            style={{ background: "var(--color-bh-blue)", opacity: 0.09 }}
           />
           <span
             className="absolute -bottom-32 right-[10%] h-[26rem] w-[26rem] rounded-full blur-[120px]"
-            style={{ background: "#86b8ad", opacity: 0.08 }}
+            style={{ background: "var(--color-surface)", opacity: 0.08 }}
           />
         </div>
         <GraphSketch />
@@ -248,7 +220,7 @@ export default function Login() {
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ring-white/10"
                     aria-hidden
                   >
-                    <Icon size={17} weight="bold" style={{ color: accent }} />
+                    <Icon size={17} weight="bold" style={{ background: accent }} className="p-0.5 text-white" />
                   </span>
                   <div>
                     <p className="text-sm font-semibold text-white">{title}</p>

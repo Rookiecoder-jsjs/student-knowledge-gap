@@ -5,21 +5,21 @@ import { zoom, zoomIdentity, type ZoomBehavior } from "d3-zoom";
 import type { KnowledgeGraphEdge, KnowledgeGraphNode } from "../../lib/types";
 
 const NODE_COLORS = {
-  good: "#2dd4bf",
-  watch: "#f5b04d",
-  weak: "#f87171",
-  no_data: "#94a3b8",
-  not_learned: "#94a3b8",
+  good: "var(--color-success)",
+  watch: "var(--color-warn)",
+  weak: "var(--color-danger)",
+  no_data: "var(--color-graph-neutral)",
+  not_learned: "var(--color-graph-neutral)",
 } as const;
 
 const EDGE_COLORS: Record<string, string> = {
-  prerequisite: "#5eead4",
-  contains: "#7dd3fc",
-  confusable: "#f5b04d",
-  spiral: "#a78bfa",
+  prerequisite: "var(--color-accent)",
+  contains: "var(--color-info)",
+  confusable: "var(--color-warn)",
+  spiral: "var(--color-success)",
 };
 
-const CHAPTER_COLORS = ["#0f766e", "#2563eb", "#7c3aed", "#c2410c", "#be185d", "#0e7490"];
+const CHAPTER_COLORS = ["var(--color-accent)", "var(--color-bh-blue)", "var(--color-warn)", "var(--color-success)", "var(--color-info)", "var(--color-ink-soft)"];
 const PACK_SIZE = 760;
 const MAX_RELATION_LINES = 220;
 
@@ -228,7 +228,7 @@ export default function KnowledgeGraph2D({
             style={{ touchAction: "none" }}
             onClick={() => selectNode(null)}
           >
-            <rect x="0" y="0" width={layout.width} height={layout.height} rx="18" fill="currentColor" className="text-surface-2/30" />
+            <rect x="0" y="0" width={layout.width} height={layout.height} rx="0" fill="currentColor" className="text-surface-2/30" />
             <g ref={zoomLayerRef}>
               <circle cx={root.x} cy={root.y} r={root.r} fill="currentColor" className="text-canvas" stroke="currentColor" strokeOpacity="0.24" strokeWidth="2" />
               <text
@@ -273,7 +273,7 @@ export default function KnowledgeGraph2D({
                     y1={from.y}
                     x2={to.x}
                     y2={to.y}
-                    stroke={EDGE_COLORS[edge.type] ?? "#94a3b8"}
+                    stroke={EDGE_COLORS[edge.type] ?? "var(--color-graph-neutral)"}
                     strokeOpacity="0.3"
                     strokeWidth="1.2"
                     strokeDasharray="4 4"

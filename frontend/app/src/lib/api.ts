@@ -1,3 +1,4 @@
+import type { components } from "./generated/jobs";
 /** 后端 API 客户端：统一请求、错误与鉴权语义。 */
 
 import type {
@@ -61,7 +62,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, opts);
-  } catch {
+  } catch (error) {
+    if (init?.signal?.aborted) throw error;
     throw new ApiError(0, "无法连接后端服务（请确认 uvicorn 已在 8000 端口启动）");
   }
   if (!res.ok) {
@@ -479,11 +481,18 @@ export const suggestQuestionTags = (
     json({ questions }),
   );
 
+export type QueuedJob = components["schemas"]["QueuedJob"];
+export type PhotoTemplateResult = components["schemas"]["PhotoTemplateResult"];
+export type PhotoResponseResult = components["schemas"]["PhotoResponseResult"];
+export type JobStatus = components["schemas"]["JobStatus"];
+export const jobStatus = (id: number, signal?: AbortSignal) => request<JobStatus>(`/jobs/${id}`, { signal });
+export const retryJob = (id: number) => request<JobStatus>(`/jobs/${id}/retry`, { method: "POST" });
+
 export const photoTemplate = (
   file: File,
   meta: { class_id: number; name: string; exam_date: string; type: string }
 ) =>
-  request<{ exam_id: number; questions: number; warnings: string[] }>("/exams/photo-template", {
+  request<PhotoTemplateResult | QueuedJob>("/exams/photo-template", {
     method: "POST",
     body: multipart(
       { class_id: String(meta.class_id), name: meta.name, exam_date: meta.exam_date, type: meta.type },
@@ -517,7 +526,7 @@ export const commitExam = (examId: number) =>
 // ---- 采集与审核 --------------------------------------------------------------
 
 export const photoResponse = (examId: number, student_id: number, file: File) =>
-  request<{ response_id: number; warnings: string[] }>(`/exams/${examId}/photo-response`, {
+  request<PhotoResponseResult | QueuedJob>(`/exams/${examId}/photo-response`, {
     method: "POST",
     body: multipart({ student_id: String(student_id) }, file),
   });
@@ -533,7 +542,7 @@ export const photoBatch = (examId: number, files: File[], sync = false) =>
 export const listBatchJobs = (examId: number) =>
   request<{ jobs: BatchJobSummary[] }>(`/exams/${examId}/batch-jobs`);
 
-export const batchJob = (jobId: number) => request<BatchJob>(`/batch-jobs/${jobId}`);
+export const batchJob = (jobId: number, signal?: AbortSignal) => request<BatchJob>(`/batch-jobs/${jobId}`, { signal });
 
 export const assignBatchItem = (itemId: number, student_id: number) =>
   request<{ response_id: number; status: string }>(

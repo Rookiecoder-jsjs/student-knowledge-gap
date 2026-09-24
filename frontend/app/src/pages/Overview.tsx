@@ -1,9 +1,10 @@
+import { TodayActions } from "../components/TodayActions";
 import { ArrowRight, ChartLineUp, ClipboardText, Exam, FileArrowUp, Student } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
 import { Reveal } from "../components/motion";
 import { TeachingProgressCard } from "../components/TeachingProgress";
-import { listClasses, listClassesOverview, classActionPlan, listExams } from "../lib/api";
+import { listClasses, listClassesOverview, classActionPlan, listExams, interventionSummaryOf } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { ACCENTS } from "../lib/theme";
 import type { ExamSummary } from "../lib/types";
@@ -29,6 +30,8 @@ export default function Overview() {
     () => classActionPlan(cid),
     [cid]
   );
+
+  const effects = useAsync(() => interventionSummaryOf(cid), [cid]);
 
   const clazz = classes.data?.classes.find((c) => c.class_id === cid);
   const ov = overview.data?.classes.find((c) => c.class_id === cid);
@@ -57,6 +60,10 @@ export default function Overview() {
           </Link>
         }
       />
+
+      {(actions.loading || exams.loading) && <Skeleton rows={2} />}
+      {actions.data && exams.data && <TodayActions classId={cid} exams={exams.data.exams} plan={actions.data} summary={effects.data} />}
+      {effects.error && <ErrorState message="复测效果暂时无法读取" onRetry={effects.reload} />}
 
       {/* 统计条 */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">

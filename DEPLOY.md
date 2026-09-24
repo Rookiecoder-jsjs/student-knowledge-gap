@@ -135,7 +135,7 @@ curl -s localhost:8080/ready
 | readiness | `GET /ready`（backend，经 nginx `/ready` 透传） | DB 可达 = 200；**LLM 熔断 = 仍 200 但 `degraded:true`**（确定性路径不依赖 LLM）；DB 不可达 = 503 |
 | metrics | `GET /metrics`（backend/router） | Prometheus 兼容计数：任务成功/失败、路由拒绝、请求失败 |
 
-- compose 的 `backend` healthcheck 打 `/ready`，DB 不可达 → 不健康 → 触发重启自愈。
+- compose 的 `backend` healthcheck 打 `/ready`，DB 不可达时标记不健康，并由告警通知运维；普通 Compose 不会因健康检查失败自动重启。
 - 日志为 **JSON 行 → stderr**（`docker compose logs -f` 直接可读），backend/gateway 的错误响应会带
   `request_id`，Compose 默认按 20MB × 5 做本地日志轮转，聚合器可直接摄取。
 - LLM 断供时：Excel 导入、推导、报告模板等确定性路径照常工作；仅拍照解析/报告 AI 解读段受影响。
@@ -234,3 +234,33 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
 
 迁移到生产前仍需补齐组织级 secret manager、Prometheus/Grafana 告警、对象存储 S3
 实现和网关会话 Redis 适配；当前代码已提供接口、探针与可回滚的单机默认值。
+
+## 运维指标与恢复验证
+
+单机 Compose 将 `sc-backups` 只读挂载到 backend，`SC_BACKUP_DIR=/backups` 开启备份监测。
+每次备份先写临时文件，再在独立临时目录恢复并检查完整性、外键和核心业务表可读性；
+全部通过才原子发布 `.bak` 和 `.backup-status.json`。失败不会刷新成功时间。
+备份脚本拒绝不存在的源库及覆盖源库的目标路径。
+
+```sh
+# 在 backup 容器中只读验证已有备份，不覆盖线上数据库；也支持 .bak.gz
+# 路径替换为实际备份文件名。
+docker compose exec backup python -m scripts.verify_restore /backups/sc.db.<时间戳>.bak
+```
+
+`/metrics` 新增任务积压、最老等待时间、最近成功之后的失败任务数、磁盘水位和已验证备份时间。
+`deploy/monitoring/prometheus.yml` 与 `alerts.yml` 可接入已有 Prometheus；不默认增加监控服务。
+告警的 26 小时备份阈值对应默认 24 小时间隔，自定义备份周期时同步调整。多实例模式下任务指标
+来自共享数据库，聚合时使用 `max` 而非跨副本求和；磁盘指标按实例查看。PostgreSQL 备份继续使用
+自身工具，SQLite 恢复脚本不适用于 PostgreSQL。
+
+演练只在测试环境执行：
+
+1. 停 worker，观察排队时长升高；恢复后检查任务完成且计数回落。
+2. 模拟模型调用失败，检查失败任务提示和重试，不应丢失已提交成绩。
+3. 验证一份有效备份，再用损坏副本验证命令非零退出；原文件与线上数据库均不应改变。
+4. 移走测试备份目录中的状态文件，确认采集失败及备份过期告警；恢复文件后确认告警解除。
+5. 在容量受限的测试卷触发磁盘阈值，核对标签指向正确实例，勿填满生产数据卷。
+
+容器 `healthcheck` 只标记 unhealthy；普通 Docker Compose 的 `restart: unless-stopped`
+不会因 unhealthy 自动重启存活进程。依赖异常需由运维告警处置，进程退出才适用该重启策略。

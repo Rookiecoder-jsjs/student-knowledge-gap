@@ -1,10 +1,8 @@
 import { SignOut } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useRef, type ComponentType, type ReactNode } from "react";
 import { useAuth } from "../lib/AuthContext";
 import type { Session } from "../lib/auth";
-import { EASE } from "../lib/motion-tokens";
 import { ThemeToggle } from "./ThemeToggle";
 import { BrandMark } from "./BrandMark";
 
@@ -12,13 +10,13 @@ import { BrandMark } from "./BrandMark";
  * 学生门户/班级选择页统一顶栏骨架（UI 位置统一 2026-09-10）：品牌左 · 导航中 ·
  * 工具/账号右。side-nav-redesign（2026-09-11）后教师工作台/校务台已迁侧栏
  * （SideNav.tsx），学生端 5 tab 顶栏保留现状、班级选择页仍为转场 hub。
- * 导航胶囊激活态 = 模块色（颜色即位置），动效参数与侧栏一致。
+ * 导航方块激活态 = 模块色（颜色即位置），动效参数与侧栏一致。
  */
 
 /** 顶栏工具/账号链接统一款式（教师 Shell、班级选择页、校务台右侧共用）。
  * 窄屏 icon-only 态收窄内边距，给中段主导航让位。 */
 export const TOOL_LINK =
-  "inline-flex items-center gap-1.5 rounded-full px-2 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink sm:px-3";
+  "inline-flex items-center gap-1.5 px-2 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-surface-2 hover:text-ink sm:px-3";
 
 export interface TopBarNavItem {
   /** 稳定唯一键（可选）：跨 cid 解析不变的原始路由。to 会随班级解析变化
@@ -32,7 +30,7 @@ export interface TopBarNavItem {
     weight?: "regular" | "fill" | "bold";
     className?: string;
   }>;
-  /** 激活胶囊底色（模块色，如 ACCENTS.dashboard）。 */
+  /** 激活方块底色（模块色，如 ACCENTS.dashboard）。 */
   accent: string;
   active?: boolean;
 }
@@ -57,8 +55,8 @@ export function TopBar({
   right?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-line/80 bg-canvas/88 shadow-[0_8px_24px_-24px_rgba(33,42,36,.45)] backdrop-blur-xl">
-      <div className="mx-auto flex h-[68px] max-w-[1240px] items-center justify-between gap-4 px-4 sm:px-6">
+    <header className="sticky top-0 z-40 border-b-[3px] border-ink bg-canvas">
+      <div className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6 lg:flex lg:h-[68px] lg:justify-between lg:py-0">
         <Link
           to={brandTo}
           className="flex shrink-0 items-center gap-2.5 rounded-xl transition-opacity hover:opacity-80"
@@ -70,7 +68,7 @@ export function TopBar({
           </div>
         </Link>
 
-        {nav}
+        {nav && <div className="order-3 col-span-2 min-w-0 lg:order-none">{nav}</div>}
 
         <div className="flex shrink-0 items-center gap-1.5">{right}</div>
       </div>
@@ -78,40 +76,34 @@ export function TopBar({
   );
 }
 
-/** 顶栏导航胶囊组：激活项渲染模块色胶囊；窄屏中段横向滚动（min-w-0 让位两侧）。 */
+/** 顶栏导航方块组：窄屏独占第二行，可横向滚动；当前入口自动保持可见。 */
 export function TopBarNav({
   items,
   navLabel,
-  layoutId = "topbar-nav",
 }: {
   items: TopBarNavItem[];
   navLabel: string;
-  /** 同屏只有一个导航组；各端传不同 id 隔离 framer-motion 布局动画。 */
+  /** 保留旧调用接口；静帧主题不使用布局动画。 */
   layoutId?: string;
 }) {
-  const reduce = useReducedMotion();
+  const navRef = useRef<HTMLElement>(null);
+  const activeKey = items.find((item) => item.active)?.to;
+  useEffect(() => {
+    navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeKey]);
   return (
-    <nav className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label={navLabel}>
+    <nav ref={navRef} className="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label={navLabel}>
       {items.map(({ id, to, label, icon: Icon, accent, active }) => (
         <Link
           key={id ?? label}
           to={to}
           aria-current={active ? "page" : undefined}
-          className={`relative flex min-h-10 shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+          className={`relative flex min-h-10 shrink-0 items-center gap-2 px-4 py-2 text-sm font-semibold transition-colors ${
             active ? "text-white shadow-soft" : "text-ink-soft hover:bg-surface-2/70 hover:text-ink"
           }`}
         >
-          {active && !reduce && (
-            <motion.span
-              layoutId={layoutId}
-              className="absolute inset-0 rounded-full"
-              style={{ background: accent }}
-              transition={{ type: "spring", stiffness: 320, damping: 30, ease: EASE }}
-              aria-hidden
-            />
-          )}
-          {active && reduce && (
-            <span className="absolute inset-0 rounded-full" style={{ background: accent }} aria-hidden />
+          {active && (
+            <span className="absolute inset-0" style={{ background: accent }} aria-hidden />
           )}
           <Icon size={16} weight={active ? "fill" : "regular"} className="relative" />
           <span className="relative">{label}</span>
@@ -143,7 +135,7 @@ export function AccountCluster({ session, name }: { session: Session; name?: str
         onClick={logout}
         aria-label="退出登录"
         title="退出登录"
-        className="inline-flex items-center gap-1 rounded-full px-2 py-1.5 text-[13px] font-medium text-ink-soft transition-colors hover:bg-danger-soft hover:text-danger"
+        className="inline-flex items-center gap-1 px-2 py-1.5 text-[13px] font-medium text-ink-soft transition-colors hover:bg-danger-soft hover:text-danger"
       >
         <SignOut size={15} />
       </button>

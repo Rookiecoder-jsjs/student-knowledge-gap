@@ -1,8 +1,11 @@
+import { usePhotoJob } from "../lib/usePhotoJob";
+import { JobProgress } from "../components/JobProgress";
 import { Camera, CheckCircle, Images, Keyboard } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, EmptyState, ErrorState, Modal, Select, Skeleton } from "../components/ui";
 import {
+  ApiError,
   assignBatchItem,
   batchJob,
   discardBatchItem,
@@ -41,17 +44,25 @@ export default function Collect() {
 
   const committed = (matrix.data?.summary["已提交"] ?? 0) > 0;
 
+  const acceptPhoto = (r: Record<string, unknown>) => {
+    if (typeof r.response_id !== "number" || !Array.isArray(r.warnings)) {
+      setErr("解析结果不完整，请联系管理员");
+      return;
+    }
+    setNotice(`解析完成${r.warnings.length ? `（警告：${r.warnings.join("；")}）` : ""}，请留意把握低的题目。`);
+    setPhotoFor(null);
+    matrix.reload();
+  };
+  const task = usePhotoJob("photo_response", acceptPhoto);
+
   const uploadPhoto = async (file: File) => {
     if (photoFor === null) return;
     setBusy(true);
     setErr(null);
     try {
       const r = await photoResponse(eid, photoFor, file);
-      setNotice(
-        `解析完成${r.warnings.length > 0 ? `（警告：${r.warnings.join("；")}）` : ""}，请留意把握低的题目。`
-      );
-      setPhotoFor(null);
-      matrix.reload();
+      if ("job_id" in r) { task.track(r.job_id); setPhotoFor(null); }
+      else acceptPhoto(r);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -61,6 +72,7 @@ export default function Collect() {
 
   return (
     <div>
+      <JobProgress task={task} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold text-ink">
           学生卷采集
@@ -165,7 +177,7 @@ export default function Collect() {
                               setPhotoFor(r.student_id);
                               fileRef.current?.click();
                             }}
-                            disabled={busy}
+                            disabled={busy || task.active}
                           >
                             <Camera size={14} />
                             拍照
@@ -314,33 +326,40 @@ const BATCH_LABEL: Record<BatchItemStatus, string> = {
 /** 轮询批任务：job 全终态(done)即停；refresh() 用于指派/重试/丢弃后恢复轮询。 */
 function useBatchJob(jobId: number | null) {
   const [job, setJob] = useState<BatchJob | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [rev, setRev] = useState(0);
   useEffect(() => {
+    setJob(null);
+    setError(null);
     if (jobId === null) return;
     let alive = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    let failures = 0;
     const poll = async () => {
       try {
-        const j = await batchJob(jobId);
+        const j = await batchJob(jobId, controller.signal);
         if (!alive) return;
         setJob(j);
-        if (j.status === "done" && timer) {
-          clearInterval(timer);
-          timer = null;
+        setError(null);
+        failures = 0;
+        if (j.status === "done") return;
+      } catch (e) {
+        if (!alive) return;
+        if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
+          setError(e.message);
+          return;
         }
-      } catch {
-        /* 轮询失败静默，下次重试 */
+        setError("暂时无法读取批量进度，正在重新连接…");
+        failures += 1;
       }
+      if (alive) timer = setTimeout(poll, Math.min(15000, 2500 * 2 ** Math.min(failures, 3)));
     };
-    poll();
-    timer = setInterval(poll, 2500);
-    return () => {
-      alive = false;
-      if (timer) clearInterval(timer);
-    };
+    void poll();
+    return () => { alive = false; clearTimeout(timer); controller.abort(); };
   }, [jobId, rev]);
   const refresh = useCallback(() => setRev((v) => v + 1), []);
-  return { job, refresh };
+  return { job, error, refresh };
 }
 
 function BatchCollect({
@@ -354,8 +373,13 @@ function BatchCollect({
   committed: boolean;
   onReloadMatrix: () => void;
 }) {
-  const [jobId, setJobId] = useState<number | null>(null);
-  const { job, refresh } = useBatchJob(jobId);
+  const [params, setParams] = useSearchParams();
+  const rawJobId = params.get("batch_job");
+  const jobId = rawJobId && /^\d+$/.test(rawJobId) && Number(rawJobId) > 0 ? Number(rawJobId) : null;
+  const setJobId = (id: number) => setParams((previous) => {
+    const next = new URLSearchParams(previous); next.set("batch_job", String(id)); return next;
+  }, { replace: true });
+  const { job, error: pollError, refresh } = useBatchJob(jobId);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [assignFor, setAssignFor] = useState<number | null>(null);
@@ -481,6 +505,8 @@ function BatchCollect({
         </div>
       )}
 
+      {(pollError || (rawJobId && jobId === null)) && <p role="alert" className="mb-3 text-sm text-danger">{pollError || "批量任务编号无效"}</p>}
+      {jobId !== null && <p className="mb-3 text-xs text-ink-faint">批量任务 #{jobId} · 刷新页面后会继续显示进度</p>}
       {job && (
         <>
           {/* 进度条（修 P1-6） */}
