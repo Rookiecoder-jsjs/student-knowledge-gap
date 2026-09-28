@@ -1,190 +1,118 @@
-import { TodayActions } from "../components/TodayActions";
-import { ArrowRight, ChartLineUp, ClipboardText, Exam, FileArrowUp, Student } from "@phosphor-icons/react";
+import { ArrowRight, FileArrowUp } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SectionTitle, Skeleton, StatTile } from "../components/ui";
-import { Reveal } from "../components/motion";
-import { TeachingProgressCard } from "../components/TeachingProgress";
-import { listClasses, listClassesOverview, classActionPlan, listExams, interventionSummaryOf } from "../lib/api";
+import { TodayActions } from "../components/TodayActions";
+import { Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from "../components/ui";
+import { classActionPlan, classDiagnosisSheet, interventionSummaryOf, listClasses, listExams } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
+import { roleFlags } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
-import type { ExamSummary } from "../lib/types";
 
-/** 由考试摘要推算下一动作（与 Exams 页一致）。 */
-function nextAction(e: ExamSummary): { label: string; to: string; tone: "warn" | "accent" } {
-  const committed = (e.response_counts["已提交"] ?? 0) > 0;
-  if (e.unreviewed_tags > 0) return { label: "去审核", to: "review", tone: "warn" };
-  if (!committed) return { label: "去采集", to: "collect", tone: "warn" };
-  return { label: "查看报告", to: "report", tone: "accent" };
-}
-
-/** 工作台：统计条 + 待办 + 最近考试（流水线下一动作）+ 教学进度。 */
+/** 工作台只回答当前状态、待办和最近进展；完整分析在班级诊断单。 */
 export default function Overview() {
   const { classId } = useParams();
   const cid = Number(classId);
-
+  const base = `/c/${cid}`;
+  const { session } = useAuth();
+  const assistantVisible = roleFlags(session).assistantVisible;
   const classes = useAsync(() => listClasses(), []);
-  const overview = useAsync(() => listClassesOverview(), []);
   const exams = useAsync(() => listExams(cid, { limit: 6 }), [cid]);
-  // 行动方向待确认数（intervention-loop-design §6：工作台只有链接卡 + 计数）
-  const actions = useAsync(
-    () => classActionPlan(cid),
-    [cid]
-  );
-
+  const diagnosis = useAsync(() => classDiagnosisSheet(cid), [cid]);
+  const actions = useAsync(() => classActionPlan(cid), [cid]);
   const effects = useAsync(() => interventionSummaryOf(cid), [cid]);
-
-  const clazz = classes.data?.classes.find((c) => c.class_id === cid);
-  const ov = overview.data?.classes.find((c) => c.class_id === cid);
-
-  const todo = (exams.data?.exams ?? []).filter(
-    (e) => e.unreviewed_tags > 0 || (e.response_counts["待审核"] ?? 0) > 0
-  );
-  const pct = ov && ov.progress.total > 0 ? Math.round((ov.progress.taught / ov.progress.total) * 100) : 0;
+  const clazz = classes.data?.classes.find((item) => item.class_id === cid);
+  const status = diagnosis.data?.status;
+  const firstWeak = status?.common_weak[0];
+  const latestExams = exams.data?.exams.slice(0, 3) ?? [];
 
   return (
     <Page accent={ACCENTS.dashboard}>
       <PageHeader
-        title={clazz?.name ?? "班级概览"}
-        desc={
-          clazz
-            ? `${clazz.grade} 年级 · ${clazz.subject} · ${clazz.student_count} 名学生`
-            : undefined
-        }
+        title={clazz?.name ?? "班级工作台"}
+        desc={clazz ? `${clazz.grade} 年级 · ${clazz.subject} · ${clazz.student_count} 名学生` : undefined}
         actions={
-          <Link
-            to={`/c/${cid}/exams/new`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-soft transition-[background-color,box-shadow,transform] hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]"
-          >
-            <FileArrowUp size={15} />
-            录入新考试
+          <Link to={`${base}/exams/new`} className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-white shadow-soft transition-[background-color,box-shadow,transform] hover:bg-accent-deep hover:shadow-lift active:scale-[0.98]">
+            <FileArrowUp size={15} aria-hidden />录入新考试
           </Link>
         }
       />
 
-      {(actions.loading || exams.loading) && <Skeleton rows={2} />}
-      {actions.data && exams.data && <TodayActions classId={cid} exams={exams.data.exams} plan={actions.data} summary={effects.data} />}
-      {effects.error && <ErrorState message="复测效果暂时无法读取" onRetry={effects.reload} />}
+      <section className="mb-7" aria-labelledby="class-status-title">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 id="class-status-title" className="text-lg font-bold text-ink">班级当前状态</h2>
+          {status?.data_as_of && <span className="text-xs text-ink-faint">数据截至 {status.data_as_of}</span>}
+        </div>
+        {diagnosis.loading && <Skeleton rows={2} />}
+        {diagnosis.error && <ErrorState message={diagnosis.error} onRetry={diagnosis.reload} />}
+        {status && (
+          <Card className="flex flex-wrap items-center justify-between gap-5 px-5 py-5 sm:px-6">
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-semibold leading-relaxed text-ink">
+                {status.exam_count === 0
+                  ? "还没有可用于班级诊断的考试数据。"
+                  : status.weak_kp_total === 0
+                    ? "当前诊断没有识别到需要重点关注的共性薄弱点。"
+                    : `当前识别到 ${status.weak_kp_total} 个薄弱点${firstWeak ? `，可先查看${firstWeak.kp}` : "，可进入诊断单查看"}。`}
+              </p>
+              <p className="mt-2 text-xs text-ink-soft">
+                {status.exam_count > 0
+                  ? `基于已纳入诊断的 ${status.exam_count} 场考试 · 具体判断和依据由教师在诊断单中核对`
+                  : "录入并提交考试后，可在这里查看班级诊断。"}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2">
+              <Link to={`${base}/exams?tab=diagnosis`} className="inline-flex items-center gap-1 text-sm font-semibold text-accent-deep underline underline-offset-4 hover:text-accent">
+                查看班级诊断<ArrowRight size={15} aria-hidden />
+              </Link>
+              {assistantVisible && <Link to="/assistant" className="inline-flex items-center gap-1 text-sm font-semibold text-accent-deep underline underline-offset-4 hover:text-accent">追问 AI 教研员<ArrowRight size={15} aria-hidden /></Link>}
+            </div>
+          </Card>
+        )}
+      </section>
 
-      {/* 统计条 */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile value={ov?.exam_count ?? 0} label="考试" icon={<Exam size={20} weight="fill" />} />
-        <StatTile value={ov?.todo_count ?? 0} label="待办" tone={(ov?.todo_count ?? 0) > 0 ? "warn" : "neutral"} icon={<ClipboardText size={20} weight="fill" />} />
-        <StatTile value={`${pct}%`} label="教学进度" hint={ov ? `${ov.progress.taught}/${ov.progress.total}` : undefined} tone="accent" icon={<ChartLineUp size={20} weight="fill" />} />
-        <StatTile value={clazz?.student_count ?? 0} label="学生" icon={<Student size={20} weight="fill" />} />
+      <div className="mb-7">
+        {(actions.loading || exams.loading) && <Skeleton rows={3} />}
+        {exams.error && <ErrorState message={exams.error} onRetry={exams.reload} />}
+        {actions.error && <ErrorState message={actions.error} onRetry={actions.reload} />}
+        {actions.data && exams.data && <TodayActions classId={cid} exams={exams.data.exams} plan={actions.data} />}
       </div>
 
-      {classes.error && <ErrorState message={classes.error} onRetry={classes.reload} />}
-
-      <Reveal className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-        <section>
-          <SectionTitle
-            count={exams.data?.exams.length ?? 0}
-            right={
-              <Link to={`/c/${cid}/exams`} className="text-xs font-medium text-accent hover:text-accent-deep">
-                全部 →
-              </Link>
-            }
-          >
-            最近考试
-          </SectionTitle>
-          {exams.loading && <Skeleton rows={3} />}
-          {exams.error && <ErrorState message={exams.error} onRetry={exams.reload} />}
-          {exams.data && exams.data.exams.length === 0 && (
-            <Card>
-              <EmptyState
-                title="还没有考试"
-                hint="录入第一场考试（拍照或 Excel），提交后即可生成班级质量分析。冷启动建议先补录 2~3 次历史考试。"
-              />
-            </Card>
-          )}
-          {exams.data && exams.data.exams.length > 0 && (
-            <Card className="divide-y divide-line">
-              {exams.data.exams.map((e) => {
-                const next = nextAction(e);
-                return (
-                  <Link
-                    key={e.exam_id}
-                    to={`/c/${cid}/exams/${e.exam_id}/${next.to}`}
-                    className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-surface-2/50"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{e.name}</p>
-                      <p className="mt-0.5 text-xs text-ink-faint tabular-nums">
-                        {e.exam_date} · {e.type} · {e.question_count} 题 ·{" "}
-                        {e.response_counts["已提交"] ?? 0} 人已提交
-                      </p>
-                    </div>
-                    <Badge tone={next.tone}>{next.label}</Badge>
-                    <ArrowRight size={15} className="text-ink-faint" />
-                  </Link>
-                );
-              })}
-            </Card>
-          )}
-        </section>
-
-        <section className="space-y-5">
-          <div>
-            <SectionTitle count={todo.length}>待办</SectionTitle>
-            <Card className="p-4">
-              {exams.loading ? (
-                <Skeleton rows={2} />
-              ) : todo.length === 0 ? (
-                <p className="text-sm text-ink-faint">没有待处理事项。</p>
-              ) : (
-                <ul className="space-y-2.5">
-                  {todo.map((e) => (
-                    <li key={e.exam_id} className="flex items-center gap-2 text-sm">
-                      <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-warn" aria-hidden />
-                      <Link
-                        to={`/c/${cid}/exams/${e.exam_id}/${e.unreviewed_tags > 0 ? "review" : "collect"}`}
-                        className="truncate transition-colors hover:text-accent"
-                      >
-                        {e.name}：{e.unreviewed_tags > 0 ? "审核标注" : "核对把握低的得分"}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
-
-          {/* 班级诊断单入口卡（diagnosis-sheet-redesign F5）：工作台不再渲染行动列表，
-              全量行动只在班级诊断单一处出现；角标 = 待确认行动数。 */}
-          <div>
-            <SectionTitle>班级状态</SectionTitle>
-            {actions.error && (
-              <p className="mb-2 text-xs text-danger" role="alert">
-                班级行动摘要加载失败 ·{" "}
-                <button className="font-medium underline transition-colors hover:text-accent hover:no-underline active:opacity-70" onClick={actions.reload}>
-                  重试
-                </button>
-              </p>
-            )}
-            <Link to={`/c/${cid}/exams?tab=diagnosis`} className="block">
-              <Card interactive className="flex items-center gap-3 p-4">
+      <section aria-labelledby="recent-title">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 id="recent-title" className="text-lg font-bold text-ink">最近进展</h2>
+          <Link to={`${base}/exams`} className="text-xs font-medium text-accent-deep hover:text-accent">全部考试 →</Link>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+          <Card className="divide-y divide-line">
+            {exams.loading && <div className="p-5"><Skeleton rows={2} /></div>}
+            {exams.data && latestExams.length === 0 && <EmptyState title="还没有考试" hint="录入第一场考试后，可在这里回看考试进展。" />}
+            {latestExams.map((exam) => (
+              <Link key={exam.exam_id} to={`${base}/exams/${exam.exam_id}`} className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-surface-2/50">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">查看班级诊断单</p>
-                  <p className="mt-0.5 text-xs text-ink-faint">
-                    {(actions.data?.pending_confirm ?? 0) > 0
-                      ? `${actions.data?.pending_confirm} 条行动建议待确认 · 改进意见 · 存档`
-                      : "班级现状 · 行动明细 · 改进意见 · 往期报告存档"}
-                  </p>
+                  <p className="truncate text-sm font-semibold text-ink">{exam.name}</p>
+                  <p className="mt-1 text-xs text-ink-faint">{exam.exam_date} · 已提交 {exam.response_counts["已提交"] ?? 0} 份作答</p>
                 </div>
-                {(actions.data?.pending_confirm ?? 0) > 0 && (
-                  <Badge tone="warn">{actions.data?.pending_confirm}</Badge>
-                )}
-                <ArrowRight size={15} className="text-ink-faint" />
-              </Card>
-            </Link>
-          </div>
-
-          <div>
-            <SectionTitle>教学进度</SectionTitle>
-            <TeachingProgressCard classId={cid} />
-          </div>
-        </section>
-      </Reveal>
+                <ArrowRight size={15} className="shrink-0 text-ink-faint" aria-hidden />
+              </Link>
+            ))}
+          </Card>
+          <Card className="p-5">
+            <p className="text-sm font-semibold text-ink">教学行动复测</p>
+            {effects.loading && <div className="mt-4"><Skeleton rows={2} /></div>}
+            {effects.error && <div className="mt-3"><ErrorState message={effects.error} onRetry={effects.reload} /></div>}
+            {effects.data && (
+              <>
+                {effects.data.evaluable_count > 0
+                  ? <p className="mt-4 text-2xl font-bold tabular-nums text-ink">{effects.data.effects.improved}<span className="ml-2 text-sm font-normal text-ink-soft">/ {effects.data.evaluable_count} 项可评估行动显示改善</span></p>
+                  : <p className="mt-4 text-sm text-ink-soft">目前还没有可评估的复测结果。</p>}
+                <p className="mt-2 text-xs text-ink-faint">另有 {effects.data.effects.awaiting_retest} 项等待后续考试检验</p>
+                <Link to={`${base}/exams?tab=diagnosis`} className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-accent-deep underline underline-offset-4 hover:text-accent">查看行动记录<ArrowRight size={15} aria-hidden /></Link>
+              </>
+            )}
+          </Card>
+        </div>
+      </section>
+      {classes.error && <div className="mt-5"><ErrorState message={classes.error} onRetry={classes.reload} /></div>}
     </Page>
   );
 }
