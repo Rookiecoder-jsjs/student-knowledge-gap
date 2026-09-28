@@ -12,7 +12,8 @@ const photo = "e2e/fixtures/paper.png";
 test("role login, logout and student route boundary", async ({ page }) => {
   await login(page);
   await page.goto("/c/1");
-  await expect(page.getByRole("region", { name: "优先处理" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "现在要处理" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "追问 AI 教研员" })).toBeVisible();
   await page.getByRole("button", { name: "退出登录" }).click();
   await login(page, "student");
   await page.goto("/admin/accounts");
@@ -77,7 +78,7 @@ test("light/dark, mobile layout, graph and modal smoke screenshots", async ({ pa
     for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await page.goto("/c/1");
-      await expect(page.getByRole("region", { name: "优先处理" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "现在要处理" })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
       await page.screenshot({ path: testInfo.outputPath(`overview-${width}-${theme}.png`), fullPage: true });
     }
