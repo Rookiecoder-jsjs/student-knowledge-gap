@@ -2,7 +2,7 @@ import { ArrowRight, FileArrowUp } from "@phosphor-icons/react";
 import { Link, useParams } from "react-router-dom";
 import { TodayActions } from "../components/TodayActions";
 import { Card, EmptyState, ErrorState, Page, PageHeader, Skeleton } from "../components/ui";
-import { classActionPlan, classDiagnosisSheet, interventionSummaryOf, listClasses, listExams } from "../lib/api";
+import { classDiagnosisSheet, interventionSummaryOf, listClasses, listExams } from "../lib/api";
 import { useAuth } from "../lib/AuthContext";
 import { useAsync } from "../lib/hooks";
 import { roleFlags } from "../lib/portal";
@@ -18,7 +18,6 @@ export default function Overview() {
   const classes = useAsync(() => listClasses(), []);
   const exams = useAsync(() => listExams(cid, { limit: 6 }), [cid]);
   const diagnosis = useAsync(() => classDiagnosisSheet(cid), [cid]);
-  const actions = useAsync(() => classActionPlan(cid), [cid]);
   const effects = useAsync(() => interventionSummaryOf(cid), [cid]);
   const clazz = classes.data?.classes.find((item) => item.class_id === cid);
   const status = diagnosis.data?.status;
@@ -71,10 +70,7 @@ export default function Overview() {
       </section>
 
       <div className="mb-7">
-        {(actions.loading || exams.loading) && <Skeleton rows={3} />}
-        {exams.error && <ErrorState message={exams.error} onRetry={exams.reload} />}
-        {actions.error && <ErrorState message={actions.error} onRetry={actions.reload} />}
-        {actions.data && exams.data && <TodayActions classId={cid} exams={exams.data.exams} plan={actions.data} />}
+        <TodayActions classId={cid} />
       </div>
 
       <section aria-labelledby="recent-title">
@@ -85,6 +81,7 @@ export default function Overview() {
         <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
           <Card className="divide-y divide-line">
             {exams.loading && <div className="p-5"><Skeleton rows={2} /></div>}
+            {exams.error && <div className="p-5"><ErrorState message={exams.error} onRetry={exams.reload} /></div>}
             {exams.data && latestExams.length === 0 && <EmptyState title="还没有考试" hint="录入第一场考试后，可在这里回看考试进展。" />}
             {latestExams.map((exam) => (
               <Link key={exam.exam_id} to={`${base}/exams/${exam.exam_id}`} className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-surface-2/50">

@@ -161,6 +161,12 @@ def test_stage_b_and_review_flow(client):
 
     # 教师落闸 approve，然后走既有提交状态机 → 证据事件
     assert client.post(f"/exams/{exam_id}/approve-tags").json()["approved"] == 2
+    # 标注审核不等于得分审核：强制人工的低置信得分必须先逐条确认。
+    assert client.post(f"/exams/{exam_id}/commit").status_code == 400
+    for answer in queue["low_confidence_answers"]:
+        assert client.patch(
+            f"/response-answers/{answer['answer_id']}", json={"score": answer["score"]}
+        ).status_code == 200
     commit = client.post(f"/exams/{exam_id}/commit").json()
     assert commit["committed_responses"] == 1
     # 题3 标注被闭集校验拦截（无有效知识点）→ 未标注题不进分析，只派生 2 条

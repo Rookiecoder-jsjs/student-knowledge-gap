@@ -35,7 +35,7 @@ def _exam_filters(
     return filters
 
 
-def _aggregate_exam_rows(session: Session, exams: list[ExamTemplate]) -> list[dict]:
+def aggregate_exam_rows(session: Session, exams: list[ExamTemplate]) -> list[dict]:
     exam_ids = [t.id for t in exams]
     if not exam_ids:
         return []
@@ -103,7 +103,7 @@ def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
     stmt = select(ExamTemplate).where(*_exam_filters(class_id)).order_by(
         ExamTemplate.exam_date.desc(), ExamTemplate.id
     )
-    return _aggregate_exam_rows(session, list(session.scalars(stmt)))
+    return aggregate_exam_rows(session, list(session.scalars(stmt)))
 
 
 def exams_page(
@@ -128,7 +128,7 @@ def exams_page(
         .offset(offset)
         .limit(limit)
     )
-    return _aggregate_exam_rows(session, list(session.scalars(stmt))), total
+    return aggregate_exam_rows(session, list(session.scalars(stmt))), total
 
 
 def exam_detail(session: Session, exam_id: int) -> dict | None:

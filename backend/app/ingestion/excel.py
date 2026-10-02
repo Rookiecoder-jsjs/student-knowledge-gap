@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +55,7 @@ def import_excel(
     name_col = _find_name_column(header)
     total_col = _find_total_column(header)
     q_cols = _map_question_columns(session, template, header, result)
+    header_warnings = list(result.warnings)
 
     students = {
         s.name_or_alias: s
@@ -83,13 +85,16 @@ def import_excel(
             continue
 
         existing = session.scalar(
-            select(ExamResponse.id).where(
+            select(ExamResponse).where(
                 ExamResponse.exam_template_id == template.id,
                 ExamResponse.student_id == student.id,
             )
         )
         if existing is not None:
-            result.warnings.append(f"第{r_idx}行:{raw_name} 已有作答记录，跳过")
+            warning = f"第{r_idx}行:{raw_name} 已有作答记录，疑似重复行，已跳过"
+            result.warnings.append(warning)
+            if existing.status == "待审核":
+                existing.source_warnings_json = [*(existing.source_warnings_json or []), warning]
             continue
 
         response = ExamResponse(
@@ -102,7 +107,9 @@ def import_excel(
         session.flush()
 
         computed_total = 0.0
+        warning_start = len(result.warnings)
         for tq, col in q_cols.items():
+            score_warning_start = len(result.warnings)
             raw = row[col] if col < len(row) else None
             if raw is None or str(raw).strip() == "":
                 result.warnings.append(
@@ -117,6 +124,7 @@ def import_excel(
                     exam_response_id=response.id,
                     template_question_id=tq.id,
                     score=score,
+                    parse_confidence=0.0 if len(result.warnings) > score_warning_start else 1.0,
                 )
             )
 
@@ -124,6 +132,9 @@ def import_excel(
         if total_col is not None and total_col < len(row) and row[total_col] is not None:
             try:
                 declared_total = float(row[total_col])
+                if not math.isfinite(declared_total):
+                    result.warnings.append(f"第{r_idx}行:{raw_name} 原始总分不是有限数值，请核对")
+                    declared_total = None
             except (TypeError, ValueError):
                 result.warnings.append(f"第{r_idx}行:{raw_name} 总分列无法解析")
         if declared_total is not None and abs(declared_total - computed_total) > 0.01:
@@ -132,6 +143,7 @@ def import_excel(
                 f"{computed_total} 不一致，以求和为准"
             )
         response.total_score = round(computed_total, 2)
+        response.source_warnings_json = [*header_warnings, *result.warnings[warning_start:]] or None
         result.imported += 1
 
     session.flush()
@@ -170,8 +182,11 @@ def _map_question_columns(
         if not m:
             continue
         idx = int(m.group(1))
-        if idx in questions and questions[idx] not in mapping:
-            mapping[questions[idx]] = i
+        if idx in questions:
+            if questions[idx] in mapping:
+                result.warnings.append(f"第 {idx} 题有重复得分列，已采用第一列，请核对")
+            else:
+                mapping[questions[idx]] = i
     missing = [idx for idx in questions if questions[idx] not in mapping]
     if missing:
         result.warnings.append(f"模板题目 {sorted(missing)} 在 Excel 表头中无对应列")
@@ -187,6 +202,9 @@ def _parse_score(
         result.warnings.append(
             f"{student_name} 第{q_idx}题分数无法解析：{raw!r}，按 0 分处理"
         )
+        return 0.0
+    if not math.isfinite(score):
+        result.warnings.append(f"{student_name} 第{q_idx}题不是有限数值，按 0 分处理，需人工确认")
         return 0.0
     if score < 0 or score > full_score:
         result.warnings.append(

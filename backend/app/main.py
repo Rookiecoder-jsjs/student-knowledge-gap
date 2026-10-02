@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, jobs, kb, me, org, reports
+from app.api.routers import admin, analysis, auth as auth_router, ingestion, intervention, jobs, kb, me, org, reports, tasks
 from app import mcp_http  # /mcp 挂载 + 逐请求教师鉴权（装车批第 5 批）
 from app.db import init_db
 from app.observability import setup_logging
@@ -468,6 +468,7 @@ app.include_router(intervention.router)
 app.include_router(reports.router)
 app.include_router(admin.router)
 app.include_router(jobs.router)
+app.include_router(tasks.router)
 
 # sc MCP streamable-http 端点（绝对路径 /mcp；并入 router——Mount 会剥前缀致 404）
 app.router.routes.append(mcp_http.mcp_route)

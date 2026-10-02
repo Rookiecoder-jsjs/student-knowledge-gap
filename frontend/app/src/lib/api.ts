@@ -3,6 +3,9 @@ import type { components } from "./generated/jobs";
 
 import type {
   ActionPlanView,
+  DiagnosisEvidence,
+  ExamPreflight,
+  TeachingCard,
   AttributionView,
   BatchJob,
   BatchJobSummary,
@@ -461,6 +464,33 @@ export const examDetail = (examId: number) => request<ExamDetail>(`/exams/${exam
 
 export const examResponses = (examId: number) =>
   request<ResponsesMatrix>(`/exams/${examId}/responses`);
+
+export const examPreflight = (examId: number) =>
+  request<ExamPreflight>(`/exams/${examId}/preflight`);
+
+export const correctPreflightScore = (examId: number, responseId: number, questionIdx: number, score: number) =>
+  request<{ answer_id: number; total_score: number }>(
+    `/exams/${examId}/responses/${responseId}/scores/${questionIdx}`, { ...json({ score }), method: "PUT" }
+  );
+
+export const diagnosisEvidence = (studentId: number, kpId: number, asOf?: string, offset = 0) => {
+  const params = new URLSearchParams({ offset: String(offset), limit: "10" });
+  if (asOf) params.set("as_of", asOf);
+  return request<DiagnosisEvidence>(`/students/${studentId}/knowledge-points/${kpId}/evidence?${params}`);
+};
+
+export const teachingCard = (id: number) => request<TeachingCard>(`/interventions/${id}/teaching-card`);
+
+export const retestSchedule = (classId: number, offset = 0) =>
+  request<{ total: number; has_more: boolean; items: InterventionRow[] }>(
+    `/classes/${classId}/retest-schedule?offset=${offset}&limit=20`
+  );
+
+export const rescheduleRetest = (id: number, due: string, withGroup = false) =>
+  request<{ id: number; retest_due_date: string }>(
+    `/interventions/${id}/retest-schedule${withGroup ? "?with_group=true" : ""}`,
+    { ...json({ retest_due_date: due }), method: "PATCH" }
+  );
 
 // ---- 考试录入 ---------------------------------------------------------------
 
@@ -964,10 +994,10 @@ export async function listAllInterventions(classId: number): Promise<Interventio
 
 /** withGroup：小组代表行批量落事实（同 group_ref 各行各自确认，操作层一次）。
  * note：确认注记——班级行「派发AI学习方案」用它落系统语义。 */
-export const confirmIntervention = (id: number, withGroup = false, note?: string) =>
-  request<{ id: number; status: string; done_at: string; confirmed?: number }>(
+export const confirmIntervention = (id: number, withGroup = false, note?: string, retestDueDate?: string) =>
+  request<{ id: number; status: string; done_at: string; confirmed?: number; retest_due_date: string }>(
     `/interventions/${id}/confirm${withGroup ? "?with_group=true" : ""}`,
-    json({ note: note ?? null })
+    json({ note: note ?? null, retest_due_date: retestDueDate ?? null })
   );
 
 export const skipIntervention = (id: number, withGroup = false, note?: string) =>
@@ -989,3 +1019,41 @@ export const interventionStudentSummary = (classId: number) =>
 
 // 定向复测（progress-loop-design P2）已于 2026-09-11 软退役：retestBlueprint /
 // linkRetest 端点与建卷入口移除，验证语义由软闭合+自然考试被动验证接管。
+
+export interface TodayTask {
+  id: string; kind: "scores" | "tags" | "report" | "action" | "retest";
+  title: string; reason: string; to: string; priority: number; due_date: string | null;
+}
+export const teacherTodayTasks = (classId: number, offset = 0) => request<{
+  as_of: string; total: number; counts: Record<TodayTask["kind"], number>;
+  items: TodayTask[]; has_more: boolean;
+}>(`/classes/${classId}/today-tasks?offset=${offset}&limit=10`);
+
+export interface EvidenceGap {
+  kp_id: number; kp_name: string; kp_code: string; evidence_count: number; questions_needed: number;
+}
+export const studentEvidenceGaps = (studentId: number) => request<{
+  student_id: number; as_of: string; items: EvidenceGap[];
+}>(`/students/${studentId}/evidence-gaps`);
+export interface DiagnosticBlueprint {
+  student_id: number; kp_id: number; kp_name: string; mode: "evidence" | "attribution";
+  attribution_id: number | null; preview_token: string; ready: boolean; guidance: string; limitation: string;
+  slots: { kp_id: number; kp_name: string; purpose: string; question: null | {
+    id: number; stem: string; full_score: number; cog_level: string;
+    exam_id: number; exam_name: string; question_idx: number;
+  } }[];
+}
+export const diagnosticBlueprint = (sid: number, kpId: number, mode: DiagnosticBlueprint["mode"], attributionId?: number) =>
+  request<DiagnosticBlueprint>(`/students/${sid}/diagnostic-blueprint?kp_id=${kpId}&mode=${mode}${attributionId ? `&attribution_id=${attributionId}` : ""}`);
+export const createDiagnosticExam = (plan: DiagnosticBlueprint, examDate: string) => request<{ exam_id: number; class_id: number }>(
+  `/students/${plan.student_id}/diagnostic-exams`, json({ kp_id: plan.kp_id, mode: plan.mode, attribution_id: plan.attribution_id,
+    preview_token: plan.preview_token, question_ids: plan.slots.flatMap(s => s.question ? [s.question.id] : []), exam_date: examDate }));
+
+export interface NextTask {
+  kp_code: string; kp_name: string; status: "study" | "awaiting_retest"; loop_state: string | null;
+  reason: string; minutes: number; steps: string[]; completion: string;
+  retest_due_date: string | null; has_plan: boolean; self_marked: boolean;
+}
+export interface NextTasksView { student_id: number; as_of: string; items: NextTask[]; remaining: number }
+export const meNextTasks = () => request<NextTasksView>("/me/next-tasks");
+export const portalNextTasks = (sid: number) => request<NextTasksView>(`/admin/students/${sid}/portal/next-tasks`);

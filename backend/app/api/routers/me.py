@@ -538,3 +538,19 @@ def preview_study_plan(
     return _study_plan_payload(
         db, s, kp_code, _as_dt(None), allow_generate=False
     )
+
+
+@router.get("/me/next-tasks")
+def me_next_tasks(ctx=Depends(require_student), db: Session = Depends(get_db)):
+    return _next_tasks_payload(db, _self(ctx))
+
+
+@router.get("/admin/students/{student_id}/portal/next-tasks")
+def preview_next_tasks(s: Student = Depends(_preview_student), db: Session = Depends(get_db)):
+    return _next_tasks_payload(db, s)
+
+
+def _next_tasks_payload(db, s):
+    from app.next_tasks import next_tasks
+    kb = _active_kb(db, s.clazz.subject, s.clazz.grade)
+    return next_tasks(db, _graph(db, kb.id), s)

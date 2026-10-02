@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { AccountCluster, TopBar, TopBarNav } from "../components/TopBar";
+import { StudentNextTasks } from "../components/StudentNextTasks";
 import { LoopStateChip } from "../components/ActionPlan";
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "../components/ui";
 import { ReportMarkdown } from "../components/Markdown";
@@ -222,6 +223,7 @@ function WeakTab({ source }: { source: PortalSource }) {
   );
   return (
     <div className="space-y-3">
+      <StudentNextTasks previewStudentId={source.kind === "preview" ? source.studentId : undefined} studyBase={studyBase(source)} />
       <SectionTitle>可能薄弱的环节</SectionTitle>
       {loading && <Skeleton rows={4} />}
       {error && <ErrorState message={error} onRetry={reload} />}

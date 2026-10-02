@@ -289,6 +289,8 @@ class ExamResponse(Base):
     total_score: Mapped[float] = mapped_column(Float, default=0.0)
     source: Mapped[str] = mapped_column(String(20), default="excel")  # excel|manual|photo
     status: Mapped[str] = mapped_column(String(20), default="待审核")
+    # 保留 Excel 原始质量提醒，提交前仍可核对，避免导入页关闭后丢失。
+    source_warnings_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # 状态机：上传 → 解析中 → 待审核 → 已提交（分析层只读「已提交」）
 
     template: Mapped[ExamTemplate] = relationship(back_populates="responses")
@@ -420,6 +422,8 @@ class Intervention(Base):
     # 不再有新写入，验证语义由软闭合+自然考试接管）：INTEGER 不加 FK（增量列纪律，
     # SQLite ALTER 不补 FK；create_all 新库同形）。
     retest_exam_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 确认干预后自动排期；完成状态由后续已提交证据推导。
+    retest_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     kind: Mapped[str] = mapped_column(String(24))   # 封闭集合，labels_source 真源
     scope: Mapped[str] = mapped_column(String(12))  # class | group | student
     # 同组共享（如 "r{report_id}:{root_kp_id}"）；班级行为 NULL

@@ -14,21 +14,23 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
-from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
+from app.api.deps import _active_kb, _graph, get_db, guard_class, guard_exam, require_teacher
 from app.intervention import (
     SCOPE_GROUP,
     action_plan_view,
     intervention_effect,
     intervention_summary,
 )
-from app.models import Class, Intervention, KnowledgePoint, Student
+from app.models import Class, ExamTemplate, Intervention, KnowledgePoint, Student
 from app.pipeline.progress import loop_states_for_student, row_loop_state
+from app.retest import default_retest_date, retest_progress, validate_retest_date
+from app.teaching_actions import teaching_card
 
 router = APIRouter()
 
@@ -37,6 +39,11 @@ class InterventionActionRequest(BaseModel):
     """一键确认/跳过请求体（全部可选——一键摩擦下限）。"""
 
     note: str | None = Field(default=None, max_length=500)
+    retest_due_date: date | None = None
+
+
+class RetestScheduleRequest(BaseModel):
+    retest_due_date: date
 
 
 def _student_or_404(db: Session, student_id: int) -> Student:
@@ -44,6 +51,14 @@ def _student_or_404(db: Session, student_id: int) -> Student:
     if stu is None:
         raise HTTPException(404, "学生不存在")
     return stu
+
+
+def _guard_intervention(db: Session, ctx, iv: Intervention) -> None:
+    guard_class(iv.class_id, db, ctx)
+    exam = db.get(ExamTemplate, iv.exam_id)
+    if exam is None:
+        raise HTTPException(404, "干预来源考试不存在")
+    guard_exam(exam, db, ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +301,7 @@ def _row_view(
         "baseline_as_of": str(r.baseline_as_of.date()),
         "suggested_at": r.suggested_at.isoformat() if r.suggested_at else None,
         "done_at": r.done_at.isoformat() if r.done_at else None,
+        **retest_progress(db, r),
     }
 
 
@@ -305,7 +321,7 @@ def confirm_intervention(
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
-    guard_class(iv.class_id, db, ctx)
+    _guard_intervention(db, ctx, iv)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再确认")
     targets = [iv]
@@ -320,10 +336,16 @@ def confirm_intervention(
             )
         )
     now = datetime.now()
+    due = req.retest_due_date if req and req.retest_due_date else default_retest_date(now)
+    try:
+        validate_retest_date(due, now.date())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     note = (req.note if req else None) or None
     for t in targets:
         t.status = "done"
         t.done_at = now
+        t.retest_due_date = due
         if note:
             t.note = note
     db.commit()
@@ -332,7 +354,71 @@ def confirm_intervention(
         "status": iv.status,
         "done_at": now.isoformat(),
         "confirmed": len(targets),
+        "retest_due_date": due.isoformat(),
     }
+
+
+@router.get("/interventions/{intervention_id}/teaching-card")
+def get_teaching_card(
+    intervention_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db),
+):
+    iv = db.get(Intervention, intervention_id)
+    if iv is None:
+        raise HTTPException(404, "干预记录不存在")
+    _guard_intervention(db, ctx, iv)
+    try:
+        return teaching_card(db, iv)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.patch("/interventions/{intervention_id}/retest-schedule")
+def reschedule_retest(
+    intervention_id: int, req: RetestScheduleRequest, with_group: bool = False,
+    ctx=Depends(require_teacher), db: Session = Depends(get_db),
+):
+    iv = db.get(Intervention, intervention_id)
+    if iv is None:
+        raise HTTPException(404, "干预记录不存在")
+    _guard_intervention(db, ctx, iv)
+    if iv.status != "done":
+        raise HTTPException(400, "只有已执行干预可以安排复测")
+    try:
+        validate_retest_date(req.retest_due_date, date.today())
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    targets = [iv]
+    if with_group and iv.scope == SCOPE_GROUP and iv.group_ref:
+        targets = list(db.scalars(select(Intervention).where(
+            Intervention.class_id == iv.class_id, Intervention.group_ref == iv.group_ref,
+            Intervention.status == "done",
+        )))
+    for target in targets:
+        target.retest_due_date = req.retest_due_date
+    return {"id": iv.id, "retest_due_date": req.retest_due_date.isoformat(), "updated": len(targets)}
+
+
+@router.get("/classes/{class_id}/retest-schedule")
+def class_retest_schedule(
+    class_id: int, offset: int = Query(default=0, ge=0), limit: int = Query(default=20, ge=1, le=100),
+    ctx=Depends(require_teacher), db: Session = Depends(get_db),
+):
+    clazz = db.get(Class, class_id)
+    if clazz is None:
+        raise HTTPException(404, "班级不存在")
+    guard_class(class_id, db, ctx)
+    # 与班级诊断单同学科范围，避免科任教师混入其他学科的复测计划。
+    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
+    conds = (Intervention.class_id == class_id, Intervention.status == "done",
+             Intervention.retest_due_date.is_not(None),
+             Intervention.kp_id.in_(select(KnowledgePoint.id).where(KnowledgePoint.kb_version_id == kb.id)))
+    total = db.scalar(select(func.count(Intervention.id)).where(*conds)) or 0
+    rows = db.scalars(select(Intervention).where(*conds)
+                      .order_by(Intervention.retest_due_date, Intervention.id).offset(offset).limit(limit))
+    return {"class_id": class_id, "total": total, "offset": offset, "limit": limit,
+            "has_more": offset + limit < total, "items": [_row_view(db, row) for row in rows]}
 
 
 @router.post("/interventions/{intervention_id}/skip")

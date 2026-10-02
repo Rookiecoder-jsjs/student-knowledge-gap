@@ -79,6 +79,13 @@ def get_events_batch(
     return out
 
 
+def effective_weight(ev: EvidenceEvent, as_of: datetime) -> float:
+    """同一衰减公式供计算与教师证据展示使用。"""
+    delta_days = max(0.0, (as_of - ev.occurred_at).total_seconds() / 86400.0)
+    half_life = HALF_LIFE_DAYS.get(ev.source_type, 60.0)
+    return ev.weight * math.pow(2.0, -delta_days / half_life)
+
+
 def mastery_of_events(
     events: list[EvidenceEvent],
     as_of: datetime,
@@ -95,10 +102,7 @@ def mastery_of_events(
         return None
     num = den = 0.0
     for ev in events:
-        delta_days = max(0.0, (as_of - ev.occurred_at).total_seconds() / 86400.0)
-        half_life = HALF_LIFE_DAYS.get(ev.source_type, 60.0)
-        decay = math.pow(2.0, -delta_days / half_life)
-        w = ev.weight * decay
+        w = effective_weight(ev, as_of)
         num += ev.value * w
         den += w
     likelihood = num / den if den > 0 else None

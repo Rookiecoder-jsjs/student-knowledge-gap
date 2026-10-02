@@ -1,6 +1,7 @@
 import { ArrowRight, Plus } from "@phosphor-icons/react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { RetestSchedule } from "../components/RetestSchedule";
 import {
   ActionPlanPanel,
   InterventionSummaryStrip,
@@ -390,6 +391,7 @@ function ClassDiagnosisTab({ cid }: { cid: number }) {
 
       {/* 区块四：闭环条（采纳率 · 干预提升率 · 待验证）——定向复测入口已随复测小卷软退役移除 */}
       <InterventionSummaryStrip summary={s.intervention_summary} />
+      <RetestSchedule classId={cid} revision={s} />
 
       {/* 区块五：往期考试报告存档 */}
       {s.past_exams.length > 0 && (

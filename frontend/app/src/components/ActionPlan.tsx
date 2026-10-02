@@ -12,6 +12,7 @@ import {
 } from "../lib/labels";
 import type { InterventionRow, InterventionSummary } from "../lib/types";
 import { Badge, Button, EmptyState } from "./ui";
+import { TeachingActionCard } from "./TeachingActionCard";
 
 /**
  * 干预闭环共享组件（intervention-loop-design §6 视觉规格，三张单架构收敛后
@@ -84,6 +85,7 @@ export function ActionPlanPanel({
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cardRow, setCardRow] = useState<InterventionRow | null>(null);
 
   const act = async (
     row: InterventionRow,
@@ -136,7 +138,9 @@ export function ActionPlanPanel({
               {row.note ? `　·　${row.note}` : ""}
               {row.done_at ? `　·　执行于 ${row.done_at.slice(0, 10)}` : ""}
             </p>
+            {row.retest_due_date && <p className="mt-1 text-xs text-ink-faint">复测安排：{row.retest_due_date}{row.retest_status === "verified" ? " · 已有复测证据" : row.retest_status === "overdue" ? " · 已到期，待复测" : " · 待复测"}</p>}
           </div>
+          {row.status !== "skipped" && <Button variant="ghost" aria-label={`查看「${row.kp_name}」的十五分钟行动卡`} onClick={() => setCardRow(row)} className="text-xs">十五分钟行动卡</Button>}
           {row.status === "suggested" && (
             <div className="flex shrink-0 flex-wrap items-center gap-1.5">
               <Button
@@ -174,6 +178,7 @@ export function ActionPlanPanel({
           )}
         </div>
       ))}
+      {cardRow && <TeachingActionCard key={cardRow.id} row={cardRow} onClose={() => setCardRow(null)} onChanged={onChanged} />}
     </div>
   );
 }

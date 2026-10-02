@@ -8,6 +8,8 @@ import {
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Page, PageHeader, Pagination, SectionTitle, Skeleton } from "../components/ui";
 import { StaggerItem, StaggerList } from "../components/motion";
 import { ReportMarkdown } from "../components/Markdown";
+import { DiagnosticTaskButton, EvidenceGapTasks } from "../components/DiagnosticTasks";
+import { DiagnosisEvidence } from "../components/DiagnosisEvidence";
 import {
   diagnosisReport,
   getWeaknesses,
@@ -242,6 +244,7 @@ export default function Diagnosis() {
                       {/* 干预进度（闭环一期 P1）：与行动明细同源折叠 */}
                       {w.loop_state && <LoopStateChip state={w.loop_state} />}
                     </p>
+                    {w.kp_id != null && <DiagnosisEvidence studentId={sid} kpId={w.kp_id} classId={cid} asOf={weak.data?.as_of} />}
                     </Card>
                   </StaggerItem>
                 ))}
@@ -253,6 +256,7 @@ export default function Diagnosis() {
             )}
           </div>
 
+          <EvidenceGapTasks key={sid} studentId={sid} classId={cid} />
           <div>
             <SectionTitle count={attributions?.length ?? 0}>可能的原因</SectionTitle>
             {attributions === null && !attrError && <Skeleton rows={2} />}
@@ -268,6 +272,8 @@ export default function Diagnosis() {
                   <StaggerItem key={a.id}>
                     <AttributionCard
                       attribution={a}
+                      studentId={sid}
+                      classId={cid}
                       onOverridden={() => loadAttributions()}
                     />
                   </StaggerItem>
@@ -320,9 +326,13 @@ export default function Diagnosis() {
 
 function AttributionCard({
   attribution: a,
+  studentId,
+  classId,
   onOverridden,
 }: {
   attribution: AttributionView;
+  studentId: number;
+  classId: number;
   onOverridden: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -373,6 +383,7 @@ function AttributionCard({
           {a.prediction && <p className="text-ink-soft">验证方式：{a.prediction}</p>}
           <p className="text-xs text-ink-faint">{ATTR_HINT[a.type] ?? ""}</p>
 
+          {a.kp_id != null && <DiagnosticTaskButton studentId={studentId} classId={classId} kpId={a.kp_id} mode="attribution" attributionId={a.id} />}
           {!overriding ? (
             <Button variant="ghost" onClick={() => setOverriding(true)}>
               <HandPalm size={14} />

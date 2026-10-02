@@ -150,6 +150,7 @@ export interface ReviewQueue {
 }
 
 export interface WeakItem {
+  kp_id?: number;
   code: string;
   name: string;
   mastery: number | null;
@@ -171,6 +172,7 @@ export interface Weaknesses {
 
 export interface AttributionView {
   id: number;
+  kp_id?: number;
   kp: string;
   type: string;
   confidence: number;
@@ -400,12 +402,52 @@ export interface InterventionRow {
   retest_exam_id?: number | null;
   suggested_at: string | null;
   done_at: string | null;
+  retest_due_date?: string | null;
+  retest_status?: "scheduled" | "overdue" | "verified" | null;
+  retested_students?: number;
+  target_students?: number;
   taught?: boolean;
   group_size?: number;
   /** 小组行共享的组引用；队列按组折叠成一行，确认/跳过按组批量落事实。 */
   group_ref?: string | null;
   student_id?: number;
   alias?: string | null;
+}
+
+export interface ExamPreflight {
+  exam_id: number;
+  ready: boolean;
+  pending_responses: number;
+  blocking_count: number;
+  warning_count: number;
+  issues: { code: string; severity: "blocking" | "warning"; message: string;
+    student_id: number | null; alias: string | null; response_id: number | null;
+    question_idx: number | null }[];
+}
+
+export interface DiagnosisEvidence {
+  student_id: number;
+  kp_id: number;
+  as_of: string;
+  total: number;
+  has_more: boolean;
+  items: { id: number; exam_id: number; exam_name: string; exam_date: string;
+    question_idx: number; stem: string; score: number; full_score: number;
+    source_type: string; value: number; weight: number; effective_weight: number;
+    cog_level: string; cascade_flag: boolean; occurred_at: string }[];
+}
+
+export interface TeachingCard {
+  intervention_id: number;
+  kp_name: string;
+  kp_code: string;
+  root_kp_name: string | null;
+  duration_minutes: number;
+  goal: string;
+  preparation: string;
+  steps: { minutes: number; title: string; instruction: string }[];
+  examples: { exam_id: number; exam_name: string; question_idx: number; stem: string }[];
+  verification: string;
 }
 
 /** 闭环度量（北极星「干预提升率」；分母只算可评估子集）。 */

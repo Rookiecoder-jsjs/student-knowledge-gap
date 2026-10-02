@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
@@ -34,6 +34,7 @@ from app.pipeline.mastery import mastery_at
 from app.pipeline.progress import loop_states_for_student
 from app.pipeline.weakness import assess_student_kps
 from app.queries.diagnosis_sheet import class_diagnosis_sheet
+from app.queries.diagnosis_evidence import diagnosis_evidence
 from app.queries.knowledge_graph import class_knowledge_graph
 from app.reports.diagnosis_orchestrator import (
     get_or_create_narrative,
@@ -99,6 +100,7 @@ def student_weaknesses(
         "as_of": str(when.date()),
         "weak": [
             {
+                "kp_id": a.kp_id,
                 "code": a.kp_code,
                 "name": a.kp_name,
                 "mastery": round(a.mastery, 3) if a.mastery is not None else None,
@@ -117,6 +119,23 @@ def student_weaknesses(
             "数据不足": sum(1 for a in assessments if a.gate == "数据不足"),
         },
     }
+
+
+@router.get("/students/{student_id}/knowledge-points/{kp_id}/evidence")
+def student_evidence(
+    student_id: int, kp_id: int, as_of: date | None = None,
+    offset: int = Query(default=0, ge=0), limit: int = Query(default=10, ge=1, le=50),
+    ctx=Depends(require_teacher), db: Session = Depends(get_db),
+):
+    stu = db.get(Student, student_id)
+    if stu is None:
+        raise HTTPException(404, "学生不存在")
+    guard_class(stu.class_id, db, ctx)
+    kb = _active_kb(db, _auth.class_subject(db, ctx, stu.clazz), stu.clazz.grade)
+    graph = _graph(db, kb.id)
+    if kp_id not in graph.kp_ids():
+        raise HTTPException(404, "知识点不在当前学科的知识库中")
+    return diagnosis_evidence(db, student_id, kp_id, _as_dt(as_of), offset, limit)
 
 
 @router.post("/students/{student_id}/attributions")
@@ -141,6 +160,7 @@ def run_attributions(
         "attributions": [
             {
                 "id": a.id,
+                "kp_id": a.kp_id,
                 "kp": graph.kp(a.kp_id).name,
                 "type": a.type,
                 "confidence": a.confidence,

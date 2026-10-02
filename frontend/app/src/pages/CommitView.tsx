@@ -1,8 +1,9 @@
 import { CheckCircle, PaperPlaneTilt, WarningCircle } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Badge, Button, Card, ErrorState, Modal, SectionTitle, Skeleton, StatTile } from "../components/ui";
-import { commitExam, examResponses } from "../lib/api";
+import { Badge, Button, Card, ErrorState, Input, Modal, Pagination, SectionTitle, Skeleton, StatTile } from "../components/ui";
+import { commitExam, correctPreflightScore, examPreflight, examResponses } from "../lib/api";
+import type { ExamPreflight } from "../lib/types";
 import { useAsync } from "../lib/hooks";
 
 /** 阶段 4·提交：就绪检查 + 二次确认 + 提交结果（从 Collect 抽出的落闸动作）。 */
@@ -11,12 +12,15 @@ export default function CommitView() {
   const cid = Number(classId);
   const eid = Number(examId);
   const matrix = useAsync(() => examResponses(eid), [eid]);
+  const preflight = useAsync(() => examPreflight(eid), [eid]);
+  const [issuePage, setIssuePage] = useState(1);
+  const [warningsChecked, setWarningsChecked] = useState(false);
 
   const summary = matrix.data?.summary;
   const pending = summary?.["待审核"] ?? 0;
   const submitted = summary?.["已提交"] ?? 0;
   const uncollected = summary?.["未采集"] ?? 0;
-  const committed = submitted > 0;
+  const committed = submitted > 0 && pending === 0;
   const lowConf = (matrix.data?.responses ?? []).reduce((s, r) => s + r.low_confidence_count, 0);
 
   const [confirm, setConfirm] = useState(false);
@@ -39,8 +43,11 @@ export default function CommitView() {
       setResult(r);
       setConfirm(false);
       matrix.reload();
+      preflight.reload();
     } catch (e) {
       setErr((e as Error).message);
+      setWarningsChecked(false);
+      preflight.reload();
     } finally {
       setBusy(false);
     }
@@ -118,6 +125,27 @@ export default function CommitView() {
 
       {!result && (
         <Card className="p-4">
+          <div className="mb-4 space-y-3" aria-label="录入质量预检">
+            {preflight.loading && <Skeleton rows={2} />}
+            {preflight.error && <ErrorState message={preflight.error} onRetry={preflight.reload} />}
+            {!preflight.loading && !preflight.error && preflight.data && <>
+              <p className="text-sm font-semibold">质量预检：{preflight.data.blocking_count} 项需修正 · {preflight.data.warning_count} 项提醒</p>
+              {preflight.data.issues.slice((issuePage - 1) * 10, issuePage * 10).map((issue, index) =>
+                <div key={`${issue.code}:${issue.response_id}:${issue.question_idx}:${index}`} className={`rounded-lg px-3 py-2 text-xs ${issue.severity === "blocking" ? "bg-danger/10 text-danger" : "bg-warn/10 text-ink-soft"}`}>
+                  <p><b>{issue.severity === "blocking" ? "需修正" : "提醒"}</b> · {issue.alias ? `${issue.alias}：` : ""}{issue.message}</p>
+                  {issue.response_id != null && issue.question_idx != null && ["missing_answer", "score_out_of_range", "total_mismatch"].includes(issue.code) &&
+                    <ScoreRepair examId={eid} issue={issue} onChanged={() => { setWarningsChecked(false); setIssuePage(1); preflight.reload(); matrix.reload(); }} />}
+                </div>
+              )}
+              <Pagination page={issuePage} pageSize={10} total={preflight.data.issues.length} hasMore={issuePage * 10 < preflight.data.issues.length} onPageChange={setIssuePage} />
+              {preflight.data.issues.length > 0 && <Link className="text-xs text-accent underline" to={`/c/${cid}/exams/${eid}/review`}>去审核得分与标注 →</Link>}
+              {preflight.data.warning_count > 0 && <label className="flex items-center gap-2 text-xs text-ink-soft">
+                <input type="checkbox" checked={warningsChecked} onChange={e => setWarningsChecked(e.target.checked)} />
+                已核对提醒，确认本次提交范围
+              </label>}
+              <Button variant="ghost" onClick={() => { setWarningsChecked(false); setIssuePage(1); preflight.reload(); matrix.reload(); }}>重新检查</Button>
+            </>}
+          </div>
           {pending === 0 ? (
             <div className="flex items-center gap-2 text-sm text-ink-soft">
               <WarningCircle size={16} className="text-warn" />
@@ -137,7 +165,7 @@ export default function CommitView() {
                 </p>
               )}
               <div className="flex justify-end">
-                <Button onClick={() => setConfirm(true)} disabled={busy}>
+                <Button onClick={() => setConfirm(true)} disabled={busy || preflight.loading || !!preflight.error || !preflight.data?.ready || (preflight.data.warning_count > 0 && !warningsChecked)}>
                   <PaperPlaneTilt size={15} />
                   提交本场考试（{pending} 份）
                 </Button>
@@ -172,4 +200,26 @@ export default function CommitView() {
       </Modal>
     </div>
   );
+}
+
+function ScoreRepair({ examId, issue, onChanged }: {
+  examId: number; issue: ExamPreflight["issues"][number]; onChanged: () => void;
+}) {
+  const [score, setScore] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (issue.response_id == null || issue.question_idx == null || !score.trim()) return;
+    setBusy(true); setError(null);
+    try { await correctPreflightScore(examId, issue.response_id, issue.question_idx, Number(score)); onChanged(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return <div className="mt-2 text-ink-soft">
+    <div className="flex flex-wrap items-center gap-2">
+      <Input type="number" min={0} step="any" aria-label={`确认${issue.alias ?? "学生"}第${issue.question_idx}题得分`} placeholder={`第 ${issue.question_idx} 题正确得分`} value={score} onChange={e => setScore(e.target.value)} className="w-44" />
+      <Button variant="secondary" aria-label={`保存${issue.alias ?? "学生"}第${issue.question_idx}题得分`} onClick={save} disabled={busy || !score.trim()}>{busy ? "保存中…" : "确认得分"}</Button>
+    </div>
+    {error && <p className="mt-1 text-danger" role="alert">{error}</p>}
+  </div>;
 }

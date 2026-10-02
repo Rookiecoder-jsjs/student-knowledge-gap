@@ -393,6 +393,7 @@ def generate_interventions(
             existing.exam_id = exam_id
             existing.source_report_id = source_report_id
             existing.kind = row.kind
+            existing.attribution_id = row.attribution_id
             existing.scope = row.scope
             existing.group_ref = (
                 f"r{source_report_id or 0}:{row.root_kp_id}"
@@ -412,6 +413,7 @@ def generate_interventions(
                 class_id=class_id, student_id=sid, kp_id=row.kp_id,
                 exam_id=exam_id, source_report_id=source_report_id,
                 kind=row.kind, scope=row.scope,
+                attribution_id=row.attribution_id,
                 group_ref=(
                     f"r{source_report_id or 0}:{row.root_kp_id}"
                     if row.scope == SCOPE_GROUP

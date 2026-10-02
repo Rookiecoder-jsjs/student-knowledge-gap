@@ -12,6 +12,7 @@ import tempfile
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from app.ha import ObjectStore
 from app.ingestion import batch as batch_mod
 from app.ingestion import batch_upload as batch_up
 from app.ingestion.commit import add_manual_response, commit_exam
+from app.ingestion.preflight import exam_preflight
 from app.ingestion.excel import import_excel
 from app.ingestion.photo import (
     approve_template_tags,
@@ -171,9 +173,57 @@ def manual_entry(exam_id: int, req: ManualScores, ctx=Depends(require_teacher), 
     return {"response_id": resp.id, "total_score": resp.total_score, "status": resp.status}
 
 
+@router.get("/exams/{exam_id}/preflight")
+def preflight(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
+    _guard_exam(db, ctx, exam_id)
+    return exam_preflight(db, exam_id)
+
+
+class CheckedScore(BaseModel):
+    score: float = Field(ge=0, allow_inf_nan=False)
+
+
+@router.put("/exams/{exam_id}/responses/{response_id}/scores/{question_idx}")
+def correct_preflight_score(
+    exam_id: int, response_id: int, question_idx: int, req: CheckedScore,
+    ctx=Depends(require_teacher), db: Session = Depends(get_db),
+):
+    _guard_exam(db, ctx, exam_id)
+    response = db.get(ExamResponse, response_id)
+    if response is None or response.exam_template_id != exam_id:
+        raise HTTPException(404, "作答不存在或不属于本场考试")
+    if response.status != "待审核":
+        raise HTTPException(400, "只有待审核作答可以补录或更正")
+    q = db.scalar(select(TemplateQuestion).where(
+        TemplateQuestion.exam_template_id == exam_id, TemplateQuestion.idx == question_idx,
+    ))
+    if q is None:
+        raise HTTPException(404, "题目不存在")
+    if req.score > q.full_score:
+        raise HTTPException(400, f"第 {q.idx} 题得分不能超过满分 {q.full_score}")
+    answer = db.scalar(select(ResponseAnswer).where(
+        ResponseAnswer.exam_response_id == response_id, ResponseAnswer.template_question_id == q.id,
+    ))
+    old = answer.score if answer else None
+    if answer is None:
+        answer = ResponseAnswer(exam_response_id=response_id, template_question_id=q.id, score=req.score)
+        db.add(answer)
+    answer.score = req.score
+    answer.parse_confidence = 1.0
+    db.flush()
+    response.total_score = round(db.scalar(select(func.sum(ResponseAnswer.score)).where(
+        ResponseAnswer.exam_response_id == response_id,
+    )) or 0.0, 2)
+    log_correction(db, "response_answer", answer.id, "score", old, req.score, "teacher")
+    return {"answer_id": answer.id, "total_score": response.total_score}
+
+
 @router.post("/exams/{exam_id}/commit")
 def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get_db)):
     _guard_exam(db, ctx, exam_id)
+    check = exam_preflight(db, exam_id)
+    if not check["ready"]:
+        raise HTTPException(400, f"质量预检未通过：{check['blocking_count']} 项问题需修正，请查看提交预检")
     # 产品语义「提交即自动生成」：commit 只做状态机，报告生成在此显式组合（候选4）。
     result = commit_exam(db, exam_id)
     if result.committed_responses > 0:

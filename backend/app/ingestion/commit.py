@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -142,9 +143,12 @@ def add_manual_response(
             )
         )
     )
+    expected = {q.idx for q in questions}
+    if set(scores) != expected:
+        raise ValueError("题号不完整或包含未知题号；零分也需明确录入")
     for tq in questions:
-        score = scores.get(tq.idx, 0.0)
-        if score < 0 or score > tq.full_score:
+        score = scores[tq.idx]
+        if not math.isfinite(score) or score < 0 or score > tq.full_score:
             raise ValueError(f"第{tq.idx}题分数越界：{score}（满分 {tq.full_score}）")
 
     response = ExamResponse(
@@ -158,7 +162,7 @@ def add_manual_response(
 
     total = 0.0
     for tq in questions:
-        score = scores.get(tq.idx, 0.0)
+        score = scores[tq.idx]
         total += score
         session.add(
             ResponseAnswer(

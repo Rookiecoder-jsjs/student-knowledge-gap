@@ -123,6 +123,7 @@ def _legacy_alter_bootstrap() -> None:
     from scripts.migrate_student_auth import add_student_auth
     from scripts.migrate_rbac_scopes import add_rbac_scope_columns
     from scripts.migrate_intervention_retest import add_retest_exam_column
+    from scripts.migrate_retest_schedule import add_retest_due_date
 
     add_archived_column()
     add_started_at_column()
@@ -134,6 +135,7 @@ def _legacy_alter_bootstrap() -> None:
     add_student_auth()
     add_rbac_scope_columns()
     add_retest_exam_column()
+    add_retest_due_date()
 
 
 def _alembic_upgrade_head() -> None:
