@@ -61,7 +61,7 @@ curl -X POST http://localhost:8080/api/kb/import \
 | `SC_LLM_AUDIT_PAYLOAD` | 关 | `=1` 时审计额外存响应 JSON（调试用；输入原文任何情况不落库） |
 | `SC_LLM_ROUTER_URL` / `SC_LLM_ROUTER_TOKEN` | 空 | 统一 LLM 路由。后端与 Codex 只持内部令牌，供应商 key 注入 `llm-router` |
 | `SC_JOB_QUEUE_ENABLE` | 关 | `=1` 启用 PostgreSQL/SQLite 持久化报告任务，提交接口返回 `job_id` |
-| `SC_HA_ENABLED` / `SC_REDIS_URL` | 关/空 | `=1` 时 readiness 同时检查 Redis；HA overlay 使用 PostgreSQL + Redis + MinIO |
+| `SC_HA_ENABLED` / `SC_REDIS_URL` | 关/空 | `=1` 时 readiness 同时检查 Redis；HA overlay 使用 PostgreSQL + Redis |
 | `SC_MAX_UPLOAD_FILE_MB` / `SC_MAX_UPLOAD_BATCH_MB` | `10` / `100` | 上传单文件 / 整批上限（MB）；调大整批需同步调整 `frontend/app/nginx.conf` 的 `client_max_body_size` |
 | `TMPDIR` | `/data/tmp` | **compose 注入**：批量上传临时文件挂卷，重启后 failed item 可重试 |
 | `SC_AUTH_SECRET` | 空 | token 签名密钥。**升级注意**：本版本起，安全模式（已建教师账号或 `SC_AUTH_REQUIRED=1`）或 HA 模式未配置该项将**拒绝启动**（旧行为为随机生成——重启即全员下线）；存量部署升级前先在 `backend/.env` 设置稳定值再重建容器 |
@@ -224,10 +224,16 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
 2. **持久化任务队列**：`SC_JOB_QUEUE_ENABLE=1` 后考试提交返回 `job_id`，报告由
    `async_job` 表中的 worker 领取；幂等键、重试、失败原因均落库。PostgreSQL 可运行多
    个 backend 副本，SQLite 仅建议单副本。
-3. **HA 依赖**：`docker-compose.ha.yml` 提供 PostgreSQL、Redis、MinIO，并声明 backend
+3. **HA 依赖**：`docker-compose.ha.yml` 默认启动 PostgreSQL、Redis，并声明 backend
    可扩展为多副本；gateway 目前保持单副本（其 app-server/SSE bridge 仍是实例内状态）。
    以 `docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d --build` 启动；
    `SC_HA_ENABLED=1` 时 `/ready` 会检查 Redis，数据库切换为 PostgreSQL。
+   HA 不发布 backend 的固定宿主调试端口，副本经容器网络供前端反代访问。HA 同时
+   禁用 SQLite backup 服务和内置备份时间监测；上线前须单独配置 PostgreSQL 备份、
+   恢复演练及告警。此 overlay 不提供 PostgreSQL 备份，也不继承旧 SQLite 的备份健康状态。
+   文件仍由同一宿主的共享卷保存。MinIO 尚未接入 `ObjectStore`，仅放在可选的
+   `object-storage-preview` profile；正常启动不拉取它。启用预览前须通过
+   `SC_MINIO_IMAGE` 指定可用的自建镜像，原分发镜像已无法拉取。该 profile 不代表已具备 S3 上传能力。
 4. **观测与故障演练**：backend/router 暴露 `/metrics`，验收标准与 Mock API 故障场景
    见 [docs/llm-ha-acceptance.md](docs/llm-ha-acceptance.md)；本地压测运行
    `python scripts/load_test_llm_router.py`，不会调用真实模型。
@@ -240,6 +246,8 @@ config.toml）以**远程 streamable-http** 调 sc 域工具——sc MCP 迁入 
 单机 Compose 将 `sc-backups` 只读挂载到 backend，`SC_BACKUP_DIR=/backups` 开启备份监测。
 每次备份先写临时文件，再在独立临时目录恢复并检查完整性、外键和核心业务表可读性；
 全部通过才原子发布 `.bak` 和 `.backup-status.json`。失败不会刷新成功时间。
+成功标记包含源数据库身份摘要，监测只接受与当前数据库匹配的标记；升级前的旧标记
+将在下一次成功备份后自动更新，期间备份监测会提示未验证。
 备份脚本拒绝不存在的源库及覆盖源库的目标路径。
 
 ```sh

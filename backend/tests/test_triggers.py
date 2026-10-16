@@ -52,27 +52,33 @@ def test_prompt_missing_exam_raises(session):
 
 
 class FakeResp:
-    def __init__(self, status_code=200, text=""):
+    def __init__(self, status_code=200, text="", receipt=None):
         self.status_code = status_code
         self.text = text
+        self.receipt = receipt if receipt is not None else {"accepted": True}
+
+    def json(self):
+        return self.receipt
 
 
 class RecordingClient:
     """捕获请求的假 httpx.Client。"""
 
-    def __init__(self, status_code=200):
+    def __init__(self, status_code=200, receipt=None):
         self.calls: list[dict] = []
         self.status = status_code
+        self.receipt = receipt
 
     def post(self, url, json=None, headers=None):
         self.calls.append({"url": url, "json": json, "headers": headers})
-        return FakeResp(self.status)
+        return FakeResp(self.status, receipt=self.receipt)
 
 
 def test_fire_posts_payload_with_idempotency_key(session, env, exam):
     client = RecordingClient()
     ok = fire_post_exam_analysis(
         session, exam.id,
+        teacher_id=7,
         gateway_url="http://gw:8100",
         internal_key="sekrit",
         client=client,
@@ -85,8 +91,128 @@ def test_fire_posts_payload_with_idempotency_key(session, env, exam):
     assert body["kind"] == "post_exam_analysis"
     assert body["exam_id"] == exam.id
     assert body["class_id"] == env["class"].id
+    assert body["teacher_id"] == 7
     assert body["idempotency_key"] == f"post_exam_analysis:{exam.id}"
     assert body["message"].startswith("请基于刚提交的考试数据")
+
+
+@pytest.mark.parametrize("receipt, expected", [
+    ({"accepted": False, "reason": "budget exceeded"}, False),
+    ({"accepted": True, "duplicate": True}, True),
+    ({}, False),
+])
+def test_fire_checks_gateway_receipt(session, exam, receipt, expected):
+    assert fire_post_exam_analysis(
+        session, exam.id, gateway_url="http://gw", internal_key="k",
+        client=RecordingClient(receipt=receipt),
+    ) is expected
+
+
+def test_secure_trigger_without_teacher_is_not_sent(session, exam, monkeypatch):
+    from app import auth
+
+    monkeypatch.setenv("SC_AUTH_REQUIRED", "1")
+    monkeypatch.setattr(auth, "_mode_cache", None)
+    client = RecordingClient()
+    assert not fire_post_exam_analysis(
+        session, exam.id, gateway_url="http://gw", internal_key="k", client=client,
+    )
+    assert not client.calls
+
+
+def test_individual_diagnosis_does_not_trigger_class_analysis(session, exam):
+    exam.source = "diagnostic_task"
+    client = RecordingClient()
+    assert not fire_post_exam_analysis(
+        session, exam.id, gateway_url="http://gw", internal_key="k", client=client,
+    )
+    assert not client.calls
+
+
+@pytest.mark.parametrize("queued", [False, True])
+def test_commit_forwards_teacher_to_sync_trigger_or_durable_job(monkeypatch, queued):
+    from types import SimpleNamespace
+    from app.api.routers import ingestion
+    from app import triggers
+
+    actor = SimpleNamespace(teacher=SimpleNamespace(id=7))
+    database = SimpleNamespace(commit=lambda: None)
+    seen = []
+    monkeypatch.setattr(ingestion, "_guard_exam", lambda *_: None)
+    monkeypatch.setattr(ingestion, "exam_preflight", lambda *_: {"ready": True})
+    monkeypatch.setattr(ingestion, "commit_exam", lambda *_: SimpleNamespace(
+        committed_responses=1, evidence_events=1, skipped=[], quality_report=False, diagnoses=0,
+    ))
+    monkeypatch.setattr(ingestion.job_queue, "enabled", lambda: queued)
+    monkeypatch.setattr(ingestion.job_queue, "enqueue_exam_reports", lambda db, eid, **kw: (
+        seen.append(("job", eid, kw)) or SimpleNamespace(id=3)
+    ))
+    monkeypatch.setattr(ingestion, "generate_exam_reports", lambda *_: SimpleNamespace(
+        quality=True, diagnoses=1,
+    ))
+    monkeypatch.setattr(triggers, "fire_post_exam_analysis", lambda db, eid, **kw: seen.append(("trigger", eid, kw)))
+
+    ingestion.commit(12, ctx=actor, db=database)
+
+    assert seen == [("job" if queued else "trigger", 12, {"teacher_id": 7})]
+
+
+def test_sync_commit_is_visible_to_trigger_connection_even_if_delivery_fails(monkeypatch, tmp_path):
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from app import auth, triggers
+    from app.api.routers import ingestion
+    from app.db import Base
+    from app.models import Class, ExamResponse, KbVersion, KnowledgePoint, Report, School, Student
+    from tests.conftest import add_progress
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'trigger_visibility.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(ingestion.job_queue, "enabled", lambda: False)
+    monkeypatch.delenv("SC_AUTH_REQUIRED", raising=False)
+
+    with factory() as db:
+        school = School(name="S")
+        kb = KbVersion(subject="数学", textbook_edition="测试", version="v1", status="active")
+        db.add_all([school, kb])
+        db.flush()
+        clazz = Class(school_id=school.id, name="C", grade=7)
+        kp = KnowledgePoint(kb_version_id=kb.id, code="P1", name="基础点", grade=7)
+        db.add_all([clazz, kp])
+        db.flush()
+        student = Student(school_id=school.id, class_id=clazz.id, name_or_alias="T01")
+        db.add(student)
+        db.flush()
+        exam = make_exam(db, clazz.id, "E", date(2025, 11, 2), "单元", [
+            (1, 10.0, "解答", "应用", [(kp.id, 1.0)]),
+        ])
+        add_progress(db, clazz.id, [kp.id])
+        response = ingestion.add_manual_response(db, exam.id, student.id, {1: 8.0})
+        exam_id, response_id = exam.id, response.id
+        db.commit()
+        observed = []
+
+        def inspect_from_gateway_connection(_db, eid, **_kwargs):
+            with factory() as reader:
+                assert reader.get(ExamResponse, response_id).status == "已提交"
+                report = reader.scalar(select(Report).where(
+                    Report.exam_id == eid, Report.type == "quality_analysis",
+                ))
+                assert report is not None
+                observed.append(report.id)
+            return False  # Delivery failure must not undo the published exam.
+
+        monkeypatch.setattr(triggers, "fire_post_exam_analysis", inspect_from_gateway_connection)
+        result = ingestion.commit(exam_id, ctx=auth.AccessContext(), db=db)
+        assert result["committed_responses"] == 1
+        assert result["quality_report"] is True
+        assert observed
+
+    with factory() as reader:
+        assert reader.get(ExamResponse, response_id).status == "已提交"
+        assert reader.get(Report, observed[0]) is not None
+    engine.dispose()
 
 
 def test_fire_unconfigured_returns_false_silently(session, exam):

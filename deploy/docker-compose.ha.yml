@@ -29,7 +29,10 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    # ObjectStore currently uses the shared filesystem volume; no S3 adapter
+    # consumes this service. Keep the unused preview out of normal HA startup.
+    profiles: ["object-storage-preview"]
+    image: ${SC_MINIO_IMAGE:-minio/minio:RELEASE.2025-05-24T17-08-30Z}
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sc}
@@ -38,12 +41,18 @@ services:
       - sc-object:/data
 
   backend:
+    # Replicas share the container port through the Compose network. A fixed
+    # host port inherited from the single-instance setup prevents scaling.
+    ports: !reset []
     environment:
       SC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sc}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/${POSTGRES_DB:-sc}
       SC_REDIS_URL: redis://redis:6379/0
       SC_HA_ENABLED: "1"
       SC_JOB_QUEUE_ENABLE: "1"
       SC_OBJECT_STORAGE_DIR: /data/object-data
+      # PostgreSQL backups must be configured separately. Never report an old
+      # SQLite backup marker as the health of the PostgreSQL database.
+      SC_BACKUP_DIR: ""
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +62,15 @@ services:
         condition: service_healthy
     deploy:
       replicas: 2
+
+  backup:
+    # The base service only implements SQLite backups. Keep it out of HA runs;
+    # even an explicit start must not silently back up the former SQLite file.
+    profiles: ["disabled-sqlite-backup"]
+    deploy:
+      replicas: 0
+    environment:
+      SC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sc}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/${POSTGRES_DB:-sc}
 
   gateway:
     depends_on:

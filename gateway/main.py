@@ -42,6 +42,7 @@ from pydantic import BaseModel
 
 from gateway.budget import GUARD, BudgetExceeded
 from gateway.observability import get_logger, setup_logging
+from gateway.thread_scope import ThreadScopeStore, scoped_rpc
 
 app = FastAPI(title="sc session-gateway (Phase 1)")
 _log = get_logger("main")
@@ -60,7 +61,7 @@ async def _bridge_reaper_loop() -> None:
         await asyncio.sleep(60)
         now = time.time()
         for key, bridge in list(_BRIDGES.items()):
-            if bridge.subscribers or bridge._pending:
+            if bridge.subscribers or bridge._pending or bridge._active_turns:
                 continue
             if now - bridge.last_used < _BRIDGE_IDLE_TTL_S:
                 continue
@@ -483,6 +484,8 @@ class Bridge:
     _pending: dict[int, asyncio.Future] = field(default_factory=dict)
     _reader: asyncio.Task | None = None
     last_used: float = field(default_factory=time.time)
+    loaded_threads: set[str] = field(default_factory=set)
+    _active_turns: dict[str, str] = field(default_factory=dict)
 
     def is_alive(self) -> bool:
         """进程和 stdout 读取任务都必须存活，才算可继续承载 RPC/SSE。"""
@@ -573,18 +576,29 @@ class Bridge:
     def _observe_budget(self, msg: dict) -> None:
         """§5.7 token 闸：thread/tokenUsage/updated 累计，超预算自动收尾本轮。"""
         try:
-            if msg.get("method") != "thread/tokenUsage/updated":
-                return
+            method = msg.get("method")
             params = msg.get("params") or {}
+            if method in {"turn/started", "turn/completed"}:
+                tid = params.get("threadId")
+                turn_id = (params.get("turn") or {}).get("id")
+                if tid and turn_id:
+                    if method == "turn/started":
+                        self._active_turns[str(tid)] = str(turn_id)
+                    elif self._active_turns.get(str(tid)) == str(turn_id):
+                        self._active_turns.pop(str(tid), None)
+                return
+            if method != "thread/tokenUsage/updated":
+                return
             tid = params.get("threadId") or (params.get("tokenUsage") or {}).get("threadId")
             usage = params.get("tokenUsage") or {}
             total = ((usage.get("total") or {}).get("totalTokens")) or 0
             if not tid or not total:
                 return
-            verdict = GUARD.observe_token_usage(str(tid), int(total))
+            turn_id = params.get("turnId") or usage.get("turnId")
+            historical = self._active_turns.get(str(tid)) != str(turn_id)
+            verdict = GUARD.observe_token_usage(str(tid), int(total), historical=historical)
             if verdict and verdict.get("action") == "interrupt":
                 # turn_id 从通知取（同载荷），尽力中断——失败只记日志
-                turn_id = params.get("turnId") or usage.get("turnId")
                 if turn_id:
                     asyncio.get_running_loop().create_task(
                         self._safe_interrupt(str(tid), str(turn_id), verdict["reason"])
@@ -737,18 +751,31 @@ async def rpc(req: RpcReq, sess: Session = Depends(require_auth)):
             raise HTTPException(400, "响应必须且只能包含 result 或 error")
         bridge.respond(req.id, result=req.result, error=req.error)
         return {"id": req.id, "result": {"accepted": True}}
-    if req.method == "turn/start":
-        thread_id = str((req.params or {}).get("threadId") or "")
-        if thread_id:
-            try:
+    async def request_scoped(method: str, params: dict):
+        # Scope validation runs before reserving a turn, so rejected class
+        # selections cannot consume a teacher's analysis budget.
+        if method == "turn/start":
+            thread_id = str(params.get("threadId") or "")
+            if thread_id:
                 GUARD.check_turn_start(thread_id)
-            except BudgetExceeded as e:
-                return JSONResponse(
-                    {"id": req.id, "error": {"message": e.reason, "usage": e.usage}},
-                    status_code=402,
-                )
+        return await bridge.request(method, params)
+
     try:
-        result = await bridge.request(req.method, req.params)
+        result = await scoped_rpc(
+            req.method, req.params,
+            teacher_id=sess.teacher_id,
+            bearer_token=_sign_school_token(sess.teacher_id) if SCHOOL_AUTH_SECRET else None,
+            backend_url=BACKEND_URL,
+            scopes_file=THREADS_FILE.with_name("thread-scopes.db"),
+            request=request_scoped,
+        )
+    except BudgetExceeded as error:
+        return JSONResponse(
+            {"id": req.id, "error": {"message": error.reason, "usage": error.usage}},
+            status_code=402,
+        )
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
         raise HTTPException(502, str(e)) from e
     return {"id": req.id, "result": result}
@@ -872,18 +899,18 @@ def _save_thread_map(mapping: dict[str, str]) -> None:
     THREADS_FILE.write_text(json.dumps(mapping, ensure_ascii=False, indent=1))
 
 
-_RECENT_TRIGGERS: dict[str, float] = {}  # idempotency_key -> monotonic time
+_RECENT_TRIGGERS: dict[str, tuple[float, dict]] = {}  # accepted receipts only
+_TRIGGER_INFLIGHT: dict[str, asyncio.Future] = {}
+_TRIGGER_THREAD_LOCKS: dict[str, asyncio.Lock] = {}
 _TRIGGER_TTL_S = 600.0
 
 
-def _recently_fired(key: str) -> bool:
+def _trigger_replay(key: str) -> dict | None:
     now = time.monotonic()
-    for k in [k for k, t in _RECENT_TRIGGERS.items() if now - t > _TRIGGER_TTL_S]:
+    for k in [k for k, (t, _) in _RECENT_TRIGGERS.items() if now - t > _TRIGGER_TTL_S]:
         _RECENT_TRIGGERS.pop(k, None)
-    if key in _RECENT_TRIGGERS:
-        return True
-    _RECENT_TRIGGERS[key] = now
-    return False
+    cached = _RECENT_TRIGGERS.get(key)
+    return {**cached[1], "duplicate": True} if cached else None
 
 
 # 触发式任务用的 app-server 桥（不占教师账号；按身份分桥）。
@@ -940,49 +967,70 @@ async def internal_trigger(req: TriggerReq):
     """在班级持久线程上发起触发式任务（§5.4）。
 
     线程映射缺省时 thread/start 建持久线程并落盘（一班一线程，§5.6）；
-    turn/start 阻塞至该轮完成（与浏览器侧 RPC 同语义），超时 240s。
-    幂等：同一 idempotency_key 在 TTL 内重复请求直接返回已受理。
+    turn/start 返回已启动的回合，不等待整个分析结束。
+    同键并发共享受理结果；仅成功结果缓存，失败后允许重试。
     """
     if req.kind != "post_exam_analysis":
         raise HTTPException(400, f"unknown trigger kind {req.kind!r}")
-    if _recently_fired(req.idempotency_key):
-        return {"accepted": False, "reason": "duplicate within TTL"}
-
-    bridge = await _trigger_bridge(req.teacher_id or 0)
-    mapping = _load_thread_map()
-    key = _thread_key(req.class_id, req.teacher_id or 0)
-    tid = mapping.get(key)
-    if not tid:
-        started = await bridge.request("thread/start", {
-            "cwd": "/tmp",
-            "approvalPolicy": "never",
-        })
-        # codex app-server 的 thread/start result 即 thread 对象本身
-        # （{"thread": {…}}）；真实返回经 Bridge.request 剥掉 JSON-RPC 信封。
-        tid = ((started or {}).get("thread") or {}).get("id")
-        if not tid:
-            raise HTTPException(502, "thread/start returned no thread id")
-        mapping[key] = tid
-        _save_thread_map(mapping)
+    if SCHOOL_AUTH_SECRET and not req.teacher_id:
+        raise HTTPException(400, "安全模式下考后分析需要提交教师身份")
+    replay = _trigger_replay(req.idempotency_key)
+    if replay is not None:
+        return replay
+    pending = _TRIGGER_INFLIGHT.get(req.idempotency_key)
+    if pending is not None:
+        return {**await asyncio.shield(pending), "duplicate": True}
+    future = asyncio.get_running_loop().create_future()
+    # A failed request may have no concurrent waiter; consume its exception to
+    # avoid an unobserved-Future warning while preserving it for actual waiters.
+    future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+    _TRIGGER_INFLIGHT[req.idempotency_key] = future
     try:
-        GUARD.check_turn_start(str(tid))  # 触发式任务同样过 §5.7 双闸
-        await bridge.request("turn/start", {
-            "threadId": tid,
-            "input": [{"type": "text", "text": req.message}],
-        }, timeout=240.0)
-    except BudgetExceeded as e:
-        # 触发式任务超限：202 受理但标注未执行（sc 侧 fire-and-forget 不重试风暴）
-        return {"accepted": False, "reason": e.reason, "usage": e.usage}
-    except Exception as e:  # noqa: BLE001 —— 错误语义原样回传
-        _log.exception(
-            "turn start failed",
-            extra={
-                "event": "gateway.turn_start_failed",
-                "error_code": "turn_start_failed",
-                "thread_id": tid,
-            },
+        receipt = await _start_trigger_turn(req)
+    except BaseException as error:
+        future.set_exception(error)
+        raise
+    else:
+        _RECENT_TRIGGERS[req.idempotency_key] = (time.monotonic(), receipt)
+        future.set_result(receipt)
+        return receipt
+    finally:
+        _TRIGGER_INFLIGHT.pop(req.idempotency_key, None)
+
+
+async def _start_trigger_turn(req: TriggerReq) -> dict:
+    key = _thread_key(req.class_id, req.teacher_id or 0)
+    lock = _TRIGGER_THREAD_LOCKS.setdefault(key, asyncio.Lock())
+    async with lock:
+        bridge = await _trigger_bridge(req.teacher_id or 0)
+        tid = _load_thread_map().get(key)
+        if not tid:
+            started = await bridge.request("thread/start", {
+                "cwd": "/tmp", "approvalPolicy": "never",
+            })
+            tid = ((started or {}).get("thread") or {}).get("id")
+            if not tid:
+                raise HTTPException(502, "thread/start returned no thread id")
+            # Reload after the awaited start so another class's mapping is kept.
+            _save_thread_map({**_load_thread_map(), key: tid})
+            bridge.loaded_threads.add(str(tid))
+        elif str(tid) not in bridge.loaded_threads:
+            await bridge.request("thread/resume", {"threadId": tid})
+            bridge.loaded_threads.add(str(tid))
+        ThreadScopeStore(THREADS_FILE.with_name("thread-scopes.db")).bind(
+            req.teacher_id or 0, str(tid), req.class_id,
         )
-        raise HTTPException(502, "turn/start failed") from e
+        try:
+            GUARD.check_turn_start(str(tid))
+            await bridge.request("turn/start", {
+                "threadId": tid,
+                "input": [{"type": "text", "text": req.message}],
+            }, timeout=240.0)
+        except BudgetExceeded as error:
+            raise HTTPException(402, {"message": error.reason, "usage": error.usage}) from error
+        except Exception as error:
+            _log.exception("trigger turn start failed", extra={"thread_id": tid})
+            raise HTTPException(502, "turn/start failed") from error
     return {"accepted": True, "thread_id": tid, "template_version": req.template_version}
 
 

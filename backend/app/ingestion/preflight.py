@@ -8,7 +8,8 @@ from collections import Counter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import ExamResponse, ExamTemplate, Student, TemplateQuestion
+from app.models import ExamResponse, ExamTemplate, TemplateQuestion
+from app.exam_scope import diagnostic_task, exam_students
 
 
 def exam_preflight(session: Session, exam_id: int) -> dict:
@@ -23,9 +24,7 @@ def exam_preflight(session: Session, exam_id: int) -> dict:
         select(ExamResponse).where(ExamResponse.exam_template_id == exam_id)
         .options(selectinload(ExamResponse.answers)).order_by(ExamResponse.id)
     ))
-    roster = {s.id: s.name_or_alias for s in session.scalars(
-        select(Student).where(Student.class_id == template.class_id)
-    )}
+    roster = {s.id: s.name_or_alias for s in exam_students(session, template)}
     issues: list[dict] = []
 
     def issue(code, severity, message, response=None, question=None):
@@ -38,6 +37,8 @@ def exam_preflight(session: Session, exam_id: int) -> dict:
         })
 
     by_id = {q.id: q for q in questions}
+    if template.source == "diagnostic_task" and diagnostic_task(session, template) is None:
+        issue("missing_task_target", "blocking", "该历史诊断任务缺少目标信息，请重新预览建卷")
     if not questions:
         issue("no_questions", "blocking", "试卷尚无题目，请先完善模板")
     for q in questions:
@@ -52,7 +53,7 @@ def exam_preflight(session: Session, exam_id: int) -> dict:
     duplicates = Counter(r.student_id for r in responses)
     for r in pending:
         if r.student_id not in roster:
-            issue("student_mismatch", "blocking", "作答学生不属于本班，请核对学生匹配", r)
+            issue("student_mismatch", "blocking", "作答学生不属于本场考试的参与范围，请核对学生匹配", r)
         if duplicates[r.student_id] > 1:
             issue("duplicate_response", "blocking", "该生有重复作答记录", r)
         if r.status != "待审核":

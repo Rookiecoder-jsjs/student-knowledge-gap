@@ -363,6 +363,7 @@ def resolve_attributions(
         for att in session.scalars(
             select(Attribution).where(
                 Attribution.student_id == student_id,
+                Attribution.kp_id.in_(graph.kp_ids()),
                 Attribution.status == "overridden",
             )
         )
@@ -415,6 +416,9 @@ def materialize_attribution_verdicts(
         for att in session.scalars(
             select(Attribution).where(
                 Attribution.student_id == student_id,
+                # A report only evaluates this graph; other subjects and versions
+                # cannot be declared resolved by an unrelated analysis.
+                Attribution.kp_id.in_(graph.kp_ids()),
                 Attribution.status.in_(["active", "overridden"]),
             )
         )

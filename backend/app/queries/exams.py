@@ -13,25 +13,27 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ingestion.photo import AUTO_PASS
+from app.exam_scope import diagnostic_task, exam_students
 from app.models import (
     ExamResponse,
     ExamTemplate,
     KnowledgePoint,
     QuestionKp,
     ResponseAnswer,
-    Student,
     TemplateQuestion,
 )
 
 
 def _exam_filters(
-    class_id: int | None = None, class_ids: list[int] | None = None
+    class_id: int | None = None, class_ids: list[int] | None = None, exam_ids=None
 ) -> list:
     filters = []
     if class_id is not None:
         filters.append(ExamTemplate.class_id == class_id)
     if class_ids is not None:
         filters.append(ExamTemplate.class_id.in_(class_ids))
+    if exam_ids is not None:
+        filters.append(ExamTemplate.id.in_(exam_ids))
     return filters
 
 
@@ -98,9 +100,9 @@ def aggregate_exam_rows(session: Session, exams: list[ExamTemplate]) -> list[dic
     return out
 
 
-def exams_list(session: Session, class_id: int | None = None) -> list[dict]:
+def exams_list(session: Session, class_id: int | None = None, *, exam_ids=None) -> list[dict]:
     """Return all exams, preserving the legacy unpaged response shape."""
-    stmt = select(ExamTemplate).where(*_exam_filters(class_id)).order_by(
+    stmt = select(ExamTemplate).where(*_exam_filters(class_id, exam_ids=exam_ids)).order_by(
         ExamTemplate.exam_date.desc(), ExamTemplate.id
     )
     return aggregate_exam_rows(session, list(session.scalars(stmt)))
@@ -113,9 +115,10 @@ def exams_page(
     *,
     offset: int = 0,
     limit: int = 50,
+    exam_ids=None,
 ) -> tuple[list[dict], int]:
     """Return a database-paginated exam page and its total matching count."""
-    filters = _exam_filters(class_id, class_ids)
+    filters = _exam_filters(class_id, class_ids, exam_ids)
     total = session.scalar(
         select(func.count(ExamTemplate.id)).where(*filters)
     ) or 0
@@ -175,6 +178,7 @@ def exam_detail(session: Session, exam_id: int) -> dict | None:
                 "kps": kp_list,
             }
         )
+    task = diagnostic_task(session, tpl)
     return {
         "exam_id": tpl.id,
         "class_id": tpl.class_id,
@@ -183,6 +187,10 @@ def exam_detail(session: Session, exam_id: int) -> dict | None:
         "type": tpl.type,
         "source": tpl.source,
         "questions": out_questions,
+        "diagnostic_task": None if task is None else {
+            "student_id": task.student_id, "kp_id": task.kp_id,
+            "mode": task.mode, "attribution_id": task.attribution_id,
+        },
     }
 
 
@@ -191,11 +199,7 @@ def exam_responses(session: Session, exam_id: int) -> dict | None:
     tpl = session.get(ExamTemplate, exam_id)
     if tpl is None:
         return None
-    students = list(
-        session.scalars(
-            select(Student).where(Student.class_id == tpl.class_id).order_by(Student.id)
-        )
-    )
+    students = exam_students(session, tpl)
     responses = {
         r.student_id: r
         for r in session.scalars(

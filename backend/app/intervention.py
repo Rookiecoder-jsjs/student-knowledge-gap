@@ -153,6 +153,7 @@ def _student_action_rows(
         for att in session.scalars(
             select(Attribution).where(
                 Attribution.student_id == student_id,
+                Attribution.kp_id.in_(graph.kp_ids()),
                 Attribution.status == "active",
             )
         )
@@ -264,10 +265,16 @@ def generate_interventions(
     if not committed_ids:
         return {"suggested": 0, "groups": 0}
 
+    # Refresh and archival may only touch points evaluated by this analysis.
+    # A class shares students across subjects, while KP IDs are version-specific.
+    kp_ids = graph.kp_ids()
+
     # ---- 清除本场旧 suggested（done/skipped 不动）----
     for row in session.scalars(
         select(Intervention).where(
             Intervention.exam_id == exam_id,
+            Intervention.class_id == class_id,
+            Intervention.kp_id.in_(kp_ids),
             Intervention.status == "suggested",
         )
     ):
@@ -282,6 +289,7 @@ def generate_interventions(
     for r in session.scalars(
         select(Intervention).where(
             Intervention.class_id == class_id,
+            Intervention.kp_id.in_(kp_ids),
             Intervention.status == "suggested",
         )
     ):
@@ -299,6 +307,7 @@ def generate_interventions(
     for att in session.scalars(
         select(Intervention).where(
             Intervention.class_id == class_id,
+            Intervention.kp_id.in_(kp_ids),
             Intervention.status == "done",
             Intervention.student_id.is_not(None),
         )
@@ -561,11 +570,16 @@ def _class_window_delta(
 # ---------------------------------------------------------------------------
 
 
-def intervention_summary(session: Session, graph: KpGraph, class_id: int) -> dict:
+def intervention_summary(
+    session: Session, graph: KpGraph, class_id: int, *, exam_ids: list[int] | None = None
+) -> dict:
     """闭环度量（照抄 attribution_closure 形状）。分母口径：提升率只算可评估子集。"""
-    rows = list(
-        session.scalars(select(Intervention).where(Intervention.class_id == class_id))
+    stmt = select(Intervention).where(
+        Intervention.class_id == class_id, Intervention.kp_id.in_(graph.kp_ids())
     )
+    if exam_ids is not None:
+        stmt = stmt.where(Intervention.exam_id.in_(exam_ids))
+    rows = list(session.scalars(stmt))
     by_status: dict[str, int] = {"suggested": 0, "done": 0, "skipped": 0}
     by_kind: dict[str, int] = {}
     for r in rows:
@@ -600,6 +614,7 @@ def intervention_summary(session: Session, graph: KpGraph, class_id: int) -> dic
             select(StudyRecord.student_id)
             .where(
                 StudyRecord.class_id == class_id,
+                StudyRecord.kp_id.in_(graph.kp_ids()),
                 StudyRecord.self_marked_at.is_not(None),
             )
             .distinct()
@@ -641,7 +656,8 @@ ACTION_QUEUE_MAX = 10
 
 
 def action_plan_view(
-    session: Session, graph: KpGraph, class_id: int, exam_id: int | None = None
+    session: Session, graph: KpGraph, class_id: int, exam_id: int | None = None,
+    *, exam_ids: list[int] | None = None,
 ) -> dict:
     """教学行动方向结构化数据（GET /classes/{id}/action-plan 数据源）。
 
@@ -652,7 +668,11 @@ def action_plan_view(
     折叠隐藏（视图规则，事实不动）、小组按组一行、截前 ACTION_QUEUE_MAX 条。
     pending_confirm / counts 保持全量事实口径（积压数诚实展示）。
     """
-    stmt = select(Intervention).where(Intervention.class_id == class_id)
+    stmt = select(Intervention).where(
+        Intervention.class_id == class_id, Intervention.kp_id.in_(graph.kp_ids())
+    )
+    if exam_ids is not None:
+        stmt = stmt.where(Intervention.exam_id.in_(exam_ids))
     if exam_id is not None:
         stmt = stmt.where(Intervention.exam_id == exam_id)
     rows = list(session.scalars(stmt))

@@ -64,6 +64,31 @@ def test_new_task_after_idle_resets(guard, monkeypatch):
     assert out["turns"] == 1 and out["total_tokens"] == 0
 
 
+def test_new_task_charges_only_usage_since_previous_task(guard):
+    guard.check_turn_start("persisted")
+    guard.observe_token_usage("persisted", 999)
+    guard._tasks["persisted"].last_activity -= 3600
+
+    guard.check_turn_start("persisted")
+    assert guard.observe_token_usage("persisted", 1001) is None
+    assert guard.snapshot()["persisted"]["total_tokens"] == 2
+
+
+def test_resume_replay_establishes_baseline_without_spending_new_budget(guard):
+    assert guard.observe_token_usage("resumed", 50_000, historical=True) is None
+    assert "resumed" not in guard.snapshot()
+    guard.check_turn_start("resumed")
+    assert guard.observe_token_usage("resumed", 50_100) is None
+    assert guard.snapshot()["resumed"]["total_tokens"] == 100
+
+
+def test_replay_after_turn_gate_does_not_bill_old_usage(guard):
+    guard.check_turn_start("replayed")
+    assert guard.observe_token_usage("replayed", 50_000, historical=True) is None
+    assert guard.observe_token_usage("replayed", 50_002) is None
+    assert guard.snapshot()["replayed"]["total_tokens"] == 2
+
+
 def test_threads_counted_independently(guard):
     guard.check_turn_start("a")
     guard.check_turn_start("b")

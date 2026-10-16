@@ -120,3 +120,44 @@ def test_dead_bridge_recycled_and_respawned(monkeypatch):
         assert spawns == [78]
     finally:
         gm._BRIDGES.pop("t78", None)
+
+
+def test_budget_replay_does_not_interrupt_but_active_turn_usage_does(monkeypatch):
+    import gateway.budget as budget
+
+    guard = budget.BudgetGuard()
+    monkeypatch.setattr(gm, "GUARD", guard)
+    monkeypatch.setattr(budget, "MAX_TOKENS_PER_TASK", 100)
+    bridge = gm.Bridge(proc=_FakeProc())
+    interrupted = []
+
+    async def interrupt(thread_id, turn_id, reason):
+        interrupted.append((thread_id, turn_id))
+
+    monkeypatch.setattr(bridge, "_safe_interrupt", interrupt)
+
+    def usage(total, turn_id):
+        return {"method": "thread/tokenUsage/updated", "params": {
+            "threadId": "th-budget", "turnId": turn_id,
+            "tokenUsage": {"total": {"totalTokens": total}},
+        }}
+
+    async def scenario():
+        bridge._observe_budget(usage(50_000, "old-turn"))
+        await asyncio.sleep(0)
+        assert not interrupted
+        guard.check_turn_start("th-budget")
+        bridge._observe_budget({"method": "turn/started", "params": {
+            "threadId": "th-budget", "turn": {"id": "new-turn"},
+        }})
+        bridge._observe_budget(usage(50_002, "new-turn"))
+        assert guard.snapshot()["th-budget"]["total_tokens"] == 2
+        bridge._observe_budget(usage(50_100, "new-turn"))
+        await asyncio.sleep(0)
+        assert interrupted == [("th-budget", "new-turn")]
+        bridge._observe_budget({"method": "turn/completed", "params": {
+            "threadId": "th-budget", "turn": {"id": "new-turn"},
+        }})
+        assert not bridge._active_turns
+
+    asyncio.run(scenario())

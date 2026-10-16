@@ -2,7 +2,7 @@ import { CheckCircle, PaperPlaneTilt, WarningCircle } from "@phosphor-icons/reac
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge, Button, Card, ErrorState, Input, Modal, Pagination, SectionTitle, Skeleton, StatTile } from "../components/ui";
-import { commitExam, correctPreflightScore, examPreflight, examResponses } from "../lib/api";
+import { commitExam, correctPreflightScore, examDetail, examPreflight, examResponses } from "../lib/api";
 import type { ExamPreflight } from "../lib/types";
 import { useAsync } from "../lib/hooks";
 
@@ -12,7 +12,11 @@ export default function CommitView() {
   const cid = Number(classId);
   const eid = Number(examId);
   const matrix = useAsync(() => examResponses(eid), [eid]);
+  const detail = useAsync(() => examDetail(eid), [eid]);
   const preflight = useAsync(() => examPreflight(eid), [eid]);
+  const task = detail.data?.diagnostic_task;
+  const diagnosisTo = task ? `/c/${cid}/students/${task.student_id}/diagnosis` : `/c/${cid}/exams?tab=diagnosis`;
+  const diagnosisLabel = task ? "查看该生诊断单" : "查看班级诊断单";
   const [issuePage, setIssuePage] = useState(1);
   const [warningsChecked, setWarningsChecked] = useState(false);
 
@@ -53,8 +57,9 @@ export default function CommitView() {
     }
   };
 
-  if (matrix.loading) return <Skeleton rows={4} />;
+  if (matrix.loading || detail.loading) return <Skeleton rows={4} />;
   if (matrix.error) return <ErrorState message={matrix.error} onRetry={matrix.reload} />;
+  if (detail.error) return <ErrorState message={detail.error} onRetry={detail.reload} />;
 
   // 已提交：落闸完成态
   if (committed && !result) {
@@ -67,8 +72,8 @@ export default function CommitView() {
         <p className="max-w-[48ch] text-xs text-ink-faint">
           作答与标注已锁定，如需更正请以补录考试处理。
         </p>
-        <Link to={`/c/${cid}/exams?tab=diagnosis`}>
-          <Button>查看班级诊断单</Button>
+        <Link to={diagnosisTo}>
+          <Button>{diagnosisLabel}</Button>
         </Link>
       </Card>
     );
@@ -107,18 +112,19 @@ export default function CommitView() {
               ，一次生成、随时查看。
             </p>
           )}
+          {task && (result.diagnoses ?? 0) > 0 && <p className="text-xs text-ink-soft">已更新该生诊断单与改进单，结果用于核对本次诊断任务。</p>}
           {result.skipped.length > 0 && (
             <p className="max-w-[52ch] text-xs text-warn">
               跳过 {result.skipped.length} 条：{result.skipped.slice(0, 3).join("；")}
             </p>
           )}
           <div className="mt-1 flex gap-2">
-            <Link to={`/c/${cid}/exams?tab=diagnosis`}>
-              <Button>查看班级诊断单</Button>
+            <Link to={diagnosisTo}>
+              <Button>{diagnosisLabel}</Button>
             </Link>
-            <Link to={`/c/${cid}/exams/${eid}/report`}>
+            {!task && <Link to={`/c/${cid}/exams/${eid}/report`}>
               <Button variant="secondary">本场概况</Button>
-            </Link>
+            </Link>}
           </div>
         </Card>
       )}

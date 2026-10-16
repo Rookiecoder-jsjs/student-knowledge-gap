@@ -169,7 +169,8 @@ function turnsToItems(turns: HistoryTurn[]): ChatItem[] {
   for (const turn of turns) {
     for (const it of turn.items ?? []) {
       if (it.type === "userMessage") {
-        const text = (it.content ?? []).map((c) => c.text ?? "").join("").trim();
+        const text = (it.content ?? [])
+          .map((c) => c.text ?? "").join("").trim();
         if (text) out.push({ kind: "user", text });
       } else if (it.type === "agentMessage") {
         if (it.text) out.push({ kind: "assistant", text: it.text, key: it.id });
@@ -222,6 +223,7 @@ export default function Assistant() {
   // token 用量（thread/tokenUsage/updated；total=本会话累计，last=上一轮）
   const [usage, setUsage] = useState<{ total: number; last: number } | null>(null);
   const [classScope, setClassScope] = useState<ClassScope | null>(null);
+  const workingClassRef = useRef<ClassScope | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const currentModel = models.find((m) => m.id === modelId) ?? models[0] ?? null;
@@ -351,17 +353,19 @@ export default function Assistant() {
     [rpc],
   );
 
-  // 与 Shell 的班级切换器对齐：上下文面板只读展示当前工作班级，不改变线程协议。
+  // 新会话用工作班级；历史会话必须以网关返回的持久范围为准。
   const loadClassScope = useCallback(async () => {
     try {
       const rows = (await listClasses()).classes ?? [];
       const remembered = Number(localStorage.getItem(LAST_CLASS_KEY));
       const picked = rows.find((item) => item.class_id === remembered) ?? rows[0];
       if (picked) {
-        setClassScope({ id: picked.class_id, name: picked.name, subject: picked.subject });
+        const scope = { id: picked.class_id, name: picked.name };
+        workingClassRef.current = scope;
+        if (!threadIdRef.current) setClassScope(scope);
       }
-    } catch {
-      // 上下文只是辅助信息，加载失败不应打断对话主流程。
+    } catch (e) {
+      setItems((prev) => [...prev, { kind: "notice", text: `班级范围加载失败：${(e as Error).message}` }]);
     }
   }, []);
 
@@ -663,7 +667,7 @@ export default function Assistant() {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || !token || busy) return;
+    if (!text || !token || busy || !classScope) return;
     const turnSeq = turnSeqRef.current + 1;
     turnSeqRef.current = turnSeq;
     setInput("");
@@ -671,12 +675,17 @@ export default function Assistant() {
     setBusy(true);
 
     try {
+      let scope = classScope;
       if (!threadIdRef.current) {
         const started = (await rpc("thread/start", {
           cwd: "/tmp",
           approvalPolicy: "on-request",
-        })) as { thread?: { id?: string } } | null;
+          classId: scope.id,
+        })) as { thread?: { id?: string }; classScope?: ClassScope | null } | null;
         const tid = started?.thread?.id ?? null;
+        if (!tid || !started?.classScope) throw new Error("会话未能建立已核验的班级范围，请重试");
+        scope = started.classScope;
+        setClassScope(scope);
         threadIdRef.current = tid;
         setActiveId(tid);
         // 新线程带上当前模型与思考强度（失败不阻断对话）
@@ -694,6 +703,7 @@ export default function Assistant() {
       }
       await rpc("turn/start", {
         threadId: threadIdRef.current,
+        classId: scope.id,
         input: [{ type: "text", text }],
         approvalPolicy: "on-request",
       }); // 阻塞至 turn 完成；正文经 SSE 流式到达
@@ -725,19 +735,22 @@ export default function Assistant() {
     }
     turnSeqRef.current += 1;
     try {
-      const thread = ((await rpc("thread/resume", { threadId: t.id })) as {
+      const resumed = (await rpc("thread/resume", { threadId: t.id })) as {
         thread?: { id?: string; turns?: HistoryTurn[] };
-      } | null)?.thread;
+        classScope?: ClassScope | null;
+      } | null;
+      const thread = resumed?.thread;
       const tid = thread?.id ?? t.id;
       threadIdRef.current = tid;
       setActiveId(tid);
+      setClassScope(resumed?.classScope ?? null);
       setShowHistory(false);
       const restored = turnsToItems(thread?.turns ?? []);
-      setItems(
-        restored.length > 0
+      const history = restored.length > 0
           ? restored
-          : [{ kind: "notice", text: "该会话暂无可展示的历史内容，可以直接继续提问" }],
-      );
+          : [{ kind: "notice" as const, text: "该会话暂无可展示的历史内容，可以直接继续提问" }];
+      if (!resumed?.classScope) history.push({ kind: "notice", text: "这段旧会话未记录班级范围，仅供回看。请新建对话后继续提问。" });
+      setItems(history);
     } catch (e) {
       setItems((prev) => [...prev, { kind: "notice", text: `恢复会话失败：${(e as Error).message}` }]);
     }
@@ -764,6 +777,7 @@ export default function Assistant() {
     setItems([]);
     setBusy(false);
     setUsage(null); // 新会话无累计；用量随下一个 tokenUsage 通知重建
+    setClassScope(workingClassRef.current);
   };
 
   const copyMessage = async (text: string, key: string) => {
@@ -861,7 +875,7 @@ export default function Assistant() {
         <section>
           <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-faint">当前范围</p>
           <div className="rounded-xl border border-line bg-surface-2/60 p-3">
-            <p className="text-sm font-semibold text-ink">{classScope?.name ?? "当前工作班级"}</p>
+            <p className="text-sm font-semibold text-ink">{classScope?.name ?? "未绑定班级"}</p>
             <p className="mt-1 text-xs leading-relaxed text-ink-soft">
               {classScope?.subject ? `${classScope.subject} · ` : ""}只读取已提交的教学数据
             </p>
@@ -1201,7 +1215,7 @@ export default function Assistant() {
                   }
                 }}
                 placeholder={busy ? "教研员正在处理…" : "向教研员提问…（Enter 发送 · Shift+Enter 换行）"}
-                disabled={busy}
+                disabled={busy || !classScope}
                 rows={2}
                 className="w-full resize-none rounded-xl border border-line-strong bg-surface px-3 py-2.5 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-accent"
               />
@@ -1210,13 +1224,13 @@ export default function Assistant() {
                   <Stop size={15} />
                 </Button>
               ) : (
-                <Button onClick={() => void send()} disabled={!input.trim()} aria-label="发送">
+                <Button onClick={() => void send()} disabled={!input.trim() || !classScope} aria-label="发送">
                   <ArrowUp size={15} />
                 </Button>
               )}
             </div>
             <p className="mt-2 flex items-center justify-between gap-3 text-[11px] text-ink-faint">
-              <span className="truncate">分析范围：{classScope?.name ?? "当前工作班级"}</span>
+              <span className="truncate">{activeId ? "会话范围" : "新会话班级"}：{classScope?.name ?? "未绑定班级"}</span>
               <span className="shrink-0">只读分析 · Enter 发送</span>
             </p>
             {/* token 用量徽标（thread/tokenUsage/updated 驱动；流式回合内实时增长） */}

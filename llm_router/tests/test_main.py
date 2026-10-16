@@ -1,9 +1,38 @@
 import asyncio
+import gzip
 
 import httpx
 import pytest
 
 from llm_router.main import CapacityError, RouterConfig, RouterScheduler, create_app, parse_keys
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("status", [200, 503])
+def test_compressed_upstream_body_is_decoded_exactly_once(stream, status):
+    body = b'data: {"text":"ok"}\n\n' if stream and status == 200 else b'{"text":"ok"}'
+
+    class CompressedStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield gzip.compress(body)
+
+    async def handler(request):
+        return httpx.Response(status, stream=CompressedStream(), headers={
+            "content-encoding": "gzip",
+            "content-type": "text/event-stream" if stream and status == 200 else "application/json",
+        })
+
+    async def scenario():
+        app = create_app(RouterConfig("https://upstream", ("key",), "token", retries=0),
+                         transport=httpx.MockTransport(handler))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/v1/responses", headers={"Authorization": "Bearer token"},
+                                         json={"model": "m", "stream": stream})
+            assert response.status_code == status
+            assert response.content == body
+            assert app.state.scheduler.snapshot()["global_in_flight"] == 0
+
+    asyncio.run(scenario())
 
 
 def test_parse_keys_deduplicates_and_accepts_lines():

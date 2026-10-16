@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import settings  # noqa: E402
+from app.backup_identity import database_identity  # noqa: E402
 
 
 def backup_db(src_url: str | None = None, dest: str | None = None) -> str:
@@ -62,7 +63,11 @@ def backup_db(src_url: str | None = None, dest: str | None = None) -> str:
         fd, pending = tempfile.mkstemp(prefix=".backup-status-", dir=destination.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump({"last_success_timestamp": time.time(), "restore_verified": True}, stream)
+                json.dump({
+                    "last_success_timestamp": time.time(),
+                    "restore_verified": True,
+                    "database_identity": database_identity(url),
+                }, stream)
             os.replace(pending, marker)
         finally:
             Path(pending).unlink(missing_ok=True)

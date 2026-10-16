@@ -22,18 +22,24 @@ class FakeBridge:
     def __init__(self, tid="th-1"):
         self.tid = tid
         self.calls: list[tuple[str, dict]] = []
+        self.loaded_threads: set[str] = set()
 
     async def request(self, method, params, timeout=180.0):
         self.calls.append((method, params))
         if method == "thread/start":
             # 真实形状：Bridge.request 已剥 JSON-RPC 信封，result 即 thread 对象。
             return {"thread": {"id": self.tid}}
+        if method == "thread/resume":
+            self.loaded_threads.add(params["threadId"])
+        if method == "turn/start" and params["threadId"] not in self.loaded_threads:
+            raise RuntimeError("thread not found in this app-server process")
         return {"ok": True}
 
 
 @pytest.fixture()
 def gw(monkeypatch, tmp_path):
     monkeypatch.setattr(gm, "INTERNAL_KEY", "test-key")
+    monkeypatch.setattr(gm, "SCHOOL_AUTH_SECRET", "")
     monkeypatch.setattr(gm, "THREADS_FILE", tmp_path / "threads.json")
     # 每测一个全新 GUARD：模块内多测共享 "th-1" 轮次计数 + test_budget 的
     # importlib.reload 会让 gm.GUARD 配置随 import 顺序漂移——隔离后稳定。
@@ -41,6 +47,8 @@ def gw(monkeypatch, tmp_path):
 
     monkeypatch.setattr(gm, "GUARD", _budget.BudgetGuard())
     gm._RECENT_TRIGGERS.clear()
+    gm._TRIGGER_INFLIGHT.clear()
+    gm._TRIGGER_THREAD_LOCKS.clear()
     client = TestClient(gm.app)
     return client, tmp_path
 
@@ -104,8 +112,9 @@ def test_trigger_duplicate_within_ttl(gw, monkeypatch):
     assert _post(c, _body()).json()["accepted"] is True
     dup = _post(c, _body())
     assert dup.status_code == 200
-    assert dup.json()["accepted"] is False
-    assert "duplicate" in dup.json()["reason"]
+    assert dup.json()["accepted"] is True
+    assert dup.json()["duplicate"] is True
+    assert dup.json()["thread_id"] == "th-1"
 
 
 def test_trigger_unknown_kind_400(gw, monkeypatch):
@@ -155,3 +164,73 @@ def test_thread_key_is_class_dot_teacher(gw, monkeypatch):
     assert saved == {"3.5": "th-1", "3.0": "th-1"}
     starts = [m for m, _ in fake.calls if m == "thread/start"]
     assert len(starts) == 2
+
+
+def test_recreated_bridge_resumes_persisted_thread_before_starting_turn(gw, monkeypatch):
+    c, _ = gw
+    original = FakeBridge()
+    monkeypatch.setattr(gm, "_trigger_bridge", _fake_factory(original))
+    assert _post(c, _body()).json()["accepted"]
+    replacement = FakeBridge()
+    monkeypatch.setattr(gm, "_trigger_bridge", _fake_factory(replacement))
+
+    response = _post(c, _body(exam_id=8, idempotency_key="post_exam_analysis:8"))
+
+    assert response.status_code == 200
+    assert [method for method, _ in replacement.calls] == ["thread/resume", "turn/start"]
+    assert replacement.calls[0][1]["threadId"] == "th-1"
+
+
+def test_failed_turn_can_retry_same_idempotency_key(gw, monkeypatch):
+    c, _ = gw
+
+    class FailOnce(FakeBridge):
+        failures = 1
+
+        async def request(self, method, params, timeout=180.0):
+            if method == "turn/start" and self.failures:
+                self.failures -= 1
+                raise RuntimeError("temporary failure")
+            return await super().request(method, params, timeout)
+
+    fake = FailOnce()
+    monkeypatch.setattr(gm, "_trigger_bridge", _fake_factory(fake))
+    assert _post(c, _body()).status_code == 502
+    retry = _post(c, _body())
+    assert retry.status_code == 200
+    assert retry.json()["accepted"] is True
+    assert not retry.json().get("duplicate")
+
+
+def test_secure_trigger_requires_teacher_before_creating_bridge(gw, monkeypatch):
+    c, _ = gw
+    monkeypatch.setattr(gm, "SCHOOL_AUTH_SECRET", "configured-secret")
+    fake = FakeBridge()
+    monkeypatch.setattr(gm, "_trigger_bridge", _fake_factory(fake))
+    assert _post(c, _body()).status_code == 400
+    assert not fake.calls
+    assert _post(c, _body(teacher_id=5)).json()["accepted"] is True
+
+
+def test_concurrent_same_key_starts_one_turn(gw, monkeypatch):
+    import asyncio
+
+    fake = FakeBridge()
+    factories = []
+
+    async def slow_bridge(teacher_id=0):
+        factories.append(teacher_id)
+        await asyncio.sleep(0.01)
+        return fake
+
+    monkeypatch.setattr(gm, "_trigger_bridge", slow_bridge)
+
+    async def scenario():
+        request = gm.TriggerReq(**_body())
+        return await asyncio.gather(gm.internal_trigger(request), gm.internal_trigger(request))
+
+    first, second = asyncio.run(scenario())
+    assert first["accepted"] and second["accepted"]
+    assert second["duplicate"] is True
+    assert len(factories) == 1
+    assert [m for m, _ in fake.calls].count("turn/start") == 1

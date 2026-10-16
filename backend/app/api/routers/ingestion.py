@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import auth as _auth
 from app.api.routers.jobs import PhotoTemplateResult, PhotoResponseResult, QueuedJob
-from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
+from app.api.deps import _active_kb, _graph, get_db, guard_class, guard_exam, require_teacher
 from app.db import utcnow
 from app import jobs as job_queue
 from app.ha import ObjectStore
@@ -77,7 +77,7 @@ def _guard_exam(db: Session, ctx, exam_id: int) -> None:
     tpl = db.get(ExamTemplate, exam_id)
     if tpl is None:
         raise HTTPException(404, "考试不存在")
-    guard_class(tpl.class_id, db, ctx)
+    guard_exam(tpl, db, ctx)
 
 _BATCH_TERMINAL = {"matched", "unmatched", "failed", "duplicate", "discarded"}
 MAX_BATCH_PAGE = 200
@@ -230,7 +230,9 @@ def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get
         if job_queue.enabled():
             # The exam state and the durable job are committed together. The
             # worker therefore never observes a job for an uncommitted exam.
-            job = job_queue.enqueue_exam_reports(db, exam_id)
+            job = job_queue.enqueue_exam_reports(
+                db, exam_id, teacher_id=ctx.teacher.id if ctx.teacher else None,
+            )
             db.commit()
             return {
                 "committed_responses": result.committed_responses,
@@ -248,7 +250,11 @@ def commit(exam_id: int, ctx=Depends(require_teacher), db: Session = Depends(get
         # 失败只记日志（Agent 断供不阻塞采集主流程，§5.8 兜底）。
         from app.triggers import fire_post_exam_analysis
 
-        fire_post_exam_analysis(db, exam_id)
+        teacher_id = ctx.teacher.id if ctx.teacher else None
+        # MCP reads through a separate connection. Publish the exam and reports
+        # before triggering it, and keep a delivery failure outside this commit.
+        db.commit()
+        fire_post_exam_analysis(db, exam_id, teacher_id=teacher_id)
     return {
         "committed_responses": result.committed_responses,
         "evidence_events": result.evidence_events,
@@ -692,7 +698,7 @@ def update_answer(answer_id: int, req: AnswerUpdate, ctx=Depends(require_teacher
     resp = db.get(ExamResponse, ans.exam_response_id)
     tpl = db.get(ExamTemplate, resp.exam_template_id)
     if tpl is not None:
-        guard_class(tpl.class_id, db, ctx)
+        guard_exam(tpl, db, ctx)
     if resp.status != "待审核":
         raise HTTPException(400, f"作答已{resp.status}，不能再修改；如需更正请以补录处理")
     q = db.get(TemplateQuestion, ans.template_question_id)

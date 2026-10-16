@@ -37,10 +37,10 @@ import time
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Class, Student, Teacher, TeacherClass, TeacherSubjectScope
+from app.models import Class, ExamTemplate, Student, Teacher, TeacherClass, TeacherSubjectScope
 
 PBKDF2_ITERS = 60_000  # legacy raw gateway-compatible hashes
 CURRENT_PBKDF2_ITERS = 120_000
@@ -494,6 +494,22 @@ def assert_exam_access(db: Session, ctx: AccessContext, exam_template) -> None:
             f"教师 {ctx.label} 对班级 {clazz.name} 仅有 "
             f"{'、'.join(bound)} 学科视野，该考试学科为 {exam_subject}"
         )
+
+
+def allowed_exam_ids(ctx: AccessContext):
+    """SQL equivalent of exam authorization, usable before pagination."""
+    stmt = select(ExamTemplate.id).join(Class, Class.id == ExamTemplate.class_id)
+    if ctx.teacher is not None and not ctx.is_admin:
+        granted = select(TeacherClass.id).where(
+            TeacherClass.teacher_id == ctx.teacher.id,
+            TeacherClass.class_id == Class.id,
+            or_(
+                TeacherClass.subject.is_(None),
+                TeacherClass.subject == func.coalesce(ExamTemplate.subject, Class.subject),
+            ),
+        ).exists()
+        stmt = stmt.where(or_(Class.homeroom_teacher_id == ctx.teacher.id, granted))
+    return stmt
 
 
 def allowed_class_ids(db: Session, ctx: AccessContext) -> list[int] | None:

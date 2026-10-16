@@ -32,6 +32,13 @@ test("teacher previews evidence and attribution groups before creating a diagnos
   await dialog.getByRole("button", { name: "确认建卷，继续审核" }).click();
   await expect(page).toHaveURL(/\/c\/2\/exams\/\d+\/review$/);
   await expect(page.getByRole("button", { name: /批准全部待审标注/ })).toBeEnabled();
+  const diagnosticPath = new URL(page.url()).pathname.replace(/\/review$/, "/collect");
+  await page.goto(diagnosticPath);
+  // Individual diagnostic tasks must not ask the rest of the class to submit.
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page.goto(diagnosticPath.replace(/\/collect$/, "/report"));
+  await expect(page.getByText("个体诊断任务", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "查看该生诊断单", exact: true })).toHaveAttribute("href", "/c/2/students/2/diagnosis");
   await page.goto("/c/2");
   const workbench = page.getByRole("region", { name: "现在要处理" });
   await expect(workbench).toContainText("标注审核");

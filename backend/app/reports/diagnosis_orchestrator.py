@@ -123,6 +123,11 @@ def get_or_generate_quality_report(
 
     补生成失败抛 ``ValueError``（路由层翻译 400；基础报告为纯计算，正常不会失败）。
     """
+    exam = session.get(ExamTemplate, exam_id)
+    if exam is None or exam.class_id != class_id:
+        raise ValueError("考试不存在或不属于该班级")
+    if exam.source == "diagnostic_task":
+        raise ValueError("个体诊断任务请查看指定学生的诊断单")
     report = session.scalar(
         select(Report).where(
             Report.exam_id == exam_id,

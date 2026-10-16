@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import BATCH_STALE_MINUTES, BATCH_TEMPFILE_MAX_AGE_HOURS, settings
 from app.db import utcnow
 from app.ingestion.photo import PhotoParseResult, _persist_response_from_payload
+from app.exam_scope import assert_exam_student, exam_students
 from app.llm.audit import audit_context, record_circuit_open
 from app.llm.circuit import CircuitOpenError, get_vision_breaker
 from app.llm.client import LLMError, get_client
@@ -363,13 +364,7 @@ def _persist_batch_result(
         session.flush()
         return FAILED
 
-    students = list(
-        session.scalars(
-            select(Student)
-            .where(Student.class_id == template.class_id)
-            .order_by(Student.id)
-        )
-    )
+    students = exam_students(session, template)
     stu_id, conf, match_warnings = _match_student(students, detected_name)
     item.warnings = base_warnings + match_warnings
     session.flush()  # 把 detected_name/payload_json/warnings 落到外层事务，再开 savepoint
@@ -548,6 +543,7 @@ def assign_item(session, item_id: int, student_id: int) -> dict:
     student = session.get(Student, student_id)
     if student is None or template is None or student.class_id != template.class_id:
         raise ValueError("学生不属于该班级")
+    assert_exam_student(session, template, student_id)
 
     result = PhotoParseResult()
     try:

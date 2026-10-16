@@ -234,6 +234,27 @@ class ExamTemplate(Base):
         back_populates="template", cascade="all, delete-orphan"
     )
     responses: Mapped[list[ExamResponse]] = relationship(back_populates="template")
+    diagnostic_task: Mapped[DiagnosticTask | None] = relationship(
+        back_populates="exam", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class DiagnosticTask(Base):
+    """个体诊断的持久身份；完成状态从目标学生的已提交作答推导。"""
+
+    __tablename__ = "diagnostic_task"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    exam_id: Mapped[int] = mapped_column(ForeignKey("exam_template.id"), unique=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("student.id"))
+    kp_id: Mapped[int] = mapped_column(ForeignKey("knowledge_point.id"))
+    mode: Mapped[str] = mapped_column(String(20))
+    attribution_id: Mapped[int | None] = mapped_column(ForeignKey("attribution.id"), nullable=True)
+    source_question_ids_json: Mapped[list] = mapped_column(JSON)
+    preview_token: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    exam: Mapped[ExamTemplate] = relationship(back_populates="diagnostic_task")
 
 
 class TemplateQuestion(Base):

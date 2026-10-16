@@ -2,6 +2,34 @@ from app import jobs
 from app.models import AsyncJob
 
 
+def test_exam_job_preserves_trigger_teacher_identity(session, monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from app.reports import auto_generate
+    from app import triggers
+
+    queued = jobs.enqueue_exam_reports(session, 12, teacher_id=7)
+    session.commit()
+    payload = dict(queued.payload_json)
+    assert payload == {"exam_id": 12, "teacher_id": 7}
+    seen = []
+
+    @contextmanager
+    def factory():
+        yield session
+
+    monkeypatch.setattr(jobs, "SessionLocal", factory)
+    monkeypatch.setattr(jobs, "_commit_result", lambda *_: None)
+    monkeypatch.setattr(auto_generate, "generate_exam_reports", lambda *_: SimpleNamespace(
+        quality=True, diagnoses=1, action_plans=1, interventions=0,
+    ))
+    monkeypatch.setattr(triggers, "fire_post_exam_analysis", lambda db, eid, **kw: seen.append((eid, kw)))
+    monkeypatch.delitem(jobs._HANDLERS, "exam_reports", raising=False)
+    jobs._register_builtin_handlers()
+    jobs._HANDLERS["exam_reports"](payload)
+    assert seen == [(12, {"teacher_id": 7})]
+
+
 def test_enqueue_is_idempotent_and_claim_completes(session):
     first = jobs.enqueue(session, "demo", {"value": 1}, idempotency_key="demo:1")
     session.commit()

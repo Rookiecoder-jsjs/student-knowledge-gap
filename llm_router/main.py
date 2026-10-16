@@ -272,7 +272,9 @@ def _retry_after(response: httpx.Response, default: float) -> float:
 
 
 def _safe_headers(headers: httpx.Headers) -> dict[str, str]:
-    blocked = {"content-length", "transfer-encoding", "connection", "keep-alive"}
+    # Both buffered content and aiter_bytes() decode upstream compression.
+    # Forward identity bytes so downstream clients never decompress twice.
+    blocked = {"content-length", "content-encoding", "transfer-encoding", "connection", "keep-alive"}
     return {k: v for k, v in headers.items() if k.lower() not in blocked}
 
 
@@ -367,7 +369,7 @@ def create_app(config: RouterConfig | None = None, transport: httpx.AsyncBaseTra
                         async def iterator() -> AsyncIterator[bytes]:
                             ok = False
                             try:
-                                async for chunk in upstream.aiter_raw():
+                                async for chunk in upstream.aiter_bytes():
                                     yield chunk
                                 ok = 200 <= upstream.status_code < 400
                             finally:

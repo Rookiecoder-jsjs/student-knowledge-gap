@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 
 from app import auth as _auth
-from app.api.deps import _active_kb, _graph, get_db, guard_class, require_teacher
+from app.api.deps import _active_kb, _graph, get_db, guard_class, guard_exam, require_teacher
 from app.kb.resolver import KbNotActiveError, active_kb
 from app.models import Class, School, Student, TeachingProgress
 from app.queries import classes as query_classes
@@ -279,6 +279,7 @@ def list_exams(
 
     allowed = auth_mod.allowed_class_ids(db, ctx)
     paged = offset is not None or limit is not None
+    exam_ids = auth_mod.allowed_exam_ids(ctx)
     if paged:
         if offset is not None and offset < 0:
             raise HTTPException(400, "offset 不能小于 0")
@@ -297,6 +298,7 @@ def list_exams(
             class_ids=list(allowed) if allowed is not None else None,
             offset=page_offset,
             limit=page_limit,
+            exam_ids=exam_ids,
         )
         return {
             "exams": rows,
@@ -310,10 +312,10 @@ def list_exams(
         want = set(allowed)
         if class_id is not None and class_id not in want:
             raise HTTPException(403, "无权查看该班级考试")
-        rows = query_exams.exams_list(db, class_id)
+        rows = query_exams.exams_list(db, class_id, exam_ids=exam_ids)
         rows = [e for e in rows if e.get("class_id") in want]
     else:
-        rows = query_exams.exams_list(db, class_id)
+        rows = query_exams.exams_list(db, class_id, exam_ids=exam_ids)
     return {"exams": rows}
 
 
@@ -323,7 +325,9 @@ def exam_detail(exam_id: int, ctx=Depends(require_teacher), db: Session = Depend
     data = query_exams.exam_detail(db, exam_id)
     if data is None:
         raise HTTPException(404, "考试不存在")
-    _guard(db, ctx, data["class_id"])
+    from app.models import ExamTemplate
+
+    guard_exam(db.get(ExamTemplate, exam_id), db, ctx)
     return data
 
 
@@ -337,5 +341,5 @@ def exam_responses(exam_id: int, ctx=Depends(require_teacher), db: Session = Dep
 
     tpl = db.get(ExamTemplate, exam_id)
     if tpl is not None:
-        _guard(db, ctx, tpl.class_id)
+        guard_exam(tpl, db, ctx)
     return data

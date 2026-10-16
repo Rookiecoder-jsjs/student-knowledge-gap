@@ -19,11 +19,11 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.exam_scope import exam_students
 from app.models import (
     ExamResponse,
     ExamTemplate,
     ResponseAnswer,
-    Student,
     TemplateQuestion,
 )
 
@@ -57,23 +57,9 @@ def import_excel(
     q_cols = _map_question_columns(session, template, header, result)
     header_warnings = list(result.warnings)
 
-    students = {
-        s.name_or_alias: s
-        for s in session.scalars(
-            select(Student).where(Student.class_id == template.class_id)
-        )
-    }
-    students.update(
-        {
-            s.external_code: s
-            for s in session.scalars(
-                select(Student).where(
-                    Student.class_id == template.class_id,
-                    Student.external_code != "",
-                )
-            )
-        }
-    )
+    roster = exam_students(session, template)
+    students = {s.name_or_alias: s for s in roster}
+    students.update({s.external_code: s for s in roster if s.external_code})
 
     for r_idx, row in enumerate(rows[1:], start=2):
         if row is None or all(c is None or str(c).strip() == "" for c in row):

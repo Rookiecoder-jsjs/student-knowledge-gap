@@ -137,11 +137,13 @@ def enqueue(
     return job
 
 
-def enqueue_exam_reports(session: Session, exam_id: int) -> AsyncJob:
+def enqueue_exam_reports(
+    session: Session, exam_id: int, *, teacher_id: int | None = None,
+) -> AsyncJob:
     return enqueue(
         session,
         "exam_reports",
-        {"exam_id": exam_id},
+        {"exam_id": exam_id, "teacher_id": teacher_id},
         idempotency_key=f"exam_reports:{exam_id}",
     )
 
@@ -232,7 +234,7 @@ def _register_builtin_handlers() -> None:
                 "interventions": result.interventions,
             }
             _commit_result(session, output)
-            fire_post_exam_analysis(session, exam_id)
+            fire_post_exam_analysis(session, exam_id, teacher_id=payload.get("teacher_id"))
             return output
 
     register("exam_reports", run_exam_reports)

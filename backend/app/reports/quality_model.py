@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import CLASS_COMMON_WEAK_RATIO
+from app.exam_scope import exam_students
 from app.kb.graph import KpGraph
 from app.models import (
     Class,
@@ -22,7 +23,6 @@ from app.models import (
     ExamResponse,
     ExamTemplate,
     ResponseAnswer,
-    Student,
     TemplateQuestion,
 )
 from app.pipeline.mastery import get_events_batch
@@ -67,15 +67,14 @@ def compute_quality_model(
     template = session.get(ExamTemplate, exam_id)
     as_of = datetime.combine(template.exam_date, time(23, 59))
 
-    students = list(
-        session.scalars(select(Student).where(Student.class_id == class_id))
-    )
+    students = exam_students(session, template)
     committed = {
         r.student_id: r
         for r in session.scalars(
             select(ExamResponse).where(
                 ExamResponse.exam_template_id == exam_id,
                 ExamResponse.status == "已提交",
+                ExamResponse.student_id.in_([student.id for student in students]),
             )
         )
     }
@@ -96,7 +95,7 @@ def compute_quality_model(
     if committed and questions:
         rows = session.scalars(
             select(ResponseAnswer).where(
-                ResponseAnswer.exam_response_id.in_(committed.keys()),
+                ResponseAnswer.exam_response_id.in_([r.id for r in committed.values()]),
                 ResponseAnswer.template_question_id.in_([q.id for q in questions]),
             )
         ).all()

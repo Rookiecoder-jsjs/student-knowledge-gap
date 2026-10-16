@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import MIN_EVIDENCE_COUNT
 from app.kb.graph import KpGraph
-from app.models import Attribution, KbVersion, ExamResponse, ExamTemplate, QuestionKp, ResponseAnswer, Student, TemplateQuestion
+from app.models import Attribution, DiagnosticTask, KbVersion, ExamResponse, ExamTemplate, QuestionKp, ResponseAnswer, Student, TemplateQuestion
 from app.pipeline.weakness import assess_student_kps, covered_kp_ids
 
 
@@ -130,6 +130,11 @@ def create_diagnostic_exam(db: Session, student: Student, blueprint: dict, quest
         name=f"{student.name_or_alias}·{blueprint['kp_name']}·{'补证据' if blueprint['mode'] == 'evidence' else '归因验证'}"[:120],
         exam_date=exam_date, type="诊断", source="diagnostic_task")
     db.add(exam); db.flush()
+    db.add(DiagnosticTask(
+        exam_id=exam.id, student_id=student.id, kp_id=blueprint["kp_id"],
+        mode=blueprint["mode"], attribution_id=blueprint["attribution_id"],
+        source_question_ids_json=question_ids, preview_token=preview_token,
+    ))
     for idx, slot in enumerate(blueprint["slots"], 1):
         original = db.get(TemplateQuestion, slot["question"]["id"])
         q = TemplateQuestion(exam_template_id=exam.id, idx=idx, stem=original.stem,

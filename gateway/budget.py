@@ -50,6 +50,7 @@ class TaskBudget:
 
     turns: int = 0
     total_tokens: int = 0
+    baseline_tokens: int = 0
     last_activity: float = field(default_factory=time.monotonic)
 
     def stale(self) -> bool:
@@ -70,6 +71,9 @@ class BudgetGuard:
 
     def __init__(self) -> None:
         self._tasks: dict[str, TaskBudget] = {}
+        # Runtime totals live for the whole thread; retain the last watermark
+        # when an idle task expires so the next task pays only for new usage.
+        self._thread_totals: dict[str, int] = {}
         # 月度软限额通知去重：每 (month, ratio_level) 只发一次
         self._notified: set[str] = set()
 
@@ -83,7 +87,7 @@ class BudgetGuard:
         self._gc()
         b = self._tasks.get(thread_id)
         if b is None or b.stale():
-            b = TaskBudget()
+            b = TaskBudget(baseline_tokens=self._thread_totals.get(thread_id, 0))
             self._tasks[thread_id] = b
         if b.turns >= MAX_TURNS_PER_TASK:
             raise BudgetExceeded(
@@ -105,13 +109,24 @@ class BudgetGuard:
 
     # ---- token 闸 ---------------------------------------------------------
 
-    def observe_token_usage(self, thread_id: str, total_tokens: int) -> dict | None:
+    def observe_token_usage(
+        self, thread_id: str, total_tokens: int, *, historical: bool = False,
+    ) -> dict | None:
         """消费 thread/tokenUsage/updated 通知；返回 interrupt 决定（None=放行）。"""
+        previous = self._thread_totals.get(thread_id, 0)
+        total_tokens = max(0, int(total_tokens))
+        self._thread_totals[thread_id] = total_tokens if historical else max(previous, total_tokens)
         b = self._tasks.get(thread_id)
+        if historical:
+            # thread/resume replays already-paid usage. It establishes the
+            # baseline after a gateway restart and must never interrupt a turn.
+            if b is not None:
+                b.baseline_tokens = total_tokens - b.total_tokens
+            return None
         if b is None:
-            b = TaskBudget()
+            b = TaskBudget(baseline_tokens=previous)
             self._tasks[thread_id] = b
-        b.total_tokens = max(b.total_tokens, int(total_tokens))  # total 是累计口径
+        b.total_tokens = max(b.total_tokens, total_tokens - b.baseline_tokens)
         b.last_activity = time.monotonic()
         if MAX_TOKENS_PER_TASK and b.total_tokens >= MAX_TOKENS_PER_TASK:
             return {

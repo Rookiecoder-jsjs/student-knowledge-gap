@@ -72,6 +72,7 @@ def fire_post_exam_analysis(
     session: Session,
     exam_id: int,
     *,
+    teacher_id: int | None = None,
     gateway_url: str | None = None,
     internal_key: str | None = None,
     client: httpx.Client | None = None,
@@ -87,16 +88,28 @@ def fire_post_exam_analysis(
         logger.warning("trigger skip: %s", e)
         return False
 
+    template = session.get(ExamTemplate, exam_id)
+    if template.source == "diagnostic_task":
+        logger.info("trigger skip: 个体诊断任务不发起全班考后分析")
+        return False
+
     base = gateway_url or os.environ.get("SC_GATEWAY_URL", "")
     key = internal_key or os.environ.get("SC_TRIGGER_KEY", "")
     if not base or not key:
         logger.info("trigger disabled: SC_GATEWAY_URL/SC_TRIGGER_KEY 未配置")
         return False
 
+    from app.auth import security_mode_on
+
+    if teacher_id is None and security_mode_on(session):
+        logger.warning("trigger skip: 安全模式下考后分析缺少提交教师身份")
+        return False
+
     body = {
         "kind": "post_exam_analysis",
         "exam_id": exam_id,
-        "class_id": session.get(ExamTemplate, exam_id).class_id,
+        "class_id": template.class_id,
+        "teacher_id": teacher_id,
         "idempotency_key": f"post_exam_analysis:{exam_id}",
         "message": payload["text"],
         "template_version": payload["template_version"],
@@ -120,6 +133,14 @@ def fire_post_exam_analysis(
         return False
     if resp.status_code >= 300:
         logger.warning("trigger rejected: HTTP %s %s", resp.status_code, resp.text[:200])
+        return False
+    try:
+        receipt = resp.json()
+    except (ValueError, TypeError):
+        logger.warning("trigger rejected: invalid gateway receipt")
+        return False
+    if not isinstance(receipt, dict) or receipt.get("accepted") is not True:
+        logger.warning("trigger not accepted: %s", receipt.get("reason") if isinstance(receipt, dict) else "invalid receipt")
         return False
     return True
 

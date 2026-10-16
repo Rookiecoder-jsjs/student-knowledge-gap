@@ -95,8 +95,10 @@ export default function Collect() {
             <CheckCircle size={16} weight="fill" />
             本场已提交并生成依据；如需更正请以补录考试处理。
           </span>
-          <Button variant="secondary" onClick={() => nav(`/c/${cid}/exams/${eid}/report`)}>
-            查看质量分析
+          <Button variant="secondary" onClick={() => nav(detail.data?.diagnostic_task
+            ? `/c/${cid}/students/${detail.data.diagnostic_task.student_id}/diagnosis`
+            : `/c/${cid}/exams/${eid}/report`)}>
+            {detail.data?.diagnostic_task ? "查看该生诊断单" : "查看质量分析"}
           </Button>
         </div>
       )}

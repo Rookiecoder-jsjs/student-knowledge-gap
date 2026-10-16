@@ -102,6 +102,12 @@ export interface ExamDetail {
   type: string;
   source: string;
   questions: QuestionView[];
+  diagnostic_task?: {
+    student_id: number;
+    kp_id: number;
+    mode: "evidence" | "attribution";
+    attribution_id: number | null;
+  } | null;
 }
 
 export type CollectStatus = "未采集" | "待审核" | "已提交";

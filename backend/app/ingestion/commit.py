@@ -12,13 +12,13 @@ import math
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.exam_scope import assert_exam_student
 from app.models import (
     BankQuestion,
     ExamResponse,
     ExamTemplate,
     KnowledgePoint,
     ResponseAnswer,
-    Student,
     TemplateQuestion,
 )
 from app.pipeline.evidence import derive_events_for_response
@@ -42,6 +42,9 @@ def commit_exam(session: Session, template_id: int) -> CommitResult:
     - 批量脚本只 commit（不生成报告）。
     """
     result = CommitResult()
+    template = session.get(ExamTemplate, template_id)
+    if template is None:
+        raise ValueError(f"exam_template {template_id} 不存在")
     responses = list(
         session.scalars(
             select(ExamResponse).where(ExamResponse.exam_template_id == template_id)
@@ -51,6 +54,9 @@ def commit_exam(session: Session, template_id: int) -> CommitResult:
         result.skipped.append("该考试尚无任何作答记录")
         return result
 
+    # 程序化提交同样守住目标边界，不能依赖 HTTP 预检才保证正确性。
+    for response in responses:
+        assert_exam_student(session, template, response.student_id)
     for response in responses:
         if response.status == "已提交":
             result.skipped.append(f"学生{response.student_id} 已提交过，跳过")
@@ -122,9 +128,7 @@ def add_manual_response(
     template = session.get(ExamTemplate, template_id)
     if template is None:
         raise ValueError(f"exam_template {template_id} 不存在")
-    student = session.get(Student, student_id)
-    if student is None or student.class_id != template.class_id:
-        raise ValueError(f"学生 {student_id} 不属于该班级")
+    assert_exam_student(session, template, student_id)
 
     existing = session.scalar(
         select(ExamResponse.id).where(

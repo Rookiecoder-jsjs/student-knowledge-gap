@@ -16,7 +16,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import auth as _auth
@@ -58,7 +58,32 @@ def _guard_intervention(db: Session, ctx, iv: Intervention) -> None:
     exam = db.get(ExamTemplate, iv.exam_id)
     if exam is None:
         raise HTTPException(404, "干预来源考试不存在")
+    if exam.class_id != iv.class_id:
+        raise HTTPException(404, "干预记录与来源考试班级不一致")
     guard_exam(exam, db, ctx)
+
+
+def _visible_exams(ctx):
+    return _auth.allowed_exam_ids(ctx)
+
+
+def _intervention_access(ctx):
+    # Bind both resources to the same class as well as checking exam permission.
+    return Intervention.exam_id.in_(
+        _visible_exams(ctx).where(ExamTemplate.class_id == Intervention.class_id)
+    )
+
+
+def _class_exam_ids(db: Session, ctx, class_id: int) -> list[int]:
+    return list(db.scalars(_visible_exams(ctx).where(ExamTemplate.class_id == class_id)))
+
+
+def _guard_plan_exam(db: Session, ctx, exam_id: int, class_id: int) -> ExamTemplate:
+    exam = db.get(ExamTemplate, exam_id)
+    if exam is None or exam.class_id != class_id:
+        raise HTTPException(404, "考试不存在或不属于该班级")
+    guard_exam(exam, db, ctx)
+    return exam
 
 
 # ---------------------------------------------------------------------------
@@ -78,9 +103,13 @@ def class_action_plan(
     if clazz is None:
         raise HTTPException(404, "班级不存在")
     guard_class(class_id, db, ctx)
-    kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
+    exam = _guard_plan_exam(db, ctx, exam_id, class_id) if exam_id is not None else None
+    subject = (exam.subject or clazz.subject) if exam else _auth.class_subject(db, ctx, clazz)
+    kb = _active_kb(db, subject, clazz.grade)
     graph = _graph(db, kb.id)
-    return action_plan_view(db, graph, class_id, exam_id=exam_id)
+    return action_plan_view(
+        db, graph, class_id, exam_id=exam_id, exam_ids=_class_exam_ids(db, ctx, class_id)
+    )
 
 
 @router.get("/students/{student_id}/action-plan")
@@ -94,10 +123,11 @@ def student_action_plan(
     """改进单 get-or-generate（同诊断单模式：有已存直接返回，无则补生成）。"""
     stu = _student_or_404(db, student_id)
     guard_class(stu.class_id, db, ctx)
+    exam = _guard_plan_exam(db, ctx, exam_id, stu.class_id) if exam_id is not None else None
+    subject = ((exam.subject or stu.clazz.subject) if exam else
+               _auth.class_subject(db, ctx, stu.clazz))
     kb = _active_kb(
-        db,
-        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
-        stu.clazz.grade if stu.clazz else None,
+        db, subject, stu.clazz.grade,
     )
     graph = _graph(db, kb.id)
 
@@ -115,6 +145,17 @@ def student_action_plan(
         .where(
             Report.type == "student_action_plan",
             Report.student_id == student_id,
+            Report.class_id == stu.class_id,
+            or_(
+                Report.exam_id.in_(_visible_exams(ctx).where(
+                    ExamTemplate.class_id == stu.class_id,
+                    func.coalesce(ExamTemplate.subject, stu.clazz.subject) == kb.subject,
+                )),
+                # Without a source exam, only an explicit version identifies
+                # which subject this cached report was generated for.
+                (Report.exam_id.is_(None) &
+                 (Report.snapshot_json["kb_version_id"].as_integer() == kb.id)),
+            ),
             *(  # 指定 exam 时优先该场的存档；未指定取最新一份
                 [Report.exam_id == exam_id] if exam_id is not None else []
             ),
@@ -126,6 +167,7 @@ def student_action_plan(
         report = generate_student_action_plan(
             db, graph, student_id, as_of=when, exam_id=exam_id
         )
+        report.snapshot_json = {**(report.snapshot_json or {}), "kb_version_id": kb.id}
     return {
         "report_id": report.id,
         "markdown": report.content_markdown,
@@ -169,7 +211,7 @@ def list_interventions(
     if not 1 <= limit <= 200:
         raise HTTPException(400, "limit 必须在 1 到 200 之间")
 
-    conds = []
+    conds = [_intervention_access(ctx)]
     if class_id is not None:
         conds.append(Intervention.class_id == class_id)
     else:
@@ -185,11 +227,11 @@ def list_interventions(
     total = db.scalar(select(func.count(Intervention.id)).where(*conds)) or 0
     stmt = select(Intervention).where(*conds).order_by(Intervention.id.desc())
     page = list(db.scalars(stmt.offset(offset).limit(limit)))
-    loop_cache: dict[int, dict[int, str]] = {}
+    loop_cache: dict[tuple[int, int], dict[int, str]] = {}
     items = []
     for r in page:
         loop = (
-            _student_loop(db, ctx, r.student_id, loop_cache)
+            _student_loop(db, r.student_id, r.kp_id, loop_cache)
             if r.student_id is not None
             else None
         )
@@ -222,6 +264,7 @@ def intervention_student_summary(
         .where(
             Intervention.class_id == class_id,
             Intervention.student_id.is_not(None),
+            _intervention_access(ctx),
         )
         .group_by(Intervention.student_id, Intervention.status)
     )
@@ -242,25 +285,22 @@ def intervention_student_summary(
 
 
 def _student_loop(
-    db: Session, ctx, student_id: int, cache: dict[int, dict[int, str]]
+    db: Session, student_id: int, kp_id: int,
+    cache: dict[tuple[int, int], dict[int, str]],
 ) -> dict[int, str]:
-    """按学生缓存的进度折叠（列表页同一学生多行只算一次）。"""
-    if student_id in cache:
-        return cache[student_id]
+    """Cache each student's progress in the row's actual knowledge-base version."""
     stu = db.get(Student, student_id)
-    if stu is None:
-        cache[student_id] = {}
-        return cache[student_id]
-    kb = _active_kb(
-        db,
-        _auth.class_subject(db, ctx, stu.clazz) if stu.clazz else None,
-        stu.clazz.grade if stu.clazz else None,
-    )
-    graph = _graph(db, kb.id)
-    cache[student_id] = loop_states_for_student(
+    kp = db.get(KnowledgePoint, kp_id)
+    if stu is None or kp is None:
+        return {}
+    key = (student_id, kp.kb_version_id)
+    if key in cache:
+        return cache[key]
+    graph = _graph(db, kp.kb_version_id)
+    cache[key] = loop_states_for_student(
         db, graph, student_id, stu.class_id, datetime.now()
     )
-    return cache[student_id]
+    return cache[key]
 
 
 def _row_view(
@@ -332,6 +372,7 @@ def confirm_intervention(
                     Intervention.class_id == iv.class_id,
                     Intervention.group_ref == iv.group_ref,
                     Intervention.status == "suggested",
+                    _intervention_access(ctx),
                 )
             )
         )
@@ -394,6 +435,7 @@ def reschedule_retest(
         targets = list(db.scalars(select(Intervention).where(
             Intervention.class_id == iv.class_id, Intervention.group_ref == iv.group_ref,
             Intervention.status == "done",
+            _intervention_access(ctx),
         )))
     for target in targets:
         target.retest_due_date = req.retest_due_date
@@ -413,6 +455,7 @@ def class_retest_schedule(
     kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     conds = (Intervention.class_id == class_id, Intervention.status == "done",
              Intervention.retest_due_date.is_not(None),
+             _intervention_access(ctx),
              Intervention.kp_id.in_(select(KnowledgePoint.id).where(KnowledgePoint.kb_version_id == kb.id)))
     total = db.scalar(select(func.count(Intervention.id)).where(*conds)) or 0
     rows = db.scalars(select(Intervention).where(*conds)
@@ -433,7 +476,7 @@ def skip_intervention(
     iv = db.get(Intervention, intervention_id)
     if iv is None:
         raise HTTPException(404, "干预记录不存在")
-    guard_class(iv.class_id, db, ctx)
+    _guard_intervention(db, ctx, iv)
     if iv.status != "suggested":
         raise HTTPException(400, f"干预记录状态为 {iv.status}，不能再跳过")
     targets = [iv]
@@ -444,6 +487,7 @@ def skip_intervention(
                     Intervention.class_id == iv.class_id,
                     Intervention.group_ref == iv.group_ref,
                     Intervention.status == "suggested",
+                    _intervention_access(ctx),
                 )
             )
         )
@@ -467,15 +511,13 @@ def single_effect(
 ):
     """单条效果推导（derive-on-read；awaiting_retest 为试点期常态）。"""
     iv = db.get(Intervention, intervention_id)
-    if iv is not None:
-        guard_class(iv.class_id, db, ctx)
-    _iv_cls = db.get(Class, iv.class_id) if iv is not None else None
-    kb = _active_kb(
-        db,
-        _auth.class_subject(db, ctx, _iv_cls) if _iv_cls is not None else None,
-        _iv_cls.grade if _iv_cls is not None else None,
-    )
-    graph = _graph(db, kb.id)
+    if iv is None:
+        raise HTTPException(404, "干预记录不存在")
+    _guard_intervention(db, ctx, iv)
+    kp = db.get(KnowledgePoint, iv.kp_id)
+    if kp is None:
+        raise HTTPException(404, "干预知识点不存在")
+    graph = _graph(db, kp.kb_version_id)
     try:
         return intervention_effect(db, graph, intervention_id)
     except LookupError as e:
@@ -493,4 +535,4 @@ def interventions_summary(
     guard_class(class_id, db, ctx)
     kb = _active_kb(db, _auth.class_subject(db, ctx, clazz), clazz.grade)
     graph = _graph(db, kb.id)
-    return intervention_summary(db, graph, class_id)
+    return intervention_summary(db, graph, class_id, exam_ids=_class_exam_ids(db, ctx, class_id))

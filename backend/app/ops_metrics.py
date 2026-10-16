@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from sqlalchemy import func, select
 from app import db
+from app.backup_identity import database_identity
 from app.metrics import set_gauge
 from app.models import AsyncJob
 
@@ -45,9 +46,13 @@ def collect() -> None:
 
     directory = os.environ.get("SC_BACKUP_DIR")
     set_gauge("backup_monitor_enabled", 1 if directory else 0)
+    if not directory:
+        set_gauge("backup_last_success_timestamp_seconds", 0)
     if directory:
         try:
             status = json.loads((Path(directory) / ".backup-status.json").read_text())
+            if status.get("database_identity") != database_identity(db.engine.url):
+                raise ValueError("backup source does not match current database")
             timestamp = float(status["last_success_timestamp"])
             if not math.isfinite(timestamp) or timestamp <= 0 or timestamp > time.time() + 60 or status.get("restore_verified") is not True:
                 raise ValueError("unverified backup")

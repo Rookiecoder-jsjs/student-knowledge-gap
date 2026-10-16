@@ -15,7 +15,7 @@ import {
   Td,
   Th,
 } from "../components/ui";
-import { qualityReport } from "../lib/api";
+import { examDetail, qualityReport } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import { setBackTarget } from "../lib/portal";
 import { ACCENTS } from "../lib/theme";
@@ -29,7 +29,22 @@ export default function ExamBrief() {
   const { classId, examId: routeExamId } = useParams();
   const cid = Number(classId);
   const eid = Number(routeExamId);
+  const detail = useAsync(() => examDetail(eid), [eid]);
+  if (detail.loading) return <Skeleton rows={4} />;
+  if (detail.error) return <ErrorState message={detail.error} onRetry={detail.reload} />;
+  if (detail.data?.source === "diagnostic_task") {
+    const task = detail.data.diagnostic_task;
+    return <Card className="space-y-3 p-5">
+      <SectionTitle>个体诊断任务</SectionTitle>
+      <p className="text-sm text-ink-soft">本次结果用于核对指定学生的补证据或归因验证任务。</p>
+      {task ? <Link to={`/c/${cid}/students/${task.student_id}/diagnosis`}><Button>查看该生诊断单</Button></Link>
+        : <p className="text-sm text-warn">历史任务缺少目标信息，请重新预览建卷。</p>}
+    </Card>;
+  }
+  return <ClassExamBrief cid={cid} eid={eid} />;
+}
 
+function ClassExamBrief({ cid, eid }: { cid: number; eid: number }) {
   // 概况数据源 = 质量报告 snapshot（B2 已补字段），get-or-generate 语义不变
   const report = useAsync(() => qualityReport(cid, eid, false), [cid, eid]);
   const snap = report.data?.snapshot ?? null;

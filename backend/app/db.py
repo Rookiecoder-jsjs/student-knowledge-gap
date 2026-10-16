@@ -35,8 +35,9 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-_connect_args: dict = {"check_same_thread": False}  # SQLite + FastAPI 线程池
+_connect_args: dict = {}
 if settings.database_url.startswith("sqlite"):
+    _connect_args["check_same_thread"] = False  # FastAPI 线程池跨线程使用 SQLite
     # 批量 worker 并发写：SQLite busy_timeout，写锁等待最多 15s（PG 兼容：仅 sqlite 加）
     _connect_args["timeout"] = 15
 
@@ -124,6 +125,7 @@ def _legacy_alter_bootstrap() -> None:
     from scripts.migrate_rbac_scopes import add_rbac_scope_columns
     from scripts.migrate_intervention_retest import add_retest_exam_column
     from scripts.migrate_retest_schedule import add_retest_due_date
+    from scripts.migrate_kp_importance import add_importance_column
 
     add_archived_column()
     add_started_at_column()
@@ -136,6 +138,7 @@ def _legacy_alter_bootstrap() -> None:
     add_rbac_scope_columns()
     add_retest_exam_column()
     add_retest_due_date()
+    add_importance_column()
 
 
 def _alembic_upgrade_head() -> None:

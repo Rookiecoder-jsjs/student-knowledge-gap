@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.config import TAG_REVIEW_SAMPLE_RATE
 from app.db import utcnow
+from app.exam_scope import assert_exam_student
 from app.ingestion.pii import mask_image
 from app.llm.audit import audit_context
 from app.llm.client import LLMError, get_client
@@ -218,6 +219,7 @@ def parse_student_response_from_photo(
     if template is None:
         raise ValueError(f"exam_template {template_id} 不存在")
 
+    assert_exam_student(session, template, student_id)
     client = get_client("vision")
     job = ParseJob(
         target=f"response:{template_id}:{student_id}",
@@ -275,6 +277,7 @@ def _persist_response_from_payload(
     调用方负责并发去重：本函数直接 flush ExamResponse，uq_tpl_student 触发的
     IntegrityError 向上抛出，由调用方 try/except 判定 duplicate（不靠先查后建）。
     """
+    assert_exam_student(session, template, student_id)
     questions = sorted(template.questions, key=lambda q: q.idx)
     response = ExamResponse(
         exam_template_id=template.id,

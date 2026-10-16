@@ -6,6 +6,7 @@ from contextlib import closing
 import pytest
 from sqlalchemy import create_engine
 from app.db import Base
+from app.backup_identity import database_identity
 from app import models  # noqa: F401
 from scripts.backup_db import backup_db
 from scripts.verify_restore import verify_restore
@@ -27,6 +28,7 @@ def test_backup_restores_in_isolation_and_publishes_verified_marker(tmp_path):
     marker = json.loads((target.parent / ".backup-status.json").read_text())
     assert marker["restore_verified"] is True
     assert marker["last_success_timestamp"] > 0
+    assert marker["database_identity"] == database_identity(f"sqlite:///{source}")
     compressed = tmp_path / "test.bak.gz"
     with gzip.open(compressed, "wb") as out:
         out.write(target.read_bytes())

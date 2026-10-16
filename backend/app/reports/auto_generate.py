@@ -150,6 +150,11 @@ def _generate_exam_reports(session: Session, graph: KpGraph, exam_id: int) -> Ex
             session, graph, s.id, class_id, as_of, assessments=assessments
         )
         plans += 1
+    # 个体诊断只更新参与学生的材料，不把单人结果发布为班级结论或行动。
+    if template.source == "diagnostic_task":
+        session.flush()
+        return ExamReportResult(diagnoses=len(students), action_plans=plans)
+
     # 干预建议生成（intervention-loop-design §3）：物化先于建议——ActionRow 的
     # attribution_id 才能回填归因行 id；建议先于质量报告——§五「教学行动方向」
     # 直接随报告渲染（actions 摘要同时进 snapshot，前端角标数据源）。
